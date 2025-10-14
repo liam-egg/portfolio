@@ -1,0 +1,66 @@
+<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <meta 
+    name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>Blog</title> <link rel="stylesheet" href="../src/posts.css">
+</head> <body> <menu> <span class="name" onclick="location.href = 
+        '../blog.html#posts'">climology</span> <span class="date">October 5, 
+        2024</span> <span class="title">As Himalayan Glaciers Melt, a Water Crisis 
+        Looms in South Asia</span> <span class="description">Warmer air is melting 
+        the glaciers of the Himalayas. The melting could have far-reaching 
+        consequences for flood risk and for water security for a billion people who 
+        rely on meltwater for their survival.</span> <img 
+        src="https://e360.yale.edu/assets/site/_1260x709_crop_center-center/Sabai_Alamy-Small.jpg" 
+        alt=""> <span class="alt">Sabai Tsho Lake, formed by the melting of Sabai 
+        Glacier in Nepal. Afripics / Alamy Stock Photo</span> <p><span 
+        class="big">T</span>he Himalayas, often referred to as the
+            "Third Pole" of the world due to their vast ice reserves, represent one 
+            of the areas most affected by climate change in the world. <a 
+            href="https://hir.harvard.edu/himalayan-climate-change/">This</a> 
+            recent article from Harvard International Review elaborates on this 
+            crisis.</p> <p>One of the most alarming signs of climate change in the 
+            Himalayas is the rapid retreat of glaciers. The meltwater from these 
+            glaciers feeds major rivers like the Ganges, Indus, and Brahmaputra, 
+            which are crucial for agriculture, drinking water, and hydropower. 
+            Research indicates that these glaciers are shrinking at unprecedented 
+            rates, which threatens the water supply of millions of people in South 
+            Asia. Unpredictable changes in the timing of snowmelt have led many 
+            farmers to abandon their fields. Furthermore, the lakes surrounding 
+            these glaciers get warmer over time. These warm lakes have been found 
+            to exacerbate glacial melting; one study projects almost a threefold 
+            rise in the risk of lake outbursts in the Himalayas, posing a hazard to 
+            villages, roads, and dams.</p> <p>The retreat of these glaciers also 
+            exacerbates natural hazards. The reduced ice cover increases the risk 
+            of glacial lake outburst floods (GLOFs), which can devastate downstream 
+            communities. In recent years, there have been several significant GLOF 
+            events. The changing climate also has an effect on local weather 
+            patterns. Currently, the region is experiencing more intense rainfall 
+            than in previous years, which leads to an increased frequency of 
+            landslides and erosion. These events not only damage infrastructure but 
+            also threaten livelihoods, particularly for those dependent on 
+            agriculture. The Himalayan region is also home to unique biodiversity 
+            that is increasingly at risk. Species adapted to cold, high-altitude 
+            environments face shifting habitats and changing food sources. For 
+            example, the elusive snow leopard, an apex predator in the region, is 
+            under pressure as its habitat shrinks and prey populations decline.</p> 
+            <p>Addressing the Himalayan climate crisis requires international 
+            cooperation and a multifaceted approach. Strategies include greater 
+            monitoring of the area, sustainable water management, and 
+            community-based adaptation initiatives. As the Himalayas continue to 
+            warm, the need for global action to mitigate climate change and support 
+            affected communities has never been more pressing.</p>
+        <footer> <button></button> <button onclick="location.href = '2.html'"> Next 
+                Post <span class="icon"></span>
+            </button> </footer> </menu> <script> let x, y; 
+        window.addEventListener('mousemove', e => {
+            x = e.clientX; y = e.clientY;
+        })
+        setInterval(() => { const e = document.createElement('span'); 
+            e.classList.add('decor'); e.style.left = x + 'px'; e.style.top = y + 
+            'px'; e.style.rotate = Math.random() * 8 - 4 + 'deg'; e.textContent = 
+            ['@', '#', '$', '%', '&', '+'][Math.floor(Math.random() * 6)]; 
+            document.body.appendChild(e); setTimeout(() => {
+                e.remove()
+            }, 1000)
+            console.log(x,y)
+        }, 10000)
+    </script> </body>
+</html>

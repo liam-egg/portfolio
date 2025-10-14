@@ -1,0 +1,59 @@
+<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <meta 
+    name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>Blog</title> <link rel="stylesheet" href="../src/posts.css">
+</head> <body> <menu> <span class="name" onclick="location.href = 
+        '../blog.html#posts'">climology</span> <span class="date">July 13, 
+        2024</span> <span class="title">TCU Neeley Data Analytics Academy</span> 
+        <span class="description">Learning essential skills in data science and 
+        analytics including scraping and cleaning data to analysis and 
+        visualization</span> <img 
+        src="https://community.alteryx.com/t5/image/serverpage/image-id/53802i3616E962D0CF9872?v=v2" 
+        alt=""> <span class="alt">Data cleaning and analysis with Alteryx</span> 
+        <p><span
+            class="first">A</span>ttending TCU's Neeley Data Analytics Academy 
+            program this summer has taught me several vital skills related to data 
+            science and analytics: scraping, cleaning/filtering, analysis, and 
+            visualization. For data scraping, we used a software called UiPath, 
+            which provided code-free methods to automate user input on pages as 
+            well as using computer vision to extract data. The second software we 
+            used was Alteryx, which allowed us to clean the data-- removing extra 
+            data, detecting and managing typos and empty columns, summarize data, 
+            and other data cleaning tools were among a few techniques we used. 
+            Under the hood, Alteryx generates SQL that efficiently and 
+            strategically queries the data; SQL is another tool we learned to use 
+            in case software was insufficient (although I already had extensive SQL 
+            experience prior to the program). Finally, we used Orange and Tableau 
+            to visualize and present the data; we needed to be certain the data was 
+            meaningful (significant), but also needed to make the data presentable 
+            to an audience, as raw numbers are both underwhelming and harder to 
+            identify at a glance; according to MedTech Intelligence, the human 
+            brain processes images around 60,000 times faster than text so visuals 
+            are scientifically more meaningful. Orange was another software we 
+            used.</p>
+        <p>Our final project, a presentation in which we identified a problem (or 
+            simply a topic to analyze) and made predictions or other analysis based 
+            on data we found online, which we later presented to other students and 
+            groups participating in the program. My group decided to focus on 
+            climate change-- or, more specifically, emissions. We discussed the 
+            emission cut required for Net Zero, and made a prediction for where we 
+            are currently heading with current trends (which unfortunately is 
+            nowhere close to what is required). The challenges we faced included 
+            finding good datasets, generating meaningful visualizations and, of 
+            course, remembering everything we had learned the previous week.</p>
+        <footer> <button onclick="location.href = '4.html'"> <span 
+                class="icon"></span> Last Post
+            </button> </footer> </menu> <script> let x, y; 
+        window.addEventListener('mousemove', e => {
+            x = e.clientX; y = e.clientY;
+        })
+        setInterval(() => { const e = document.createElement('span'); 
+            e.classList.add('decor'); e.style.left = x + 'px'; e.style.top = y + 
+            'px'; e.style.rotate = Math.random() * 8 - 4 + 'deg'; e.textContent = 
+            ['@', '#', '$', '%', '&', '+'][Math.floor(Math.random() * 6)]; 
+            document.body.appendChild(e); setTimeout(() => {
+                e.remove()
+            }, 1000)
+            console.log(x,y)
+        }, 10000)
+    </script> </body>
+</html>

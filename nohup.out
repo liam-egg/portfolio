@@ -1,0 +1,147 @@
+1 | Bun.serve({
+        ^
+EADDRINUSE: Failed to start server. Is port 80 in use?
+ syscall: "listen"
+
+      at /home/ubuntu/app/http.js:1:5
+
+Bun v1.1.24 (Linux x64)
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/src/fishing.jpg
+Serving /home/ubuntu/app/fonts/icons.woff2
+File not found: /home/ubuntu/app/favicon.ico
+1 | Bun.serve({
+        ^
+EADDRINUSE: Failed to start server. Is port 80 in use?
+ syscall: "listen"
+
+      at /home/ubuntu/app/http.js:1:5
+
+Bun v1.1.24 (Linux x64)
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/src/fishing.jpg
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/fonts/icons.woff2
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/src/fishing.jpg
+Serving /home/ubuntu/app/fonts/icons.woff2
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/src/fishing.jpg
+Serving /home/ubuntu/app/fonts/icons.woff2
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/src/fishing.jpg
+Serving /home/ubuntu/app/fonts/icons.woff2
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/src/fishing.jpg
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/fonts/icons.woff2
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/src/fishing.jpg
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/fonts/icons.woff2
+[PM2] Applying action restartProcessId on app [https](ids: [ 1 ])
+[PM2] [https](1) ✓
+[PM2] Process successfully started
+┌────┬──────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name     │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼──────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 0  │ http     │ default     │ N/A     │ fork    │ 0        │ 0      │ 15   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 1  │ https    │ default     │ N/A     │ fork    │ 69972    │ 0s     │ 15   │ online    │ 0%       │ 10.6mb   │ root     │ disabled │
+└────┴──────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/src/fishing.jpg
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/fonts/icons.woff2
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/src/fishing.jpg
+Serving /home/ubuntu/app/fonts/icons.woff2
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/src/fishing.jpg
+Serving /home/ubuntu/app/fonts/icons.woff2
+File not found: /home/ubuntu/app/favicon.ico
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/fonts/icons.woff2
+File not found: /home/ubuntu/app/favicon.ico
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/fonts/light.woff2
+File not found: /home/ubuntu/app/favicon.ico
+Serving /home/ubuntu/app/fonts/icons.woff2
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/src/fishing.jpg
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/fonts/icons.woff2
+Serving /home/ubuntu/app/favicon.ico
+Serving /home/ubuntu/app/favicon.ico
+Serving /home/ubuntu/app/favicon.ico
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/fonts/icons.woff2
+Serving /home/ubuntu/app/favicon.ico
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/src/fishing.jpg
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/fonts/icons.woff2
+File not found: /home/ubuntu/app/robots.txt
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/index.html
+Serving /home/ubuntu/app/src/norway.bmp
+Serving /home/ubuntu/app/src/sabai.jpg
+Serving /home/ubuntu/app/fonts/light.woff2
+Serving /home/ubuntu/app/src/fishing.jpg
+Serving /home/ubuntu/app/fonts/brands.woff2
+Serving /home/ubuntu/app/fonts/icons.woff2
+Serving /home/ubuntu/app/favicon.ico
+Serving /home/ubuntu/app/index.html

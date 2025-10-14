@@ -1,0 +1,52 @@
+<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <meta 
+    name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>Blog</title> <link rel="stylesheet" href="../src/posts.css">
+</head> <body> <menu> <span class="name" onclick="location.href = 
+        '../blog.html#posts'">climology</span> <span class="date">August 17, 
+        2024</span> <span class="title">Lake Acidification</span> <span 
+        class="description">Seawater is becoming more acidic, in some places more 
+        so than was predicted until the end of the century.</span> <img 
+        src="https://www.treehugger.com/thmb/eqfPQqCeCvpZn_AZcXr94BSrnHY=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/lead-dbb2601dd64d49d2a5b3f9d5fc763096.jpg" 
+        alt=""> <span class="alt">Ijen Crater</span> <p><span
+            class="big">I</span>n 2017, New Zealand Geographic published an <a 
+            href="https://www.nzgeo.com/stories/acid-seas/">eye-opening article</a> 
+            on ocean acidification, and it's a wake-up call to see that some places 
+            are experiencing a surge in acidity, peaking at levels that the open 
+            ocean isn't predicted to reach until the end of this century. It's hard 
+            to believe how much our oceans are changing right under our noses.</p>
+        <p>The article explains how increased CO2 levels are making our seas more 
+            acidic, which is causing big problems for shellfish and coral reefs. 
+            Imagine trying to build a sandcastle with soggy sand—now think of 
+            shellfish trying to grow shells in more acidic waters. That's the 
+            reality for species like paua and oysters. They're struggling to form 
+            their protective layers, which is a huge issue for both the marine 
+            ecosystem and our local fisheries. The article also touches on the 
+            broader impact on New Zealand's coastal communities. Fishermen and 
+            local businesses that rely on these marine resources are facing 
+            uncertain futures. It's like watching a slow-motion train wreck: the 
+            effects are happening gradually, but the outcome is serious.</p>
+        <p>The piece emphasizes that addressing this issue starts with reducing 
+            carbon emissions and taking action to protect our oceans. It's a 
+            reminder of how interconnected everything is and how much our actions 
+            matter. This is a crucial topic that deserves more attention. It's 
+            clear that if we want to keep enjoying the bounty of our seas and 
+            protect the incredible marine life we have, we need to act now.</p>
+        <footer> <button onclick="location.href = '2.html'"> <span 
+                class="icon"></span> Last Post
+            </button> <button onclick="location.href = '4.html'"> Next Post <span 
+                class="icon"></span>
+            </button> </footer> </menu> <script> let x, y; 
+        window.addEventListener('mousemove', e => {
+            x = e.clientX; y = e.clientY;
+        })
+        setInterval(() => { const e = document.createElement('span'); 
+            e.classList.add('decor'); e.style.left = x + 'px'; e.style.top = y + 
+            'px'; e.style.rotate = Math.random() * 8 - 4 + 'deg'; e.textContent = 
+            ['@', '#', '$', '%', '&', '+'][Math.floor(Math.random() * 6)]; 
+            document.body.appendChild(e); setTimeout(() => {
+                e.remove()
+            }, 1000)
+            console.log(x,y)
+        }, 10000)
+    </script> </body>
+</html>

@@ -1,0 +1,55 @@
+<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <meta 
+    name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>Blog</title> <link rel="stylesheet" href="../src/posts.css">
+</head> <body> <menu> <span class="name" onclick="location.href = 
+        '../blog.html#posts'">climology</span> <span class="date">August 12, 
+        2024</span> <span class="title">Climate Goals: 2°C</span> <span 
+        class="description">Why 1.5 and 2 degrees Celsius? They're not just 
+        numbers—they're the tipping points that could redefine our planet's 
+        future.</span> <img 
+        src="https://i0.wp.com/sitn.hms.harvard.edu/wp-content/uploads/2015/12/Prime_Minister_Narendra_Modi_at_COP21_in_Paris.jpg?resize=1920%2C768&ssl=1" 
+        alt=""> <span class="alt">Heads of State and Government at COP21 in 
+        Paris</span> <p><span
+            class="big">I</span>n the final episode of Today I Learned: Climate, 
+            Laur Hesse Fisher and Maria Ivanova discuss the proposed temperature 
+            thresholds of 1.5 and 2 degrees Celsius. These targets are central to 
+            global climate goals, but where did they come from, and why are they so 
+            important? The 2-degree Celsius limit was first proposed by economist 
+            William Nordhaus in 1975.He suggested the threshold as a guideline of 
+            what must be done to prevent harsh climate conditions that humanity had 
+            never experienced prior. The simplicity of this number made it 
+            memorable and influential in subsequent climate policy discussions.</p>
+        <p>The 1.5-degree target emerged from the 2009 Copenhagen Climate Summit, 
+            driven by the Association of Small Island States (AOSIS). Countries 
+            like Fiji and the Maldives pushed for this stricter limit, largely 
+            because they themselves faced severe risks from rising sea levels. The 
+            IPCC later produced a special report which showed just how different 
+            the 1.5- and 2-degree rises were. Nowadays, these temperature goals 
+            function as benchmarks in international agreements like the Paris 
+            Climate Agreement. While not legally enforceable, they galvanize global 
+            action, and have led to profound investment in renewable energy and 
+            driving policy changes.</p>
+                
+        <p>These temperature thresholds are more than numbers: they represent our 
+            collective commitment to mitigating climate change and securing our 
+            planet's future. Understanding their origins and significance helps us 
+            understand the urgency of our climate efforts.</p>
+        <footer> <button onclick="location.href = '3.html'"> <span 
+                class="icon"></span> Last Post
+            </button> <button onclick="location.href = '5.html'"> Next Post <span 
+                class="icon"></span>
+            </button> </footer> </menu> <script> let x, y; 
+        window.addEventListener('mousemove', e => {
+            x = e.clientX; y = e.clientY;
+        })
+        setInterval(() => { const e = document.createElement('span'); 
+            e.classList.add('decor'); e.style.left = x + 'px'; e.style.top = y + 
+            'px'; e.style.rotate = Math.random() * 8 - 4 + 'deg'; e.textContent = 
+            ['@', '#', '$', '%', '&', '+'][Math.floor(Math.random() * 6)]; 
+            document.body.appendChild(e); setTimeout(() => {
+                e.remove()
+            }, 1000)
+            console.log(x,y)
+        }, 10000)
+    </script> </body>
+</html>

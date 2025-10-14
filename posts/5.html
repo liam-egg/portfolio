@@ -1,0 +1,52 @@
+<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <meta 
+    name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>Blog</title> <link rel="stylesheet" href="../src/posts.css">
+</head> <body> <menu> <span class="name" onclick="location.href = 
+        '../blog.html#posts'">climology</span> <span class="date">August 12, 
+        2024</span> <span class="title">UT Computer Science - Academy for 
+        Robotics</span> <span class="description">From operating the da Vinci 
+        surgical robot to maneuvering Boston Dynamics' Spot, my week at UT provided 
+        an in-depth look into the advanced world of robotics and emphasized the 
+        intersection of technology and innovation.</span> <img 
+        src="https://bostondynamics.com/wp-content/uploads/2023/04/doing-more-with-spot-rajant-1-1.png" 
+        alt=""> <span class="alt">Boston Dynamics' "Spot" Robot</span> <p><span 
+        class="first">I</span>'ve just gotten home from my week-long
+            robotics program at UT (University of Texas). Throughout the program, I 
+            improved my proficiency in C++ as well as learning how to use Arduino. 
+            I hoped to meet with a professor, David Eaton, to discuss his expertise 
+            in water conservation and pollution prevention to help me consolidate 
+            my future projects (and maybe my future career) but was unfortunately 
+            not allowed to leave the big group to do so. Even though I couldn't do 
+            some of the things I wanted, the program offered many other endeavors I 
+            enjoyed; we got a campus tour, as well as a tour of the Department of 
+            Computer Science building. I learned about FDM, SLM, and EBM printing, 
+            as well as several other techniques used to produce a product with 
+            zero-tolerance machining (I was even introduced to the metrology staff 
+            and room).</p> <p>I also got to see engineering applied to the field of 
+            medicine: I tried out the da Vinci medical robot, as well as other 
+            tools that provide haptic feedback, and explored the applications of 
+            those tools, be it future or current. Finally, we saw some projects 
+            that yield more to the stereotypical concept of robotics-- we saw the 
+            Boston Dynamics dog, Spot, and I even got to maneuver it up and down 
+            stairs, as well as around the room. There's some super cool stuff in 
+            the field of robotics that I hope to one day be able to contribute 
+            to.</p>
+        <footer> <button onclick="location.href = '4.html'"> <span 
+                class="icon"></span> Last Post
+            </button> <button onclick="location.href = '6.html'"> Next Post <span 
+                class="icon"></span>
+            </button> </footer> </menu> <script> let x, y; 
+        window.addEventListener('mousemove', e => {
+            x = e.clientX; y = e.clientY;
+        })
+        setInterval(() => { const e = document.createElement('span'); 
+            e.classList.add('decor'); e.style.left = x + 'px'; e.style.top = y + 
+            'px'; e.style.rotate = Math.random() * 8 - 4 + 'deg'; e.textContent = 
+            ['@', '#', '$', '%', '&', '+'][Math.floor(Math.random() * 6)]; 
+            document.body.appendChild(e); setTimeout(() => {
+                e.remove()
+            }, 1000)
+            console.log(x,y)
+        }, 10000)
+    </script> </body>
+</html>

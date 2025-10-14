@@ -1,0 +1,127 @@
+<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <meta 
+    name="viewport" content="width=device-width, initial-scale=1.0"> <link 
+    rel="preconnect" href="https://fonts.googleapis.com"> <link rel="preconnect" 
+    href="https://fonts.gstatic.com" crossorigin> <link 
+    href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400;500;600;700;800;900&family=Kameron:wght@400&family=Newsreader:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&display=swap" 
+    rel="stylesheet"> <title>Blog</title> <style>
+        @font-face { font-family: Icons; src: url('./assets/regular.woff2') 
+            format('woff2');
+        }
+        span.icon { font-family: Icons; } * { margin: 0; padding: 0; outline: none; 
+            border: none; font-family: "Newsreader", serif;
+        }
+        body { background: #fcfaf6; height: 100vh; overflow-x: hidden; display: 
+            grid; grid-template: 100px 1fr 40px / 100%;
+        }
+        header { height: 100px; color: #ff6654; padding: 0 30px; display: flex; 
+            align-items: center; gap: 20px;
+        }
+        header * { font-family: "Gabarito", sans-serif; } header > span { 
+            font-weight: 550; font-size: 23px; margin-right: auto;
+        }
+        header > a { font-size: 17px; color: #ff6654; background: none; 
+            text-decoration: none; display: flex; align-items: center; gap: 8px;
+        }
+        header > a > span.icon { font-size: 14px; }
+        
+        main { padding: 0 30px; display: flex; flex-direction: column; align-items: 
+            center; gap: 17px;
+        }
+        main > div { padding: 50px 30px; min-height: 300px; display: grid; 
+            align-items: center; grid-template-columns: 1fr 400px; column-gap: 
+            50px;
+        }
+        main > div > div { display: grid; gap: 20px; justify-items: center;
+        }
+        main > div > img { position: relative; width: 100%; max-height: 400px; 
+            object-fit: cover;
+        }
+        main > div > div > span.header { font-size: 30px; margin: 0;
+        }
+        main > div > div > span.synopsis { margin: 0; font-size: 15px; line-height: 
+            23px; font-style: normal;
+        }
+        span.header { font-size: 46px; max-width: 700px; margin-top: 50px; 
+            text-align: center;
+        }
+        span.synopsis { font-style: italic; font-size: 20px; line-height: 30px; 
+            max-width: 700px; margin-top: 20px; text-align: center;
+        }
+        span.date { font-family: "Kameron", serif; text-transform: uppercase;
+        }
+        hr { width: 100vw; height: 6px; background: linear-gradient(#B4ADA0 0, 
+            #B4ADA0 1px, white 3px, white 4px, #B4ADA0 5px);
+        }
+        footer { background: #0e0c0c; color: white; font-weight: 500; display: 
+            flex; align-items: center; justify-content: center; gap: 4px;
+        }
+        nav { max-width: 1300px; width: 100%; margin-bottom: 30px; display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); 
+            grid-auto-rows: auto;
+        }
+        nav > a { padding: 20px; text-decoration: none; color: black; display: 
+            flex; flex-direction: column; align-items: center; justify-content: 
+            space-between;
+        }
+        nav > a > img { width: 100%; height: 200px; object-fit: cover;
+        }
+        nav > a > span.header { font-size: 25px; line-height: 30px;
+        }
+        nav > a > span.synopsis { font-size: 18px; line-height: 23px;
+        }
+        nav > a > span.date { font-size: 13px; margin-top: 15px;
+        }
+    </style> </head> <body> <header> <span>Liam Eggleston</span> <a 
+        href="https://liameggleston.com/">
+            <span class="icon"></span> Portfolio </a> <a 
+        href="https://liameggleston.com/resume.pdf">
+            <span class="icon"></span> Resumé </a> </header> <main> <hr> <div> 
+            <img 
+            src="https://www.treehugger.com/thmb/eqfPQqCeCvpZn_AZcXr94BSrnHY=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/lead-dbb2601dd64d49d2a5b3f9d5fc763096.jpg" 
+            alt=""> <div>
+                <span class="header">Lake Acidification</span> <span 
+                class="synopsis">Seawater is becoming more acidic, in some places 
+                more so than was predicted until the end of the century.</span> 
+                <span class="date">October 5, 2024</span>
+            </div> </div> <hr> <nav> <a href="./posts/1.html"> <img 
+                src="https://e360.yale.edu/assets/site/_1260x709_crop_center-center/Sabai_Alamy-Small.jpg" 
+                alt=""> <span class="header">As Himalayan Glaciers Melt, a Water 
+                Crisis Looms in South Asia</span> <span class="synopsis">Warmer air 
+                is melting the glaciers of the Himalayas. The melting could have 
+                far-reaching consequences for flood risk and for water security for 
+                a billion people who rely on meltwater for their survival.</span> 
+                <span class="date">October 5, 2024</span>
+            </a> <a href="./posts/2.html"> <img src="../assets/norway.jpeg" alt=""> 
+                <span class="header">Climbing in Norway</span> <span 
+                class="synopsis">Documenting my three-week climbing and sightseeing 
+                experience in Norway</span> <span class="date">August 3, 
+                2024</span>
+            </a> <a href="./posts/3.html"> <img 
+                src="https://www.treehugger.com/thmb/eqfPQqCeCvpZn_AZcXr94BSrnHY=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/lead-dbb2601dd64d49d2a5b3f9d5fc763096.jpg" 
+                alt=""> <span class="header">Lake Acidification</span> <span 
+                class="synopsis">Seawater is becoming more acidic, in some places 
+                more so than was predicted until the end of the century.</span> 
+                <span class="date">August 17, 2024</span>
+            </a> <a href="./posts/4.html"> <img 
+                src="https://i0.wp.com/sitn.hms.harvard.edu/wp-content/uploads/2015/12/Prime_Minister_Narendra_Modi_at_COP21_in_Paris.jpg?resize=1920%2C768&ssl=1" 
+                alt=""> <span class="header">Climate Goals: 2°C</span> <span 
+                class="synopsis">Why 1.5 and 2 degrees Celsius? They're not just 
+                numbers—they're the tipping points that could redefine our planet's 
+                future.</span> <span class="date">August 12, 2024</span>
+            </a> <a href="./posts/5.html"> <img 
+                src="https://bostondynamics.com/wp-content/uploads/2023/04/doing-more-with-spot-rajant-1-1.png" 
+                alt=""> <span class="header">UT Computer Science - Academy for 
+                Robotics</span> <span class="synopsis">From operating the da Vinci 
+                surgical robot to maneuvering Boston Dynamics' Spot, my week at UT 
+                provided an in-depth look into the advanced world of robotics and 
+                emphasized the intersection of technology and innovation.</span> 
+                <span class="date">August 12, 2024</span>
+            </a> <a href="./posts/6.html"> <img src="./assets/alteryx.png" alt=""> 
+                <span class="header">TCU Neeley Data Analytics Academy</span> <span 
+                class="synopsis">Learning essential skills in data science and 
+                analytics including scraping and cleaning data to analysis and 
+                visualization</span> <span class="date">July 13, 2024</span>
+            </a> </nav> </main> <footer>Design inspired by <a 
+    href="https://e360.yale.edu/">Yale Environment 360</a></footer>
+</body>
+</html>

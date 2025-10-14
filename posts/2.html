@@ -1,0 +1,46 @@
+<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <meta 
+    name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>Blog</title> <link rel="stylesheet" href="../src/posts.css">
+</head> <body> <menu> <span class="name" onclick="location.href = 
+        '../blog.html#posts'">climology</span> <span class="date">August 3, 
+        2024</span> <span class="title">Climbing in Norway</span> <span 
+        class="description">Documenting my three-week climbing and sightseeing 
+        experience in Norway</span> <img src="../src/norway.bmp" alt=""> <span 
+        class="alt">Me on a bat hang rest on Flagermusmannen 8a in Hanshelleren 
+        Cave, Flatanger, Norway</span> <p><span class="big">I</span>'ve
+            just gotten back from my 3-week climbing trip to Norway and although 
+            I'm happy to be back, I'll certainly miss the people and weather I got 
+            to experience there.</p>
+        <p>I got the chance to meet plenty of super nice people at the crag and 
+            watch Leo Bøe and Sébastien Bouin climb while I myself got humiliated 
+            on the wall (only having lead outside a time or two prior). The 
+            following weeks were full not only of climbing at Hans Cave, but also 
+            of Cards Against Humanity playing. berry picking and pie baking, 
+            Jackass watching, unsuccessful fishing, puzzle making, lecture 
+            receiving, colorful mormonism discussion, and lots of hiking. Norway is 
+            a beautiful country and I would definitely go back if could. One of my 
+            counselors, Aaron (who runs Alpha Climbing) is great at making trips 
+            fun and keeping teenagers alive and fed the whole time (thanks in 
+            addition to Selma, our sous chef). I was also blessed most notably with 
+            the heavenly creation that is Brown Cheese (brunost) at the 
+            recommendation of a friend. I had a wonderful time with many wonderful 
+            people.</p>
+        <footer> <button onclick="location.href = '1.html'"> <span 
+                class="icon"></span> Last Post
+            </button> <button onclick="location.href = '3.html'"> Next Post <span 
+                class="icon"></span>
+            </button> </footer> </menu> <script> let x, y; 
+        window.addEventListener('mousemove', e => {
+            x = e.clientX; y = e.clientY;
+        })
+        setInterval(() => { const e = document.createElement('span'); 
+            e.classList.add('decor'); e.style.left = x + 'px'; e.style.top = y + 
+            'px'; e.style.rotate = Math.random() * 8 - 4 + 'deg'; e.textContent = 
+            ['@', '#', '$', '%', '&', '+'][Math.floor(Math.random() * 6)]; 
+            document.body.appendChild(e); setTimeout(() => {
+                e.remove()
+            }, 1000)
+            console.log(x,y)
+        }, 10000)
+    </script> </body>
+</html>

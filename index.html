@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Manrope:wght@200..800&display=swap" rel="stylesheet">
+    <title>Liam Eggleston</title>
+    <style>
+        @font-face {
+            font-family: Icons;
+            src: url('./fonts/icons.woff2') format('woff2');
+        }
+        @font-face {
+            font-family: Icons;
+            src: url('./fonts/light.woff2') format('woff2');
+            font-weight: 100;
+        }
+        @font-face {
+            font-family: Icons;
+            src: url('./fonts/brands.woff2') format('woff2');
+        }
+
+        @font-face {
+            font-family: Haas;
+            src: url(src/Haas1.woff2) format('woff2');
+            font-weight: 400;
+        }
+
+        span.icon { font-family: Icons; }
+        span.icon.light { font-weight: 100; }
+
+        * {
+            margin: 0;
+            padding: 0;
+            outline: none;
+            background: none;
+            border: none;
+        }
+
+        body {
+            background: #0c0b0c;
+            font-family: "Manrope", sans-serif;
+        }
+
+        .monospace {
+            font-family: "JetBrains Mono", monospace;
+        }
+
+        nav#directory {
+            position: fixed;
+            height: 100%;
+            width: 350px;
+            padding: 0 30px;
+            font-weight: 600;
+            font-size: 22px;
+            background: linear-gradient(to right, #000000e0 0%, transparent 100%);
+            z-index: 1;
+
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            justify-content: center;
+        }
+        nav#directory > a {
+            color: #cec0c7;
+            text-decoration: none;
+            transition: font-size 0.2s,
+                text-shadow 0.2s;
+            width: max-content;
+        }
+        nav#directory > span {
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-weight: 700;
+            margin-bottom: -10px;
+            border-bottom: 2px solid #353133;
+            padding-bottom: 17px;
+            width: 250px;
+            font-size: 23px;
+        }
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+        nav#directory > a:hover, nav#directory > a.active {
+            font-size: 25px;
+            text-shadow: 0 0 10px #7c7378;
+            animatioN: float 60s infinite ease;
+        }
+        nav#directory > a.active::after {
+            content: '_';
+            color: #857a7f;
+            animation: blink 1s infinite steps(1);
+        }
+        nav#directory > a > span { color: #857a7f; }
+
+        main {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            scroll-behavior: smooth;
+            overflow: hidden auto;
+            /* left: calc(155px + 50vw);
+            transform: translateX(-50%); */
+
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        section {
+            --color: white;
+            --secondary: #bdb3b7;
+            position: relative;
+            width: min(1000px, calc(100vw - 100px));
+            padding: 50px calc(50vw - 500px);
+        }
+        section > span.section {
+            width: 100%;
+            font-size: 30px;
+            font-weight: 600;
+            color: var(--secondary);
+            margin-top: 50px;
+
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            justify-content: center;
+        }
+        section > span.header {
+            display: block;
+            width: 100%;
+            text-align: center;
+            font-size: 60px;
+            color: var(--color);
+            font-weight: 700;
+            animation: float 60s infinite ease;
+            margin-top: 10px;
+        }
+        @keyframes float {
+            0%   { transform: translate(0px, 0px) rotate(0deg); }
+            6%   { transform: translate(-3px, 1px) rotate(-0.3deg); }
+            14%  { transform: translate(2px, -5px) rotate(0.2deg); }
+            23%  { transform: translate(-4px, -3px) rotate(0.1deg); }
+            38%  { transform: translate(1px, 3px) rotate(-0.4deg); }
+            52%  { transform: translate(-2px, 2px) rotate(0.3deg); }
+            66%  { transform: translate(3px, -2px) rotate(-0.2deg); }
+            79%  { transform: translate(-1px, 4px) rotate(0.1deg); }
+            92%  { transform: translate(2px, -1px) rotate(-0.3deg); }
+            100% { transform: translate(0px, 0px) rotate(0deg); }
+        }
+        section > p {
+            font-size: 20px;
+            color: #cec0c7;
+            line-height: 1.5;
+            margin-top: 50px;
+            text-align: justify;
+            padding: 0 30px;
+        }
+        section#about {
+            min-height: calc(100vh - 100px);
+
+            display: flex;
+            flex-direction: column;
+            align-content: center;
+            justify-content: center;
+        }
+        section#about::before {
+            content: '';
+            position: absolute;
+            width: 100vw;
+            height: 100%;
+            top: 0;
+            background-image: url(src/fishing.jpg);
+            background-size: cover;
+            z-index: -1;
+            filter: brightness(0.3);
+            align-self: center;
+        }
+        section#technologies > nav {
+            margin-top: 80px;
+
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            grid-auto-rows: 60px;
+            gap: 20px;
+        }
+        section#technologies > nav > article {
+            padding: 10px;
+            background: #1b1a1a;
+            border-radius: 10px;
+            font-size: 18px;
+            color: #cec0c7;
+            font-weight: 600;
+
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        section#technologies > nav > article > img {
+            width: 40px;
+            height: 40px;
+            object-fit: contain;
+        }
+        section.light {
+            --secondary: #4d4a4a;
+            --color: #1a1919;
+            background: #f0f0f0;
+        }
+        section#blog > nav {
+            margin-top: 50px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            grid-auto-rows: 425px;
+        }
+        section#blog > nav > article {
+            background: #e4e1e3;
+            padding: 18px 20px;
+            border-radius: 15px;
+            margin: 20px;
+            position: relative;
+
+            display: grid;
+            flex-direction: column;
+            gap: 15px;
+            grid-template-rows: 18px 140px 20px 1fr 40px;
+        }
+        section#blog > nav > article > span.date {
+            font-size: 14px;
+            color: #7c7378;
+            font-weight: 600;
+        }
+        section#blog > nav > article > img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 10px;
+        }
+        section#blog > nav > article > span.title {
+            font-size: 20px;
+            color: #1a1919;
+            font-weight: 600;
+        }
+        section#blog > nav > article > span.description {
+            color: #7c7378;
+            margin-bottom: -10px;
+        }
+        section#blog > nav > article > a {
+            font-family: "Manrope", sans-serif;
+            color: #7c7378;
+            cursor: pointer;
+            width: max-content;
+            font-size: 16px;
+            font-weight: 550;
+            text-decoration: none;;
+
+            display: flex;
+            align-self: center;
+            align-items: end;
+            gap: 10px;
+        }
+        section#music > iframe {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            margin-top: 50px;
+            background: black;
+        }
+        section#music > iframe + span {
+            font-size: 20px;
+            color: #cec0c7;
+            margin-top: 10px;
+            font-weight: 600;
+
+            display: flex;
+            justify-content: space-between;
+        }
+        section#music > iframe + span > span {
+            color: var(--secondary);
+            text-align: end;
+            font-weight: 400;
+        }
+        section#music > div {
+            margin-top: 50px;
+            width: 100%;
+
+            display: grid;
+            grid-template: 400px / 1fr 1fr;
+            gap: 20px;
+        }
+        section#music > div > article {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        section#music > div > article > iframe {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            object-fit: cover;
+            border-radius: 10px;
+        }
+        section#music > div > article > span {
+            font-size: 18px;
+            color: #cec0c7;
+            font-weight: 600;
+        }
+        section#music > div > article > span:last-child {
+            color: var(--secondary);
+            font-weight: 400;
+            margin-top: -10px;
+        }
+        section#music > nav {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 20px;
+        }
+        section#music > nav > article {
+            background: #151515;
+            padding: 18px 20px;
+            border-radius: 10px;
+            color: var(--color);
+            font-weight: 600;
+            font-size: 18px;
+            height: max-content;
+
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        section#music > nav > article > span:last-child {
+            color: var(--secondary);
+            font-weight: 400;
+            margin-top: -5px;
+        }
+
+        section#projects > nav {
+            margin-top: 50px;
+
+            display: grid;
+            gap: 30px;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+        }
+        section#projects > nav > article {
+            background: #e4e1e3;
+            padding: 18px 20px;
+            border-radius: 15px;
+            position: relative;
+
+            display: grid;
+            flex-direction: column;
+            gap: 6px;
+            grid-template-rows: 18px auto auto 35px;
+        }
+        section#projects > nav > article > span.date {
+            font-size: 14px;
+            color: #7c7378;
+            font-weight: 600;
+        }
+        section#projects > nav > article > span.title {
+            font-size: 20px;
+            color: #1a1919;
+            font-weight: 600;
+        }
+        section#projects > nav > article > span.description {
+            color: #7c7378;
+            margin-bottom: -10px;
+        }
+        section#projects > nav > article > div {
+            margin-left: auto;
+            height: 40px;
+            
+            display: flex;
+            gap: 10px;
+        }
+        section#projects > nav > article > div > a {
+            font-size: 30px;
+            color: var(--color);
+            text-decoration: none;
+        }
+
+        section#curricula > ul {
+            color: var(--color);
+            margin-top: -15px;
+            margin-bottom: 20px;
+            font-size: 18px;
+            padding-left: 20px;
+            list-style-type: circle;
+            line-height: 30px;
+        }
+        section#curricula > p {
+            padding: 0;
+            margin: 10px 0 30px;
+        }
+        section#curricula > ul > li {
+            padding-left: 10px;
+            margin-top: 10px;
+        }
+        section#curricula > ul > li > p { margin-bottom: 10px; }
+        section#curricula > ul > li > span {
+            color: var(--secondary);
+            font-size: 16px;
+
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        section#curricula > ul > li > span > a {
+            color: #4848bd;
+            text-underline-offset: 3px;
+            font-size: 18px;
+        }
+        section#curricula > ul > li > ul {
+            padding-left: 20px;
+        }
+        section#curricula > ul > li > ul > li {
+            padding-left: 10px;
+        }
+        section#curricula > hr {
+            height: 1px;
+            margin: 5px 0 23px;
+            background: var(--black);
+            opacity: 0.15;
+        }
+        section#curricula > span.sub {
+            color: var(--color);
+            font-size: 22px;
+            font-weight: 600;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            margin-bottom: 10px;
+        }
+        section#curricula > span.sub + p { color: var(--secondary); }
+    </style>
+</head>
+<body>
+    <nav id="directory" class="monospace">
+        <span><span class="icon" style="font-weight: 300;"></span>Liam Eggleston</span>
+        <a href="#about" class="active"><span>S:</span>/about/</a>
+        <a href="#technologies"><span>S:</span>/technologies/</a>
+        <a href="#blog"><span>S:</span>/blog/</a>
+        <a href="#music"><span>S:</span>/music/</a>
+        <a href="#projects"><span>S:</span>/projects/</a>
+        <a href="#curricula"><span>S:</span>/curricula/</a>
+        <a href="resume.pdf"><span>S:</span>/resume.pdf</a>
+    </nav>
+    <main>
+        <section id="about">
+            <span class="section"><span class="icon"></span>about me</span>
+            <span class="header">Hello! I'm Liam Eggleston.</span>
+            <p>
+                Hello! I'm Liam, a 16-year-old student living in Austin, TX. I'm interested in all things computer science, from backend development to GLSL shaders. Currently, I'm pursuing my interest in environmental data science, and have attended a data science program last summer at TCU as well as applying my knowledge to a climate research fellowship at Stanford. Outside of programming, I enjoy playing the piano, as I have done for the last 12 years. I am also on a competitive rock climbing team, and will attend nationals this summer for speed climbing. Last summer, I spent a month in Norway, where I not only discovered a foreign culture, but also polished my sport climbing skills. Finally comes my interest in mathematics. I've been interested in math, and it has since inspired projects and course selections, and is likely one of the reasons data science is one of my main interests.
+            </p>
+        </section>
+        <section id="technologies">
+            <span class="section"><span class="icon"></span>technologies</span>
+            <span class="header">Familiar Frameworks</span>
+            <p>Below are a list of the technologies I consider myself familiar with, having completed at least one project with each. These include web development frameworks, programming languages, and major libraries like TensorFlow, a machine learning library developed by Google.</p>
+            <nav>
+                <article>
+                    <img src='https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/JavaScript-logo.png/800px-JavaScript-logo.png' alt='JavaScript'>
+                    <p>JavaScript</p>
+                </article>
+                <article>
+                    <img src='https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Typescript_logo_2020.svg/2048px-Typescript_logo_2020.svg.png' alt='TypeScript'>
+                    <p>TypeScript</p>
+                </article>
+                <article>
+                    <img src='https://upload.wikimedia.org/wikipedia/commons/thumb/6/62/CSS3_logo.svg/800px-CSS3_logo.svg.png' alt='CSS'>
+                    <p>CSS</p>
+                </article>
+                <article>
+                    <img src='https://cdn.worldvectorlogo.com/logos/html-1.svg' alt='HTML'>
+                    <p>HTML</p>
+                </article>
+                <article>
+                    <img src='https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Go_Logo_Blue.svg/1200px-Go_Logo_Blue.svg.png' alt='Go' style='scale: 1.1'>
+                    <p>Go</p>
+                </article>
+                <article>
+                    <img src='https://i.pinimg.com/originals/95/91/ed/9591ed82caa8d20c30db96cb7298d3a9.png' alt='Python' style='scale: 0.85'>
+                    <p>Python</p>
+                </article>
+                <article>
+                    <img src='https://raw.githubusercontent.com/nim-lang/assets/master/Art/logo-crown.png' alt='Nim'>
+                    <p>Nim</p>
+                </article>
+                <article>
+                    <img src='https://i.ibb.co/0DF5cVS/5848104fcef1014c0b5e4950.png' alt='MySQL' style='scale: 0.8'>
+                    <p>MySQL</p>
+                </article>
+                <article>
+                    <img src='https://cdn-icons-png.flaticon.com/512/5968/5968322.png' alt='NodeJS'>
+                    <p>NodeJS</p>
+                </article>
+                <article>
+                    <img src='https://www.svgrepo.com/show/354113/nextjs-icon.svg' alt='NextJS' style='filter: invert()'>
+                    <p>NextJS</p>
+                </article>
+                <article>
+                    <img src='https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Tailwind_CSS_Logo.svg/800px-Tailwind_CSS_Logo.svg.png' alt='TailwindCSS'>
+                    <p>TailwindCSS</p>
+                </article>
+                <article>
+                    <img src='https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/Tensorflow_logo.svg/1200px-Tensorflow_logo.svg.png' alt='TensorFlow'>
+                    <p>TensorFlow</p>
+                </article>
+                <article>
+                    <img src='https://upload.wikimedia.org/wikipedia/commons/thumb/b/b2/Bootstrap_logo.svg/2560px-Bootstrap_logo.svg.png' alt='Bootstrap'>
+                    <p>Bootstrap</p>
+                </article>
+                <article>
+                    <img src='https://static-00.iconduck.com/assets.00/github-icon-2048x1988-jzvzcf2t.png' alt='GitHub'>
+                    <p>GitHub</p>
+                </article>
+                <article>
+                    <img src='https://git-scm.com/images/logos/downloads/Git-Icon-1788C.png' alt='Git'>
+                    <p>Git</p>
+                </article>
+                <article>
+                    <img src='https://files.raycast.com/ar4rsniqg02vkexm45c5udv37fst' alt='NPM'>
+                    <p>NPM</p>
+                </article>
+            </nav>
+        </section>
+        <section id="blog" class="light">
+            <span class="section"><span class="icon"></span>blog</span>
+            <span class="header">Recent Posts</span>
+            <nav>
+                <article>
+                    <span class="date">October 5, 2024</span>
+                    <img src="src/sabai.jpg" alt="">
+                    <span class="title">Himalayan Glaciers</span>
+                    <span class="description">Warmer air is melting the glaciers of the Himalayas. The melting could have far-reaching consequences for flood....</span>
+                    <a href="https://liameggleston.com/posts/1.html">Read More<span class="icon"></span></a>
+                </article>
+                <article>
+                    <span class="date">August 3, 2024</span>
+                    <img src="src/norway.bmp" alt="">
+                    <span class="title">Climbing in Norway</span>
+                    <span class="description">Documenting my three-week climbing and sightseeing experience in Norway.</span>
+                    <a href="https://liameggleston.com/posts/2.html">Read More<span class="icon"></span></a>
+                </article>
+                <article>
+                    <span class="date">August 17, 2024</span>
+                    <img src="https://www.treehugger.com/thmb/eqfPQqCeCvpZn_AZcXr94BSrnHY=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/lead-dbb2601dd64d49d2a5b3f9d5fc763096.jpg" alt="">
+                    <span class="title">Lake Acidification</span>
+                    <span class="description">Seawater is becoming more acidic, in some places more so than was predicted until the end of the century.</span>
+                    <a href="https://liameggleston.com/posts/3.html">Read More<span class="icon"></span></a>
+                </article>
+                <article>
+                    <span class="date">August 12, 2024</span>
+                    <img src="https://grist.org/wp-content/uploads/2015/12/cop21-c-conexiocc81ncop-agencia-de-noticias.jpg?resize=1200%2C675&quality=75&strip=all" alt="">
+                    <span class="title">Climate Goals: 2°C</span>
+                    <span class="description">Why 1.5 and 2 degrees Celsius? They're not just numbers—they're the tipping points that could redefine our planet's future.</span>
+                    <a href="https://liameggleston.com/posts/4.html">Read More<span class="icon"></span></a>
+                </article>
+            </nav>
+        </section>
+        <section id="music">
+            <span class="section"><span class="icon"></span>music</span>
+            <span class="header">Piano Repertoire</span>
+            <p>I've been playing piano ever since I was 4 (almost 13 years now!). In middle school, I participated in my school's band in addition to private lessons. In high school, also in addition to private lessons, I played in my school's jazz band, and I am also in my school's orchestra. The orchestra director has asked me to play Rachmaninoff's Second Piano Concerto (the third movement) for next year, and it's a piece I've wanted to play for a long time. Some past songs of mine since the spring of 2021 are listed below.</p>
+            <iframe src="https://drive.google.com/file/d/1wgOBPrdxkFT1jKfKX-TT16QUdYAW4g6C/preview" allow="autoplay"></iframe>
+            <span>Rachmaninoff: Piano Concerto No. 2, Op. 18: 2. Adagio sostenuto <span>Winter 2024</span></span>
+            <div>
+                <article>
+                    <iframe src="https://drive.google.com/file/d/18NdYvDFhQ-6tW7yGRkf8FmnVTgkwYqcM/preview" allow="autoplay"></iframe>
+                    <span>Debussy: Suite bergamasque, L. 75: I. Prélude</span>
+                    <span>Spring 2025</span>
+                </article>
+                <article>
+                    <iframe src="https://drive.google.com/file/d/1aiCzQO9NftfVnRx76Jk_OWjwX_7_SjqU/preview" allow="autoplay"></iframe>
+                    <span>Liszt: 3 Études de Concert, S. 144: No. 3 "Un sospiro"</span>
+                    <span>Spring 2024</span>
+                </article>
+            </div>
+            <nav>
+                <article>
+                    <span>Debussy: Danse (Tarantelle styrienne), L. 69</span>
+                    <span>Spring 2025</span>
+                </article>
+                <article>
+                    <span>Liszt: Liebestraum No. 3, S. 541 / 3</span>
+                    <span>Spring 2024</span>
+                </article>
+                <article>
+                    <span>Chopin: "Revolutionary" Étude Op. 10 No. 12</span>
+                    <span>Winter 2023</span>
+                </article>
+                <article>
+                    <span>Beethoven: Sonata No. 14 "Moonlight"</span>
+                    <span>Spring 2023</span>
+                </article>
+                <article>
+                    <span>Mendelssohn: Rondo Capriccioso, Op. 14: 1. Andante</span>
+                    <span>Winter 2022</span>
+                </article>
+                <article>
+                    <span>Chopin: "Torrent" Étude Op. 10 No. 4</span>
+                    <span>Spring 2022</span>
+                </article>
+                <article>
+                    <span>Rachmaninoff: Prelude in C-Sharp Minor, Op. 3 No. 2</span>
+                    <span>Winter 2021</span>
+                </article>
+                <article>
+                    <span>Paganini/Liszt: La Campanella</span>
+                    <span>Spring 2021</span>
+                </article>
+            </nav>
+        </section>
+        <section id="projects" class="light">
+            <span class="section"><span class="icon"></span>projects</span>
+            <span class="header">Research and Projects</span>
+            <nav>
+                <article>
+                    <span class="date">June 3, 2025</span>
+                    <span class="title">Leveraging Cherokee for Endangered Language Identification</span>
+                    <span class="description">In this study, we assess the performance of Google LangID on a 5k Cherokee dataset and find that every sentence is classified as "undetermined", indicating...</span>
+                    <div>
+                        <a href="https://github.com/Cherokee-Project/Classifier"><span class="icon"></span></a>
+                    </div>
+                </article>
+                <article>
+                    <span class="date">June 3, 2025</span>
+                    <span class="title">Can You Hear Naples?</span>
+                    <span class="description">This paper presents the creation and analysis of the first spoken corpus for Neapolitan, a richly historic but under-resourced Romance dialect of Southern Italy. Despite...</span>
+                    <div>
+                    </div>
+                </article>
+            </nav>
+        </section>
+        <section id="curricula">
+            <span class="section"><span class="icon"></span>curricula</span>
+            <span class="header" style="margin-bottom: 50px;">Past and Future Courses</span>
+            <span class="sub">Future Coursework</span>
+            <p>Courses I plan to take next year (during my senior year) of high school</p>
+            <ul>
+                <li>Linear Algebra (Independent Study)</li>
+                <li>Differential Equations (Independent Study)</li>
+                <li>Quantum Mechanics (Independent Study)</li>
+                <li>Principles of Engineering</li>
+                <li>Independent Projects in Computer Science</li>
+                <li>Projects in Science and Technology</li>
+                <li>English 12</li>
+                <li>Theology</li>
+                <li>Orchestra</li>
+                <li>Sinfonietta</li>
+                <li>Private Lesson - Piano</li>
+            </ul>
+            <hr>
+            <span class="sub">Relevant Coursework</span>
+            <p>Extracurricular courses relevant to my focus on environmentalism and data science</p>
+            <ul>
+                <li>
+                    <span>
+                        <a href="">What is data science? | Coursera, IBM</a>
+                        July 2024
+                    </span>
+                    <ul>
+                        <li>Identified the importance and applications of data science in today's data-driven world</li>
+                        <li>Explored the various paths that can lead to a career in data science</li>
+                        <li>Learned from advice given by seasoned data science professionals to beginner data scientists</li>
+                    </ul>
+                </li>
+                <li>
+                    <span>
+                        <a href="">Introduction to Data Science Specialization | Coursera, IBM</a>
+                        July 2024
+                    </span>
+                    <ul>
+                        <li>Explored the applications of data science to machine learning, its applications and use cases, and various types of tasks performed by data scientists</li>
+                        <li>Gained hands-on familiarity with common data sicence tools including JupyterLab, R Studio, and Watson Studio</li>
+                        <li>Developed the mindset wto work like a data scientist and folow a methodology to tackle different types of data science problems</li>
+                        <li>Wrote SQL statements and queried Cloud databases using Python from Jupyter notebooks</li>
+                    </ul>
+                </li>
+                <li>
+                    <span>
+                        <a href="">Foundations of Data Science | Coursera, Google</a>
+                        June 2024
+                    </span>
+                    <ul>
+                        <li>Investigated the impact data analysis can have on decision-making</li>
+                        <li>Explored preservation of data privacy and ethics</li>
+                    </ul>
+                </li>
+                <li>
+                    <span>
+                        <a href="">Data Science Math Skills | Coursera, Duke University</a>
+                        July 2024
+                    </span>
+                    <ul>
+                        <li>Strengthened foudational mathematical concepts essential for data science, including linear algebra, calculus, probability, and statistics</li>
+                        <li>Developed practical problem-solving skills through hands-on exercises and real-world applications of mathematical techniques</li>
+                        <li>Enhanced ability to manipulate data mathematically and interpret key results for data-driven decision-making</li>
+                    </ul>
+                </li>
+                <li>
+                    <span>
+                        <a href="">Introduction to Statistics | Coursera, Stanford</a>
+                        June 2024
+                    </span>
+                    <ul>
+                        <li>Built a strong foudnation in statistical concepts including probability, inference, regression, and hypothesis testing</li>
+                        <li>Developed skills to analyze and interpret data using statistical methods and real-world datasets</li>
+                        <li>Gained hands-on experience with statistical tools to make data-driven conclusions</li>
+                    </ul>
+                </li>
+            </ul>
+            <hr>
+            <span class="sub">Independent Academic Enrichment Experiences</span>
+            <p>Independent programs I have attended to further immerse myself in the field</p>
+            <ul>
+                <li>
+                    <span>
+                        <a href="">Summer Academy for Robotics | University of Texas at Austin</a>
+                        July 2024
+                    </span>
+                    <ul>
+                        <li>Explored robotics with Arduino with past experience in C++</li>
+                        <li>Leveraged calculus knowledge to create a PID controller</li>
+                        <li>Applied skills in collaborative group projects, enhancing practical understanding and teamwork</li>
+                    </ul>
+                </li>
+                <li>
+                    <span>
+                        <a href="">Neeley Data Analytics Academy | Texas Christian University</a>
+                        July-August 2022
+                    </span>
+                    <ul>
+                        <li>Familiarized myself with sofware often used by data scientists to find meaning in data</li>
+                        <li>Strengthened proficiency in SQL</li>
+                    </ul>
+                </li>
+                <li>
+                    <span>
+                        <a href="">Coding Apps with Java | ID Tech</a>
+                        July 2022
+                    </span>
+                    <ul>
+                        <li>Developed skills in Java</li>
+                    </ul>
+                </li>
+                <li>
+                    <span>
+                        <a href="">Foundations in Programming | iCode, University of Texas at Austin</a>
+                        2022
+                    </span>
+                </li>
+            </ul>
+        </section>
+    </main>
+    <script>
+        const divs = document.querySelectorAll('section#technologies > nav > article');
+        divs.forEach(div => {
+            div.style.transform = `rotate(${(Math.random() * 3 - 1.5).toFixed(2)}deg)`;
+        })
+
+        const sections = document.querySelectorAll('main > section');
+        const navLinks = document.querySelectorAll('nav#directory > a');
+
+        function setActiveSection() {
+            let maxVisible = 0;
+            let activeSection = sections[0];
+
+            sections.forEach(section => {
+                const rect = section.getBoundingClientRect();
+                const visibleHeight = Math.max(0, Math.min(window.innerHeight, rect.bottom) - Math.max(0, rect.top));
+                if (visibleHeight > maxVisible) {
+                    maxVisible = visibleHeight;
+                    activeSection = section;
+                }
+            });
+
+            navLinks.forEach(link => {
+                link.classList.toggle('active', link.getAttribute('href') === `#${activeSection.id}`);
+            });
+        }
+
+        window.addEventListener('scroll', setActiveSection, { passive: true });
+        window.addEventListener('resize', setActiveSection);
+        document.addEventListener('DOMContentLoaded', setActiveSection);
+    </script>
+</body>
+</html>
