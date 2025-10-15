@@ -1,4 +1,4 @@
-const BASE_PATH = '/home/ubuntu/app';
+const BASE_PATH = '/';
 const { stat } = require('fs').promises;
 Bun.serve({
     port: 443,
