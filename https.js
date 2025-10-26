@@ -1,4 +1,4 @@
-const BASE_PATH = '/';
+const BASE_PATH = '.';
 const { stat } = require('fs').promises;
 Bun.serve({
     port: 443,
