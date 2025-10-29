@@ -1,9 +1,9 @@
-const BASE_PATH = '.';
+const BASE_PATH = '..';
 const { stat } = require('fs').promises;
 Bun.serve({
     port: 443,
-    certFile: "../cert.pem",
-    keyFile: "../privkey.pem",
+    certFile: "/cert.pem",
+    keyFile: "/privkey.pem",
 
     async fetch(req) {
         try {
