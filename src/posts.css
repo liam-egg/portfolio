@@ -1,0 +1,150 @@
+
+@font-face {
+    font-family: Icons;
+    src: url('../src/regular.woff2') format('woff2');
+    font-weight: 500;
+}
+@font-face {
+    font-family: Title;
+    src: url('../src/Title.ttf');
+}
+@font-face {
+    font-family: 'Helvetica';
+    src: url('../src/Helvetica.otf');
+}
+@font-face {
+    font-family: 'Newsreader';
+    src: url('../src/Newsreader.woff2') format('woff2');
+}
+* {
+    margin: 0;
+    padding: 0;
+    outline: none;
+    border: none;
+    background: none;
+    font-family: "Inter", sans-serif;
+}
+span.icon { font-family: Icons; font-weight: 500; }
+button { cursor: pointer; }
+a { color: #3f51c7; }
+
+* {
+    margin: 0;
+    padding: 0;
+    outline: none;
+    border: none;
+    background: none;
+    font-family: 'Newsreader', serif;
+}
+
+body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden scroll;
+
+    display: flex;
+    flex-direction: column;
+}
+
+menu {
+    padding: 50px;
+    color: #161616;
+    max-width: 1000px;
+    place-self: center;
+
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+menu > span.name {
+    padding: 3px 8px 0;
+    background: #161616;
+    color: white;
+    font-weight: 600;
+    font-size: 47px;
+    letter-spacing: 1px;
+    transform: rotate(-3deg);
+    width: max-content;
+    transition: transform 1.5s cubic-bezier(0.23, 1, 0.320, 1);
+    font-family: 'Title', serif;
+    cursor: pointer;
+}
+menu > span.date {
+    margin-top: 30px;
+    font-size: 23px;
+    text-transform: uppercase;
+    font-family: 'Title', serif;
+}
+menu > span.title {
+    margin-top: 10px;
+    font-size: 60px;
+    text-transform: uppercase;
+    line-height: 60px;
+    font-family: 'Title', serif;
+}
+menu > span.description {
+    margin-top: 10px;
+    color: #3f3e3e;
+    font-size: 25px;
+}
+menu > img {
+    margin: 20px 0;
+    border: 1px solid black;
+    width: 100%;
+    height: auto;
+    max-height: 400px;
+    max-width: 800px;
+    min-height: 300px;
+    align-self: center;
+    object-fit: cover;
+}
+menu > span.alt {
+    align-self: center;
+    max-width: 800px;
+    width: 800px;
+    text-justify: auto;
+    margin: -10px 0 20px;
+    width: 100%;
+    border-bottom: 1px solid black;
+    padding-bottom: 10px;
+}
+menu > img.inline { float: left; }
+menu > p {
+    font-size: 20px;
+    color: black;
+    line-height: 30px;
+    margin-bottom: 10px;
+    font-weight: 400;
+}
+menu a {
+    text-underline-offset: 4px;
+    text-decoration-thickness: 2px;
+}
+
+menu > footer {
+    border-top: 2px solid black;
+    margin-top: 20px;
+    padding-top: 30px;
+
+    display: flex;
+    justify-content: space-between;
+}
+menu > footer > button {
+    font-size: 18px;
+    text-transform: uppercase;
+    font-weight: 500;
+    font-family: 'Title', serif;
+
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+menu > footer > button > span { margin-bottom: 3px; }
+span.big {
+    font-size: 90px;
+    font-weight: 500;
+    float: left;
+    height: 70px;
+    margin-right: 10px;
+    line-height: 100px;
+}
