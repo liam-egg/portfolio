@@ -21,6 +21,7 @@ Bun.serve({
                 "/privkey.pem",
                 "/https.js"
             ];
+            console.log(pathname);
             if (forbiddenFiles.includes(pathname) || pathname.includes("..")) {
                 console.warn("Attempted access to forbidden file:", pathname);
                 return new Response("Forbidden", { status: 403 });
