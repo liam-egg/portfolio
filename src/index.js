@@ -1,17 +1,30 @@
 const BASE_PATH = '..';
 const { stat } = require('fs').promises;
+
 Bun.serve({
     port: 443,
-    certFile: "/cert.pem",
-    keyFile: "/privkey.pem",
+    certFile: "../cert.pem",
+    keyFile: "../privkey.pem",
 
     async fetch(req) {
         try {
             let { pathname } = new URL(req.url);
 
-            // Default route: serve index.html
+            // Normalize path
             if (pathname === "/") {
                 pathname = "/index.html";
+            }
+
+            // Prevent access to sensitive files
+            const forbiddenFiles = [
+                "/cert.pem",
+                "/privkey.pem",
+                "/https.js"
+            ];
+            console.log(pathname);
+            if (forbiddenFiles.includes(pathname) || pathname.includes("..")) {
+                console.warn("Attempted access to forbidden file:", pathname);
+                return new Response("Forbidden", { status: 403 });
             }
 
             const filePath = BASE_PATH + pathname;
@@ -30,10 +43,10 @@ Bun.serve({
             return new Response("Server error", { status: 500 });
         }
     },
-    
+
     error(err) {
         console.error("Server Error:", err);
-        const file = Bun.file('/home/ubuntu/app/index.html');
+        const file = Bun.file('../index.html');
         return new Response(file);
     }
-})
+});
