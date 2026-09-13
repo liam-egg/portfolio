@@ -6,7 +6,7 @@ const SITE_POSTS = [
         description: "Deriving the Euler–Lagrange equation from Newton's laws and introductory calculus, then putting it to work on the simple pendulum — and, one level up, on light bending around a black hole.",
         thumbnail: 'images/geodesic-lagrangian.png',
         tags: ['physics', 'pendulum'],
-        date: '[5-10-2026]'
+        date: '[9-09-2026]'
     },
     {
         slug: 'double-pendulum',
@@ -15,7 +15,7 @@ const SITE_POSTS = [
         description: 'An examination of chaos through the lens of Lagrangian mechanics — from coupled equations of motion to a from-scratch Euler integrator.',
         thumbnail: 'images/dp-fractal.png',
         tags: ['physics', 'lagrangian mechanics', 'math'],
-        date: '[6-18-2026]'
+        date: '[9-10-2026]'
     },
     {
         slug: 'runge-kutta',
@@ -24,7 +24,7 @@ const SITE_POSTS = [
         description: "Why Euler's method drifts, and how sampling the slope four times a step buys back the accuracy to trust a simulation again.",
         thumbnail: 'images/rk4.png',
         tags: ['physics', 'lagrangian mechanics', 'math'],
-        date: '[8-2-2026]'
+        date: '[9-11-2026]'
     },
     {
         slug: 'pid',
@@ -33,7 +33,7 @@ const SITE_POSTS = [
         description: 'Closing the loop on the pendulum simulations with proportional-integral-derivative control, from a single tuned gain to a live map of every tuning at once.',
         thumbnail: 'images/pid-gain.png',
         tags: ['physics', 'lagrangian mechanics', 'math'],
-        date: '[8-30-2026]'
+        date: '[9-12-2026]'
     },
     // {
     //     slug: 'dip-balancing',

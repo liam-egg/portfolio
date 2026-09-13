@@ -312,12 +312,28 @@
         }
 
         section.blog > nav {
-            margin-bottom: 50px;
-            
+            margin-bottom: 24px;
+
             display: flex;
             flex-direction: column;
             gap: 10px;
         }
+        section.blog > a.view-all {
+            display: inline-block;
+            margin-bottom: 50px;
+            padding: 10px 16px;
+            border-radius: 8px;
+            background: white;
+            color: black;
+            font-size: 16px;
+            text-decoration: none;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        section.blog > a.view-all:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 22px -10px #ffffff70;
+        }
+        section.blog > a.view-all:active { transform: translateY(0); }
         section.blog > nav > a {
             color: inherit;
             text-decoration: none;
@@ -729,6 +745,7 @@
             <span class="header">blog<span>_</span></span>
             <span>What I've been up to.</span>
             <nav id="blog-list"></nav>
+            <a class="view-all" href="blog.html">View all posts</a>
         </section>
         <section class="cv" id="cv">
             <span class="header">cv<span>_</span></span>
