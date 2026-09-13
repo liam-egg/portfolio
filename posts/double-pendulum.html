@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulating the Double Pendulum — ansatz</title>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/microlighter@2.1.0/dist/microlighter.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <link rel="stylesheet" href="post-alt.css">
+</head>
+
+<body data-syntax-theme="monokai-pro">
+    <svg id="tag-icon-defs" style="display: none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 26 1024 1024">
+        <defs>
+            <symbol id="tag-icon" viewBox="0 26 1024 1024">
+                <path
+                    d="M74.9714,634.514C27.4286,585.143 0,521.143 0,453.486L0,307.2C0,257.829 1.82857,215.771 10.9714,179.2C18.2857,142.629 32.9143,109.714 58.5143,84.1143C84.1143,58.5143 117.029,43.8857 153.6,36.5714C190.171,27.4286 232.229,25.6 281.6,25.6L427.886,25.6C495.543,25.6 559.543,53.0286 608.914,100.571L969.143,460.8C1003.89,497.371 1024,544.914 1024,594.286C1024,634.514 1011.2,674.743 985.6,707.657C956.343,746.057 903.314,806.4 842.971,868.571C780.8,930.743 720.457,981.943 682.057,1011.2C649.143,1036.8 608.914,1049.6 568.686,1049.6C519.314,1049.6 471.771,1029.49 435.2,994.743L74.9714,634.514ZM281.6,384C323.657,384 358.4,349.257 358.4,307.2C358.4,265.143 323.657,230.4 281.6,230.4C239.543,230.4 204.8,265.143 204.8,307.2C204.8,349.257 239.543,384 281.6,384Z"
+                    fill="currentColor" fill-opacity="1"></path>
+            </symbol>
+        </defs>
+    </svg>
+    <header>
+        <a href="../blog.html">home</a>
+        <span>ansatz</span>
+        <a href="../index.html">portfolio</a>
+        <a href="../liam-eggleston-cv.pdf">cv</a>
+    </header>
+    <main>
+        <img src="../images/dp-fractal.png"
+            alt="A fractal map of flip times across a grid of double pendulum starting angles"><span class="caption">Flip time for a grid of starting angles--- how long the pendulum runs before its outer arm swings over the top.</span><span class="title">Simulating the Double Pendulum</span>
+        <div class="tags"><a><svg>
+                    <use href="#tag-icon"></use>
+                </svg>physics</a><a><svg>
+                    <use href="#tag-icon"></use>
+                </svg>lagrangian mechanics</a><a><svg>
+                    <use href="#tag-icon"></use>
+                </svg>math</a></div><span class="description">An examination of chaos through the lens of Lagrangian
+            mechanics.</span>
+        <hr>
+        <section class="full">
+            <p>In the last article, we looked at the formulation of Lagrangian mechanics--- why everything works the way
+                it does, and how to apply it to systems for which Newtonian mechanics is ersatz, like the single
+                pendulum. In this article, we'll take it up a notch, and we'll examine instead the double pendulum.</p>
+            <p>As a quick recap, let's recall the methodology for using Lagrangian mechanics. We first define the
+                Lagrangian ($L$):</p>
+            <p>$$L=T-V,$$</p>
+            <p>where $T$ is the system's kinetic energy and $V$ is its potential energy. <strong>Hamilton's
+                    principle</strong> states that the actual trajectory of a system satisfies that its
+                <strong>action</strong> value does not change when the path is slightly altered. A system's action can
+                be defined as a function of a variable $\epsilon$ which indexes every possible trajectory
+                $x_\epsilon(t)$. The trajectory's action is then</p>
+            <p>$$S[x_\epsilon(t)]=\int_{t_1}^{t_2}L\ dt.$$</p>
+            <p>For an actual trajectory, this unchanging action value can be described with</p>
+            <p>$$\boxed{\left.\frac{dS}{d\epsilon}\right|_{\epsilon=0}=0}.$$</p>
+            <p>Let's now look at modeling the double pendulum with this in mind.</p>
+            <span class="big">Finding the Lagrangian</span>
+            <p>Our double pendulum has two moving masses (the bobs at the end of each arm) which each have their own
+                kinetic and potential energies. We will fix the system to the origin such that the position of the first
+                mass is defined as</p>
+            <p>$$x_1(\theta_1)=\ell_1\sin\theta_1,\ \ y_1(\theta_1)=-\ell_1\cos\theta_1.$$</p>
+            <p>We can then do the same for the second mass, which can be thought of as its own single pendulum affixed
+                to the first mass instead of to the origin. Thus, its position is</p>
+            <p>$$\begin{aligned}
+                x_2(\theta_1, \theta_2)&amp;=x_1(\theta_1)+\ell_2\sin\theta_2 \\
+                &amp;=\ell_1\sin\theta_1+\ell_2\sin\theta_2
+                \\ \\
+                y_2(\theta_1,\theta_2)&amp;=y_1(\theta_1)-\ell_2\cos\theta_2 \\
+                &amp;=-\ell_1\cos\theta_1-\ell_2\cos\theta_2.
+                \end{aligned}$$</p>
+            <p>We then calculate individually each mass' potential energy</p>
+            <p>$$\begin{aligned}
+                V_1&amp;=m_1gy_1(\theta_1)=-m_1g\ell_1\cos\theta_1 \\
+                V_2&amp;=m_2gy_2(\theta_1,\theta_2)=-m_2g\left(\ell_1\cos\theta_1+\ell_2\cos\theta_2\right)
+                \end{aligned}$$</p>
+            <p>and their velocities</p>
+            <p>$$\begin{aligned}
+                v_1^2&amp;=\dot x_1^2+\dot
+                y_1^2=\left(\ell_1\cos\theta_1\dot\theta_1\right)^2+\left(\ell_1\sin\theta_1\dot\theta_1\right)^2 \\
+                &amp;=\ell_1^2\dot\theta_1^2(\cos^2(\theta_1)+\sin^2(\theta_1) \\
+                &amp;=\boxed{\ell_1^2\dot\theta_1^2} \\
+                \\
+                v_2^2&amp;=\left(\ell_1\cos\theta_1\dot\theta_1+\ell_2\cos\theta_2\dot\theta_2\right)^2+\left(\ell_1\sin\theta_1\dot\theta_1+\ell_2\sin\theta_2\dot\theta_2\right)^2
+                \\
+                &amp;=\left(\ell_1^2\cos^2\theta_1\dot\theta_1^2+2\ell_1\ell_2\dot\theta_1\dot\theta_2\cos\theta_1\cos\theta_2+\ell_2^2\cos^2\theta_2\dot\theta_2^2\right)
+                \\
+                &amp;\ \ \ \ \
+                +\left(\ell_1^2\sin^2\theta_1\dot\theta_1^2+2\ell_1\ell_2\dot\theta_1\dot\theta_2\sin\theta_1\sin\theta_2+\ell_2^2\sin^2\theta_2\dot\theta_2^2\right)
+                \\
+                &amp;=\ell_1^2\dot\theta_1^2\left(\cos^2\theta_1+\sin^2\theta_1\right)+\ell_2^2\dot\theta_2^2\left(\cos^2\theta_2+\sin^2\theta_2\right)
+                \\
+                &amp;\ \ \ \ \
+                +2\ell_1\ell_2\dot\theta_1\dot\theta_2\left(\cos\theta_1\cos\theta_2+\sin\theta_1\sin\theta_2\right) \\
+                &amp;=\boxed{\ell_1^2\dot\theta_1^2+\ell_2^2\dot\theta_2^2+2\ell_1\ell_2\dot\theta_1\dot\theta_2\cos\left(\theta_1-\theta_2\right)}
+                \end{aligned}$$</p>
+            <p>such that we may calculate their kinetic energies</p>
+            <p>$$\begin{aligned}
+                T_1&amp;=\frac12m_1v_1^2=\boxed{\frac12m_1\ell_1^2\dot\theta_1^2} \\
+                T_2&amp;=\boxed{\frac12m_2\left(\ell_1^2\dot\theta_1^2+\ell_2^2\dot\theta_2^2+2\ell_1\ell_2\dot\theta_1\dot\theta_2\cos\left(\theta_1-\theta_2\right)\right)}.
+                \end{aligned}$$</p>
+            <p>We can now write the (quite long) Lagrangian by considering the <em>total</em> kinetic and potential
+                energies of the system:</p>
+            <p>$$\begin{aligned}
+                L&amp;=T_1+T_2-V_1-V_2 \\
+                &amp;=\frac12m_1\ell_1^2\dot\theta_1^2 \\
+                &amp;\ \ \ \ \
+                +\frac12m_2\left(\ell_1^2\dot\theta_1^2+\ell_2^2\dot\theta_2^2+2\ell_1\ell_2\dot\theta_1\dot\theta_2\cos\left(\theta_1-\theta_2\right)\right)
+                \\
+                &amp;\ \ \ \ \ -\left(-m_1g\ell_1\cos\theta_1\right) \\
+                &amp;\ \ \ \ \ -\left(-m_2g\left(\ell_1\cos\theta_1+\ell_2\cos\theta_2\right)\right).
+                \end{aligned}$$</p>
+            <span class="big">Finding Equations of Motion</span>
+            <p>Now comes the new part for the double pendulum. As before, the next step is to employ the Euler-Lagrange
+                equation. Since the double pendulum has two degrees of freedom, $\theta_1$ and $\theta_2$, we must
+                separately apply Euler-Lagrange to each angle. Let's begin with $\theta_1$.</p>
+            <p>$$\frac{d}{dt}\left(\frac{\partial L}{\partial\dot\theta_1}\right)-\frac{\partial
+                L}{\partial\theta_1}=0$$</p>
+            <p>From the Lagrangian, we find</p>
+            <p>$$\begin{aligned}
+                \frac{\partial
+                L}{\partial\dot\theta_1}&amp;=m_1\ell_1^2\dot\theta_1+\frac12m_2\left(2\ell_1^2\dot\theta_1+2\ell_1\ell_2\dot\theta_2\cos\left(\theta_1-\theta_2\right)\right)
+                \end{aligned}$$</p>
+            <p>and subsequently</p>
+            <p>$$\begin{aligned}
+                \frac{d}{dt}\left(\frac{\partial L}{\partial\dot\theta_1}\right)&amp;=m_1\ell_1^2\ddot\theta_1+\frac12m_2\left(2\ell_1^2\ddot\theta_1+2\ell_1\ell_2\cdot\left[-\dot\theta_2\sin\left(\theta_1-\theta_2\right)\left(\dot\theta_1-\dot\theta_2\right)+\ddot\theta_2\cos\left(\theta_1-\theta_2\right)\right]\right).
+                \end{aligned}$$</p>
+            <p>Now we continue with Euler-Lagrange:</p>
+            <p>$$\frac{\partial
+                L}{\partial\theta_1}=-m_2\ell_1\ell_2\dot\theta_1\dot\theta_2\sin\left(\theta_1-\theta_2\right)-(m_1+m_2)g\ell_1\sin\theta_1$$
+            </p>
+            <p>Combining these expressions and simplifying yields</p>
+            <p>$$\begin{aligned}
+                &amp;\left(m_1+m_2\right)\ell_1\ddot\theta_1+m_2\ell_2\ddot\theta_2\cos\left(\theta_1-\theta_2\right) \\
+                &amp;+m_2\ell_2\dot\theta_2^2\sin\left(\theta_1-\theta_2\right)+\left(m_1+m_2\right)g\sin\theta_1=0.
+                \end{aligned}$$</p>
+            <p>We can repeat the same process for $\theta_2$ to get the analogous equation</p>
+            <p>$$\begin{aligned}
+                &amp;m_2\ell_2\ddot\theta_2+m_2\ell_1\ddot\theta_1\cos\left(\theta_1-\theta_2\right) \\
+                &amp;-m_2\ell_1\dot\theta_1^2\sin\left(\theta_1-\theta_2\right)+m_2g\sin\theta_2=0.
+                \end{aligned}$$</p>
+            <p>Unlike with the single pendulum, for which we found the equation</p>
+            <p>$$\ddot\theta+\frac{g}{\ell}\sin\theta=0,$$</p>
+            <p>it is not so easy to isolate (and thus simulate) $\ddot\theta_1$ and $\ddot\theta_2$ separately.</p>
+            <span class="big">Isolating $\theta_1$ and $\theta_2$</span>
+            <p>One way to find the equations of motion for the two angles is to isolate the second-derivative terms on
+                the left-hand side;</p>
+            <p>$$\left(m_1+m_2\right)\ell_1\ddot\theta_1+m_2\ell_2\cos\left(\theta_1-\theta_2\right)\ddot\theta_2=\text{RHS}_1$$
+            </p>
+            <p>for equation (1) and</p>
+            <p>$$m_2\ell_1\cos\left(\theta_1-\theta_2\right)\ddot\theta_1+m_2\ell_2\ddot\theta_2=\text{RHS}_2$$</p>
+            <p>for equation (2). Both $\text{RHS}$ represent what is left over when the second-derivative terms are
+                isolated. We then represent both equations using matrix notation</p>
+            <p>$$\begin{bmatrix}
+                \left(m_1+m_2\right)\ell_1 &amp; m_2\ell_2\cos\left(\theta_1-\theta_2\right) \\
+                m_2\ell_1\cos\left(\theta_1-\theta_2\right) &amp; m_2\ell_2
+                \end{bmatrix}
+                \begin{bmatrix}
+                \ddot\theta_1 \\
+                \ddot\theta_2
+                \end{bmatrix}
+                =
+                \begin{bmatrix}
+                \text{RHS}_1 \\
+                \text{RHS}_2
+                \end{bmatrix}.$$</p>
+            <p>The matrix on the left is referred to as the <strong>mass matrix</strong> $\textbf{M}$, the vector on the
+                left as the <strong>acceleration vector</strong> $\vec a$, and the vector on the right as the
+                <strong>force vector</strong> $\vec F$. We can thus rewrite as</p>
+            <p>$$\textbf{M}\vec a=\vec F$$</p>
+            <p>and solve for our two acceleration terms using matrix inversion.</p>
+            <p>$$\vec a=\textbf{M}^{-1}\vec F$$</p>
+            <p>We invert the matrix $\textbf{M}$ using Cramer's rule:</p>
+            <p>$$\begin{aligned}
+                \textbf{M}^{-1}&amp;=\frac{1}{\det(\textbf{M})}\text{adj}(\textbf{M}) \\
+                &amp;=\frac{1}{\det(\textbf{M})}
+                \begin{bmatrix}
+                m_2l_2 &amp; -m_2l_2\cos(\theta_1 - \theta_2) \\
+                -m_2l_1\cos(\theta_1 - \theta_2) &amp; (m_1 + m_2)l_1
+                \end{bmatrix}
+                \end{aligned}$$</p>
+            <p>where</p>
+            <p>$$\det(\textbf{M}) = m_2l_1l_2 \left[ m_1 + m_2 - m_2\cos^2(\theta_1 - \theta_2) \right].$$</p>
+            <p>Finally, we arrive at the explicit expressions for $\ddot\theta_1$ and $\ddot\theta_2$:</p>
+            <p>$$\ddot{\theta}_1 = \frac{-g(2m_1 + m_2)\sin\theta_1 - m_2g\sin\left(\theta_1 - 2\theta_2\right) -
+                2\sin\left(\theta_1 - \theta_2\right)m_2\left(\dot{\theta}_2^2l_2 + \dot{\theta}_1^2l_1\cos(\theta_1 -
+                \theta_2)\right)}{l_1\left(2m_1 + m_2 - m_2\cos(2\theta_1 - 2\theta_2)\right)} \\
+                \ddot{\theta}_2 = \frac{2\sin\left(\theta_1 - \theta_2\right)\left(\dot{\theta}_1^2l_1(m_1 + m_2) +
+                g(m_1 + m_2)\cos\theta_1 + \dot{\theta}_2^2l_2m_2\cos(\theta_1 - \theta_2)\right)}{l_2\left(2m_1 + m_2 -
+                m_2\cos(2\theta_1 - 2\theta_2)\right)}.$$</p>
+            <p>Let's see it in action:</p>
+            <div class="desmos-embed" style="height:350px" data-expressions="false" data-equations="[]"
+                data-graph-url="https://www.desmos.com/calculator/prufqs8fqy"></div>
+            <p>That pair of equations is exact, but exactness buys you nothing if you can't measure your starting
+                angles perfectly. Nudge $\theta_1$ or $\theta_2$ by a fraction of a degree and two otherwise identical
+                pendulums, released from rest at the same instant, can end up pointing in completely different
+                directions a few seconds later — the hallmark of a chaotic system. Rather than compare two
+                trajectories side by side, we can let every pixel on screen be its own double pendulum, released from
+                rest at a slightly different pair of starting angles, and color it by how quickly it pulls away from
+                its immediate neighbors.</p>
+            <figure>
+                <div class="shader-embed" style="height:440px"><canvas></canvas>
+                    <script type="x-shader/x-fragment" data-pass="buffer">
+// =====================================================================
+//  BUFFER A  -  double pendulum state field
+//  Each pixel holds one pendulum: (theta1, theta2, omega1, omega2).
+//  Set this buffer's iChannel0 to Buffer A itself (feedback).
+// =====================================================================
+
+#define PI  3.14159265359
+#define TAU 6.28318530718
+
+// ---- tuning ---------------------------------------------------------
+#define SPAN         PI      // angle range across the short axis: [-SPAN, SPAN]
+
+#define TIME_SCALE   1.0     // <<< how fast time passes. 0.25 = slow motion,
+                             //     1.0 = default, 4.0 = four times faster.
+                             //     Usable up to ~10 before the integrator
+                             //     starts losing accuracy (see MAX_DT).
+
+#define BASE_RATE    0.03    // simulated seconds per frame at TIME_SCALE = 1
+#define MAX_DT       0.005   // largest RK4 step allowed (accuracy floor)
+#define MAX_STEPS    64      // cost ceiling per frame
+#define RESET_FRAMES 3600    // auto-restart period in frames; 0 = never restart
+// ---------------------------------------------------------------------
+
+const float G  = 9.81;
+const float L1 = 1.0, L2 = 1.0;
+const float M1 = 1.0, M2 = 1.0;
+
+// s = (theta1, theta2, omega1, omega2)
+vec4 deriv(vec4 s)
+{
+    float t1 = s.x, t2 = s.y, w1 = s.z, w2 = s.w;
+    float d   = t1 - t2;
+    float den = 2.0*M1 + M2 - M2*cos(2.0*d);   // lives in [2,4], never singular
+
+    float a1 = (-G*(2.0*M1 + M2)*sin(t1)
+                - M2*G*sin(t1 - 2.0*t2)
+                - 2.0*sin(d)*M2*(w2*w2*L2 + w1*w1*L1*cos(d))) / (L1*den);
+
+    float a2 = (2.0*sin(d)*( w1*w1*L1*(M1 + M2)
+                           + G*(M1 + M2)*cos(t1)
+                           + w2*w2*L2*M2*cos(d) )) / (L2*den);
+
+    return vec4(w1, w2, a1, a2);
+}
+
+vec4 rk4(vec4 s, float h)
+{
+    vec4 k1 = deriv(s);
+    vec4 k2 = deriv(s + 0.5*h*k1);
+    vec4 k3 = deriv(s + 0.5*h*k2);
+    vec4 k4 = deriv(s +     h*k3);
+    return s + (h/6.0)*(k1 + 2.0*k2 + 2.0*k3 + k4);
+}
+
+// pixel -> starting angles. Screen centre is (0,0): both arms hanging at rest,
+// so energy grows with radius and the whole picture organises around the middle.
+vec2 seedAngles(vec2 fragCoord)
+{
+    vec2 p = (2.0*fragCoord - iResolution.xy) / min(iResolution.x, iResolution.y);
+    return p * SPAN;
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord)
+{
+    bool reset = (iFrame == 0) || (iMouse.z > 0.0);   // click to restart
+#if RESET_FRAMES > 0
+    if (mod(float(iFrame), float(RESET_FRAMES)) < 0.5) reset = true;
+#endif
+
+    vec4 s;
+    if (reset) {
+        s = vec4(seedAngles(fragCoord), 0.0, 0.0);    // released from rest
+    } else {
+        // Advance BASE_RATE * TIME_SCALE seconds of simulation this frame,
+        // split into as many RK4 steps as accuracy and budget allow.
+        float span  = BASE_RATE * TIME_SCALE;
+        int   steps = clamp(int(ceil(span / MAX_DT)), 1, MAX_STEPS);
+        float dt    = span / float(steps);
+
+        s = texelFetch(iChannel0, ivec2(fragCoord), 0);
+        for (int i = 0; i < MAX_STEPS; i++) {
+            if (i >= steps) break;
+            s = rk4(s, dt);
+        }
+        s.xy = mod(s.xy + PI, TAU) - PI;              // wrap to keep precision
+    }
+    fragColor = s;
+}
+                    </script>
+                    <script type="x-shader/x-fragment" data-pass="image">
+// =====================================================================
+//  IMAGE  -  colours the state field produced by Buffer A
+//  Set this pass's iChannel0 to Buffer A.
+// =====================================================================
+
+#define PI  3.14159265359
+#define TAU 6.28318530718
+
+// ---- palette --------------------------------------------------------
+// iq cosine palette: col = A + B*cos(TAU*(C*t + D))
+// Current mix: abyssal blue-green core -> jade -> pale gold.
+#define PAL_A vec3(0.42, 0.50, 0.48)
+#define PAL_B vec3(0.42, 0.36, 0.32)
+#define PAL_C vec3(1.00, 1.00, 0.90)
+#define PAL_D vec3(0.58, 0.44, 0.16)
+
+#define COOL  vec3(0.10, 0.22, 0.30)   // tint pulling on the calm core
+#define HOT   vec3(1.00, 0.86, 0.58)   // tint pulling on the chaotic filaments
+
+// Alternates, swap in over the four PAL_ lines above:
+//   ember     A(0.50,0.32,0.22) B(0.48,0.30,0.22) C(1.00,1.00,1.00) D(0.00,0.12,0.22)
+//   ultraviolet A(0.44,0.38,0.56) B(0.38,0.28,0.44) C(1.00,1.00,0.70) D(0.72,0.60,0.38)
+//   monochrome  A(0.52,0.52,0.52) B(0.46,0.46,0.46) C(1.00,1.00,1.00) D(0.00,0.00,0.00)
+// ---------------------------------------------------------------------
+
+vec4 S(vec2 f){ return texelFetch(iChannel0, ivec2(f), 0); }
+
+// shortest signed angular difference, so the [-PI,PI] wrap is invisible
+vec2 angDiff(vec2 a, vec2 b){ vec2 d = a - b; return mod(d + PI, TAU) - PI; }
+
+vec3 pal(float t){ return PAL_A + PAL_B*cos(TAU*(PAL_C*t + PAL_D)); }
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord)
+{
+    vec4 s  = S(fragCoord);
+    vec2 th = s.xy;
+
+    // How far this pendulum has drifted from its immediate neighbours.
+    // Neighbouring pixels started almost identically, so this is a cheap
+    // finite-time Lyapunov estimate and it is what draws the filaments.
+    float sep = 0.0;
+    sep = max(sep, length(angDiff(S(fragCoord + vec2(1,0)).xy, th)));
+    sep = max(sep, length(angDiff(S(fragCoord - vec2(1,0)).xy, th)));
+    sep = max(sep, length(angDiff(S(fragCoord + vec2(0,1)).xy, th)));
+    sep = max(sep, length(angDiff(S(fragCoord - vec2(0,1)).xy, th)));
+    float chaos = clamp((log(sep + 1e-6) + 5.0) / 6.0, 0.0, 1.0);
+
+    // hue tracks the current configuration, temperature tracks the mixing
+    float phase = (th.x + 0.5*th.y) / TAU;
+    vec3  col   = pal(phase);
+
+    col = mix(col*COOL*2.2, col, 0.35 + 0.65*chaos);          // cool, sink the core
+    col = mix(col, HOT*dot(col, vec3(0.4)), smoothstep(0.55, 1.0, chaos)*0.5);
+    col *= 0.50 + 0.80*chaos;
+    col += HOT * pow(chaos, 10.0) * 0.22;                      // filament glow
+
+    // faint speed shimmer from the angular velocities
+    col *= 1.0 + 0.06*sin(0.7*s.z + 0.5*s.w);
+
+    // gentle vignette so the calm core reads as the centre of the frame
+    vec2 q = (2.0*fragCoord - iResolution.xy) / iResolution.y;
+    col *= 1.0 - 0.13*dot(q, q);
+
+    fragColor = vec4(pow(max(col, 0.0), vec3(0.85)), 1.0);
+}
+                    </script>
+                </div>
+                <figcaption><span class="title">Figure 1</span>The inner arm's starting angle runs left to right, the
+                    outer arm's runs bottom to top, both measured from hanging straight down at dead center. Brightness
+                    tracks how fast four neighboring pendulums — all released a hair apart — come apart from each
+                    other as they swing. The calm island in the middle is where that hair's difference stays a hair's
+                    difference forever; everywhere else, it doesn't.</figcaption>
+            </figure>
+            <span class="big">Computing and Rendering</span>
+            <p>Desmos is a great visualization tool, but a lot is going on under the hood that is not immediately
+                obvious from the render above. To adapt our simulation into a step-by-step pipeline without relying on
+                external black-box solvers, we can implement our own discrete integration loop. We break the programming
+                pipeline into three distinct phases: setting up the physical system state, executing Euler's method for
+                time-stepping, and rendering the chaotic trajectory using Matplotlib.</p>
+            <p><strong>Step 1: Defining the Physical System State</strong></p>
+            <p>We will utilize a single state vector containing all relevant parts of the systems: the positions and
+                accelerations of the two masses. We'll then use our expressions for $\ddot\theta_1$ and $\ddot\theta_2$
+                to update the mass matrix $\textbf{M}$ and force vector $\vec F$ and solve for the immediate angular
+                accelerations.</p>
+            <pre><code class="language-py">import numpy as np
+import matplotlib.pyplot as plt
+
+# 1. Physical constants and initial conditions
+m1, m2 = 1.0, 1.0
+l1, l2 = 1.0, 1.0
+g = 9.81
+
+# Time tracking parameters
+dt = 0.001 # Tiny time step to minimize Euler integration drift
+t_max = 12.0 # Total simulation duration in seconds
+n_steps = int(t_max / dt)
+
+# Pre-allocating state tracking arrays
+theta1 = np.zeros(n_steps)
+omega1 = np.zeros(n_steps)
+theta2 = np.zeros(n_steps)
+omega2 = np.zeros(n_steps)
+
+# Assign initial configuration positions (90 degrees out)
+theta1[0] = np.pi / 2
+theta2[0] = np.pi / 2
+
+def get_accelerations(t1, w1, t2, w2):
+    delta = t1 - t2
+
+    # Structural Mass Matrix elements
+    M11 = (m1 + m2) * l1
+    M12 = m2 * l2 * np.cos(delta)
+    M21 = m2 * l1 * np.cos(delta)
+    M22 = m2 * l2
+    M = np.array([[M11, M12], [M21, M22]])
+
+    # Generalized Force Vector elements
+    F1 = -m2 * l2 * (w2**2) * np.sin(delta) - (m1 + m2) * g * np.sin(t1)
+    F2 = m2 * l1 * (w1**2) * np.sin(delta) - m2 * g * np.sin(t2)
+    F = np.array([F1, F2])
+
+    # Solve linear matrix system: M * acceleration = F
+    alpha1, alpha2 = np.linalg.solve(M, F)
+    return alpha1, alpha2</code></pre>
+            <p><strong>Step 2: Implementing Euler's Method</strong></p>
+            <p>Euler's approximation update rule predicts the subsequent state of a variable by multiplying its current
+                instantaneous rate of change by a small discrete interval $\Delta t$:</p>
+            <p>$$\theta(t + \Delta t) \approx \theta(t) + \dot\theta(t)\Delta t \\
+                \dot\theta(t + \Delta t) \approx \dot\theta(t) + \ddot\theta(t)\Delta t$$</p>
+            <p>A smaller $\Delta t$ will yield a smaller accumulated error. The approximation visual below demonstrates
+                this property.</p>
+            <div class="desmos-embed" style="height:350px" data-expressions="false" data-equations="[]"
+                data-graph-url="https://www.desmos.com/geometry/8ssw9wccpc"></div>
+            <p>Below we see the compounded effect of the approximation:</p>
+            <div class="desmos-embed" style="height:350px" data-expressions="false" data-equations="[]"
+                data-graph-url="https://www.desmos.com/geometry/oneldb4mio"></div>
+            <p>We loop sequentially through our state arrays, utilizing the physical properties at index $i$ to project
+                the displacement and velocity markers for index $i+1$:</p>
+            <pre><code class="language-py"># 2. Main Euler discrete time-stepping loop
+for i in range(n_steps - 1):
+    # Calculate instant accelerations based on parameters at step i
+    alpha1, alpha2 = get_accelerations(theta1[i], omega1[i], theta2[i], omega2[i])
+
+    # Forward-step state parameters to index i + 1
+    theta1[i+1] = theta1[i] + omega1[i] * dt
+    omega1[i+1] = omega1[i] + alpha1 * dt
+
+    theta2[i+1] = theta2[i] + omega2[i] * dt
+    omega2[i+1] = omega2[i] + alpha2 * dt</code></pre>
+            <p>Runge-Kutta integration is typically used in place of Euler integration for its superior error avoidance,
+                but Euler is simpler to implement for a proof of concept.</p>
+            <p><strong>Step 3: Rendering</strong></p>
+            <p>We then deploy Matplotlib to generate a high-contrast visualization tracing the chaotic route taken by
+                the tip of the second mass:</p>
+            <pre><code class="language-py"># 3. Trigonometric transformation to Cartesian coordinates
+x1 = l1 * np.sin(theta1)
+y1 = -l1 * np.cos(theta1)
+
+x2 = x1 + l2 * np.sin(theta2)
+y2 = y1 - l2 * np.cos(theta2)
+
+# Build plot canvas layout using Matplotlib
+plt.figure(figsize=(7, 7))
+plt.plot(x1, y1, color='darkred', lw=0.7, label='Mass 1 path')
+plt.plot(x2, y2, color='darkcyan', lw=0.7, label='Mass 2 path')
+plt.plot(0, 0, 'ko')
+
+# Final state of the two arms (pivot -&gt; mass 1 -&gt; mass 2)
+arm_x = [0, x1[-1], x2[-1]]
+arm_y = [0, y1[-1], y2[-1]]
+plt.plot(arm_x, arm_y, color='black', lw=2, marker='o', markersize=8,
+markerfacecolor='gray', label='Final state')
+
+plt.title("Double Pendulum Simulation")
+plt.xlim(-(l1 + l2) - 0.2, (l1 + l2) + 0.2)
+plt.ylim(-(l1 + l2) - 0.2, (l1 + l2) + 0.2)
+plt.grid(True, linestyle=':')
+plt.legend()
+plt.show()</code></pre>
+            <p>After running, we get the following figure:</p>
+            <figure style="margin: 0 auto;"><img src="../images/sim.png" alt="Double Pendulum Simulation"
+                    style="max-height: unset; max-width: 600px;">
+                <figcaption><span class="title">Figure 2</span>The rendered double pendulum</figcaption>
+            </figure>
+            <p>Which is our final visualization of the chaotic motion of the double pendulum.</p>
+            <p>Another question we can ask of the same grid of starting angles is whether the outer arm swings all the way over the top (and, if so, when?). Because the pendulum starts from rest, its total energy is fixed the moment we pick $\theta_1$ and
+                $\theta_2$, and there just isn't always enough of it to go around. Angles close enough to hanging
+                straight down can never supply the potential energy the outer arm would need to reach vertical, no
+                matter how the two arms trade momentum back and forth in between.</p>
+            <figure>
+                <div class="shader-embed" style="height:440px"><canvas></canvas>
+                    <script type="x-shader/x-fragment" data-pass="bufferA">
+// =====================================================================
+//  FLIP-TIME FRACTAL  -  BUFFER A  -  raw pendulum state
+//  Angles are deliberately NOT wrapped here: the unwrapped value is what
+//  tells us whether an arm has gone over the top, and how many times.
+//  Set this buffer's iChannel0 to Buffer A itself (feedback).
+// =====================================================================
+
+#define PI  3.14159265359
+#define TAU 6.28318530718
+
+// ---- tuning (must match Buffer B) ------------------------------------
+#define SPAN         PI      // angle range across the short axis: [-SPAN, SPAN]
+#define TIME_SCALE   1.0     // how fast time passes; 0.25 slow, 4.0 fast
+#define BASE_RATE    0.03    // simulated seconds per frame at TIME_SCALE = 1
+#define RESET_FRAMES 5400    // ~90 s before restarting; 0 = never
+// ----------------------------------------------------------------------
+
+#define MAX_DT    0.005
+#define MAX_STEPS 64
+
+const float G  = 9.81;
+const float L1 = 1.0, L2 = 1.0;
+const float M1 = 1.0, M2 = 1.0;
+
+vec4 deriv(vec4 s)
+{
+    float t1 = s.x, t2 = s.y, w1 = s.z, w2 = s.w;
+    float d   = t1 - t2;
+    float den = 2.0*M1 + M2 - M2*cos(2.0*d);
+
+    float a1 = (-G*(2.0*M1 + M2)*sin(t1)
+                - M2*G*sin(t1 - 2.0*t2)
+                - 2.0*sin(d)*M2*(w2*w2*L2 + w1*w1*L1*cos(d))) / (L1*den);
+
+    float a2 = (2.0*sin(d)*( w1*w1*L1*(M1 + M2)
+                           + G*(M1 + M2)*cos(t1)
+                           + w2*w2*L2*M2*cos(d) )) / (L2*den);
+
+    return vec4(w1, w2, a1, a2);
+}
+
+vec4 rk4(vec4 s, float h)
+{
+    vec4 k1 = deriv(s);
+    vec4 k2 = deriv(s + 0.5*h*k1);
+    vec4 k3 = deriv(s + 0.5*h*k2);
+    vec4 k4 = deriv(s +     h*k3);
+    return s + (h/6.0)*(k1 + 2.0*k2 + 2.0*k3 + k4);
+}
+
+// centre of the screen is (0,0): both arms hanging, the lowest-energy start
+vec2 seedAngles(vec2 fragCoord)
+{
+    vec2 p = (2.0*fragCoord - iResolution.xy) / min(iResolution.x, iResolution.y);
+    return p * SPAN;
+}
+
+bool isReset()
+{
+    bool r = (iFrame == 0) || (iMouse.z > 0.0);
+#if RESET_FRAMES > 0
+    if (mod(float(iFrame), float(RESET_FRAMES)) < 0.5) r = true;
+#endif
+    return r;
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord)
+{
+    vec4 s;
+    if (isReset()) {
+        s = vec4(seedAngles(fragCoord), 0.0, 0.0);
+    } else {
+        float span  = BASE_RATE * TIME_SCALE;
+        int   steps = clamp(int(ceil(span / MAX_DT)), 1, MAX_STEPS);
+        float dt    = span / float(steps);
+
+        s = texelFetch(iChannel0, ivec2(fragCoord), 0);
+        for (int i = 0; i < MAX_STEPS; i++) {
+            if (i >= steps) break;
+            s = rk4(s, dt);
+        }
+    }
+    fragColor = s;
+}
+                    </script>
+                    <script type="x-shader/x-fragment" data-pass="bufferB" data-channel0="bufferA"
+                        data-channel1="self">
+// =====================================================================
+//  FLIP-TIME FRACTAL  -  BUFFER B  -  the metric
+//  Records, per starting condition, WHEN each arm first swings over the
+//  top, plus how many full revolutions the outer arm has racked up.
+//  iChannel0 = Buffer A   (state)
+//  iChannel1 = Buffer B   (itself, feedback)
+//
+//  stored as: x = first-flip time of the outer arm  (0 = not yet)
+//             y = first-flip time of the inner arm  (0 = not yet)
+//             z = elapsed simulated time
+//             w = peak revolutions of the outer arm
+// =====================================================================
+
+#define PI  3.14159265359
+#define TAU 6.28318530718
+
+// ---- tuning (must match Buffer A) ------------------------------------
+#define SPAN         PI
+#define TIME_SCALE   1.0
+#define BASE_RATE    0.03
+#define RESET_FRAMES 5400
+// ----------------------------------------------------------------------
+
+vec2 seedAngles(vec2 fragCoord)
+{
+    vec2 p = (2.0*fragCoord - iResolution.xy) / min(iResolution.x, iResolution.y);
+    return p * SPAN;
+}
+
+bool isReset()
+{
+    bool r = (iFrame == 0) || (iMouse.z > 0.0);
+#if RESET_FRAMES > 0
+    if (mod(float(iFrame), float(RESET_FRAMES)) < 0.5) r = true;
+#endif
+    return r;
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord)
+{
+    if (isReset()) { fragColor = vec4(0.0); return; }
+
+    vec4 rec = texelFetch(iChannel1, ivec2(fragCoord), 0);
+    vec4 s   = texelFetch(iChannel0, ivec2(fragCoord), 0);
+
+    rec.z += BASE_RATE * TIME_SCALE;
+
+    // an arm has flipped once its unwrapped angle passes vertical-up
+    if (rec.x == 0.0 && abs(s.y) > PI) rec.x = rec.z;
+    if (rec.y == 0.0 && abs(s.x) > PI) rec.y = rec.z;
+
+    vec2 th0 = seedAngles(fragCoord);
+    rec.w = max(rec.w, abs(s.y - th0.y) / TAU);
+
+    fragColor = rec;
+}
+                    </script>
+                    <script type="x-shader/x-fragment" data-pass="image" data-channel0="bufferB"
+                        data-channel1="bufferA">
+// =====================================================================
+//  FLIP-TIME FRACTAL  -  IMAGE
+//  iChannel0 = Buffer B   (flip record)
+//  iChannel1 = Buffer A   (live state, used for the intact core)
+// =====================================================================
+
+#define PI  3.14159265359
+#define TAU 6.28318530718
+
+// how flip times map onto the ramp, in natural log of seconds
+#define LOG_MIN  -2.5    // ~0.08 s
+#define LOG_MAX   4.0    // ~55 s
+
+// ---- palette ---------------------------------------------------------
+// quick flips sink into indigo, long survivors burn toward pale gold,
+// so the ramp brightens as it approaches the edge of the stable island
+#define R0 vec3(0.06, 0.05, 0.16)
+#define R1 vec3(0.30, 0.12, 0.42)
+#define R2 vec3(0.72, 0.18, 0.42)
+#define R3 vec3(0.96, 0.48, 0.26)
+#define R4 vec3(1.00, 0.93, 0.78)
+
+#define CORE_LO vec3(0.035, 0.085, 0.105)   // never-flipped island, trough
+#define CORE_HI vec3(0.130, 0.260, 0.275)   // never-flipped island, crest
+#define FRONT   vec3(1.000, 0.950, 0.850)   // the flash as a pixel gives way
+// ----------------------------------------------------------------------
+
+vec3 ramp(float u)
+{
+    u = clamp(u, 0.0, 1.0) * 4.0;
+    if (u < 1.0) return mix(R0, R1, u);
+    if (u < 2.0) return mix(R1, R2, u - 1.0);
+    if (u < 3.0) return mix(R2, R3, u - 2.0);
+    return mix(R3, R4, u - 3.0);
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord)
+{
+    vec4 rec = texelFetch(iChannel0, ivec2(fragCoord), 0);
+    vec4 s   = texelFetch(iChannel1, ivec2(fragCoord), 0);
+
+    float tFlip = rec.x;
+    float now   = rec.z;
+
+    vec3 col;
+
+    if (tFlip <= 0.0) {
+        // outer arm still intact: a quiet field that breathes with the motion
+        float ph   = 2.0*cos(s.x) + cos(s.y);
+        col = mix(CORE_LO, CORE_HI, 0.5 + 0.5*sin(ph*2.2));
+        // inner arm already over the top, outer one hanging on
+        if (rec.y > 0.0) col = mix(col, CORE_HI*1.5, 0.4);
+    } else {
+        float u = (log(tFlip) - LOG_MIN) / (LOG_MAX - LOG_MIN);
+        col = ramp(u);
+
+        // thin contours where the revolution count steps up
+        float f = abs(fract(rec.w + 0.5) - 0.5);
+        col *= mix(0.76, 1.0, smoothstep(0.0, 0.05, f));
+
+        // fading flash on whatever flipped in the last second or so
+        col += FRONT * exp(-(now - tFlip) * 2.5) * 0.55;
+    }
+
+    vec2 q = (2.0*fragCoord - iResolution.xy) / iResolution.y;
+    col *= 1.0 - 0.14*dot(q, q);
+
+    fragColor = vec4(pow(max(col, 0.0), vec3(0.85)), 1.0);
+}
+                    </script>
+                </div>
+                <figcaption><span class="title">Figure 3</span>The same grid of starting angles as Figure 1, now
+                    colored by how long each pendulum takes to flip its outer arm past vertical for the first time.
+                    Quick flips are more purple, while longer ones are more gold. The dark island in the
+                    center never flips at all; it provably can't for the energy reason above.</figcaption>
+            </figure>
+        </section>
+        <hr style="background: var(--secondary); height: 1px;">
+        <span class="big">Read next</span>
+        <nav id="read-next"></nav>
+    </main>
+    <footer>
+        <div>
+            <a href="https://linkedin.com/in/liameggleston">
+                <svg viewBox="0 0 448 512" aria-hidden="true">
+                    <path
+                        d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zm5 170.2l66.5 0 0 213.8-66.5 0 0-213.8zm71.7-67.7a38.5 38.5 0 1 1 -77 0 38.5 38.5 0 1 1 77 0zM317.9 416l0-104c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9l0 105.8-66.4 0 0-213.8 63.7 0 0 29.2 .9 0c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9l0 117.2-66.4 0z" />
+                </svg>
+                /liameggleston
+            </a>
+            <a href="mailto:liameggs@ucla.edu">
+                <svg viewBox="39 77 986 922" aria-hidden="true">
+                    <path
+                        d="M190.171,992.914C179.2,996.571 168.229,998.4 157.257,998.4C91.4286,998.4 38.4,945.371 38.4,879.543L38.4,872.229C38.4,842.971 47.5429,815.543 65.8286,793.6C107.886,738.743 146.286,680.229 179.2,619.886C188.343,601.6 206.629,588.8 228.571,588.8L512,588.8C541.257,588.8 563.2,566.857 563.2,537.6C563.2,510.171 541.257,486.4 512,486.4L228.571,486.4C206.629,486.4 188.343,473.6 179.2,455.314C146.286,394.971 107.886,336.457 65.8286,283.429C49.3714,259.657 38.4,232.229 38.4,202.971L38.4,195.657C38.4,129.829 91.4286,76.8 157.257,76.8C168.229,76.8 179.2,78.6285 190.171,82.2857C228.571,93.2571 384,140.8 550.4,208.457C634.514,241.371 720.457,279.771 799.086,321.829C875.886,362.057 945.371,407.771 992.914,457.143C1014.86,480.914 1024,510.171 1024,537.6C1024,565.029 1014.86,594.286 992.914,618.057C945.371,667.429 875.886,713.143 799.086,753.371C720.457,795.429 634.514,833.829 550.4,866.743C384,934.4 228.571,981.943 190.171,992.914Z"
+                        fill="currentColor" fill-opacity="1"></path>
+                </svg>
+                liameggs@ucla.edu
+            </a>
+            <a href="https://liameggleston.com/">
+                <svg viewBox="4 47 1019 984" aria-hidden="true">
+                    <path
+                        d="M530.286,54.8571C521.143,43.8857 504.686,43.8857 493.714,54.8571C458.971,98.7429 429.714,157.257 405.943,226.743C378.514,312.686 362.057,409.6 358.4,510.171C358.4,522.971 369.371,535.771 382.171,535.771C422.4,537.6 466.286,537.6 513.829,537.6C559.543,537.6 601.6,537.6 641.829,535.771C656.457,535.771 667.429,522.971 665.6,510.171C663.771,409.6 647.314,312.686 618.057,226.743C596.114,157.257 565.029,98.7429 530.286,54.8571ZM321.829,54.8571C343.771,47.5428 362.057,71.3143 351.086,91.4286C334.629,124.343 321.829,159.086 309.029,193.829C277.943,288.914 259.657,394.971 256,501.029C256,517.486 243.2,528.457 228.571,526.629C175.543,522.971 131.657,517.486 95.0857,512C65.8286,508.343 43.8857,504.686 23.7714,501.029C10.9714,499.2 3.65714,488.229 3.65714,475.429C16.4571,351.086 62.1714,243.2 140.8,166.4C192,115.2 252.343,78.6285 323.657,54.8571ZM261.486,654.629C259.657,641.829 250.514,630.857 237.714,630.857C175.543,625.371 122.514,619.886 80.4571,614.4C64,612.571 51.2,608.914 36.5714,607.086C20.1143,605.257 5.48571,618.057 7.31429,636.343C25.6,744.229 69.4857,839.314 140.8,910.629C190.171,960 252.343,996.571 321.829,1020.34C343.771,1027.66 362.057,1003.89 351.086,983.771C334.629,950.857 321.829,916.114 309.029,881.371C285.257,810.057 270.629,733.257 261.486,654.629ZM493.714,1020.34C502.857,1033.14 521.143,1033.14 530.286,1020.34C565.029,976.457 596.114,917.943 618.057,848.457C636.343,791.771 650.971,731.429 658.286,667.429C660.114,650.971 647.314,638.171 632.686,638.171C596.114,640 555.886,640 513.829,640C469.943,640 429.714,640 393.143,638.171C376.686,638.171 363.886,650.971 365.714,665.6C374.857,729.6 387.657,791.771 405.943,848.457C429.714,917.943 458.971,976.457 495.543,1020.34ZM714.971,193.829C704,159.086 689.371,124.343 672.914,91.4286C663.771,71.3143 680.229,47.5428 702.171,54.8571C773.486,78.6285 835.657,115.2 885.029,164.571C963.657,243.2 1011.2,351.086 1022.17,475.429C1024,488.229 1014.86,499.2 1002.06,501.029C983.771,504.686 960,508.343 932.571,512C894.171,517.486 850.286,522.971 795.429,526.629C780.8,528.457 769.829,515.657 768,501.029C764.343,394.971 747.886,288.914 714.971,193.829ZM714.971,881.371C704,916.114 689.371,950.857 672.914,983.771C663.771,1003.89 680.229,1027.66 702.171,1020.34C773.486,996.571 835.657,960 885.029,910.629C956.343,839.314 1002.06,744.229 1018.51,634.514C1020.34,618.057 1005.71,605.257 989.257,607.086C976.457,608.914 961.829,610.743 945.371,614.4C903.314,619.886 850.286,625.371 788.114,630.857C775.314,630.857 764.343,641.829 762.514,654.629C755.2,733.257 738.743,810.057 716.8,881.371Z"
+                        fill="currentColor" fill-opacity="1"></path>
+                </svg>
+                liameggleston.com
+            </a>
+        </div>
+        <div>
+            <span class="title">About</span>
+            <span>Hello! I'm Liam Eggleston, a B.S. Electrical Engineering and M.A. Mathematics candidate at UCLA.
+                People tell me I'm very mathy.</span>
+            <span class="disclaimer">Made with ❤️ sans AI in vanilla JS/CSS/HTML. <br>Site design heavily inspired by <a
+                    href="https://increment.com/">increment.com</a></span>
+        </div>
+    </footer>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <script>
+        (function () {
+            var API_KEY = 'dcb31709b452b1cf9dc26972add0fda6';
+            var scriptPromise = null;
+            function loadDesmos() {
+                if (window.Desmos) return Promise.resolve();
+                if (scriptPromise) return scriptPromise;
+                scriptPromise = new Promise(function (resolve, reject) {
+                    var s = document.createElement('script');
+                    s.src = 'https://www.desmos.com/api/v1.12/calculator.js?apiKey=' + API_KEY;
+                    s.onload = resolve;
+                    s.onerror = reject;
+                    document.head.appendChild(s);
+                });
+                return scriptPromise;
+            }
+            function applyExtraEquations(calc, el) {
+                var eqs = [];
+                try { eqs = JSON.parse(el.dataset.equations || '[]'); } catch (e) { }
+                eqs.forEach(function (latex, i) { calc.setExpression({ id: 'extra-' + i, latex: latex }); });
+            }
+            function mount(el) {
+                if (!window.Desmos || el.dataset.desmosMounted) return;
+                el.dataset.desmosMounted = '1';
+                var graphUrl = el.dataset.graphUrl;
+                var isGeometry = !!graphUrl && graphUrl.indexOf('/geometry/') !== -1;
+                var Ctor = isGeometry ? Desmos.Geometry : Desmos.GraphingCalculator;
+                var calc = Ctor(el, {
+                    expressions: el.dataset.expressions === 'true',
+                    keypad: false,
+                    border: false
+                });
+                window.__desmosInstances = window.__desmosInstances || [];
+                window.__desmosInstances.push(calc);
+                if (graphUrl) {
+                    fetch(graphUrl, { headers: { Accept: 'application/json' } })
+                        .then(function (r) { return r.json(); })
+                        .then(function (json) {
+                            if (json && json.state) {
+                                if (isGeometry && el.dataset.expressions !== 'true') {
+                                    json.state.geometryToolbar = { toolbar: 'none' };
+                                }
+                                calc.setState(json.state);
+                            }
+                            applyExtraEquations(calc, el);
+                        })
+                        .catch(function (e) { console.error('Desmos embed: failed to load graph ' + graphUrl, e); });
+                } else {
+                    applyExtraEquations(calc, el);
+                }
+            }
+            window.initDesmosEmbeds = function (root) {
+                var els = (root || document).querySelectorAll('.desmos-embed:not([data-desmos-mounted])');
+                if (!els.length) return;
+                loadDesmos().then(function () { els.forEach(mount); });
+            };
+            window.destroyDesmosEmbeds = function () {
+                (window.__desmosInstances || []).forEach(function (c) { try { c.destroy(); } catch (e) { } });
+                window.__desmosInstances = [];
+            };
+        })();
+
+        initDesmosEmbeds(document);</script>
+    <script>
+        (function () {
+            function compileShader(gl, type, source) {
+                var shader = gl.createShader(type);
+                gl.shaderSource(shader, source);
+                gl.compileShader(shader);
+                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                    console.error('Shader embed: compile error', gl.getShaderInfoLog(shader));
+                    gl.deleteShader(shader);
+                    return null;
+                }
+                return shader;
+            }
+            function linkProgram(gl, vsSource, fsSource) {
+                var vs = compileShader(gl, gl.VERTEX_SHADER, vsSource);
+                var fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSource);
+                if (!vs || !fs) return null;
+                var program = gl.createProgram();
+                gl.attachShader(program, vs);
+                gl.attachShader(program, fs);
+                gl.linkProgram(program);
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                    console.error('Shader embed: link error', gl.getProgramInfoLog(program));
+                    gl.deleteProgram(program);
+                    return null;
+                }
+                return program;
+            }
+            var VERTEX_SRC = '#version 300 es\n' +
+                'const vec2 verts[3] = vec2[3](vec2(-1.0,-1.0), vec2(3.0,-1.0), vec2(-1.0,3.0));\n' +
+                'void main() { gl_Position = vec4(verts[gl_VertexID], 0.0, 1.0); }';
+            function wrapFragment(userSource) {
+                return '#version 300 es\n' +
+                    'precision highp float;\n' +
+                    'uniform vec3 iResolution;\n' +
+                    'uniform float iTime;\n' +
+                    'uniform int iFrame;\n' +
+                    'uniform vec4 iMouse;\n' +
+                    'uniform sampler2D iChannel0;\n' +
+                    'uniform sampler2D iChannel1;\n' +
+                    'out vec4 outColor;\n' +
+                    userSource + '\n' +
+                    'void main() { mainImage(outColor, gl_FragCoord.xy); }';
+            }
+            function makeTarget(gl, w, h, type) {
+                var tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, type === gl.FLOAT ? gl.RGBA32F : gl.RGBA16F, w, h, 0, gl.RGBA, type, null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                var fbo = gl.createFramebuffer();
+                gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.bindTexture(gl.TEXTURE_2D, null);
+                return { tex: tex, fbo: fbo };
+            }
+            // Generalized N-buffer shader-embed mount: supports the simple
+            // single "buffer"+"image" pattern (identical wiring/behavior to
+            // the other posts' shader embeds) as well as chained buffers
+            // (e.g. "bufferA"+"bufferB"+"image"), each of which self-feeds
+            // on iChannel0 by default and may declare data-channel0/
+            // data-channel1 to read another named pass's output instead
+            // (use "self" to mean its own previous frame).
+            function mount(el) {
+                if (el.dataset.shaderMounted) return;
+                el.dataset.shaderMounted = '1';
+                var passTags = Array.prototype.slice.call(el.querySelectorAll('script[data-pass]'));
+                var imageTag = passTags.filter(function (s) { return s.dataset.pass === 'image'; })[0];
+                var bufferTagList = passTags.filter(function (s) { return s.dataset.pass !== 'image'; });
+                if (!imageTag) return;
+                var canvas = el.querySelector('canvas') || el.appendChild(document.createElement('canvas'));
+                var gl = canvas.getContext('webgl2');
+                if (!gl) { console.warn('Shader embed: WebGL2 unavailable'); return; }
+                var type = gl.getExtension('EXT_color_buffer_float') ? gl.FLOAT : gl.HALF_FLOAT;
+                if (type === gl.HALF_FLOAT && !gl.getExtension('EXT_color_buffer_half_float')) {
+                    console.warn('Shader embed: no floating-point render target support');
+                    return;
+                }
+                var imageProgram = linkProgram(gl, VERTEX_SRC, wrapFragment(imageTag.textContent));
+                var buffers = bufferTagList.map(function (tag) {
+                    return {
+                        name: tag.dataset.pass,
+                        program: linkProgram(gl, VERTEX_SRC, wrapFragment(tag.textContent)),
+                        channel0: tag.dataset.channel0 || 'self',
+                        channel1: tag.dataset.channel1 || ''
+                    };
+                });
+                if (!imageProgram || buffers.some(function (b) { return !b.program; })) return;
+                var imageChannel0 = imageTag.dataset.channel0 || (buffers.length ? buffers[buffers.length - 1].name : '');
+                var imageChannel1 = imageTag.dataset.channel1 || '';
+                var vao = gl.createVertexArray();
+
+                var w = 0, h = 0, frame = 0, start = performance.now(), raf = 0;
+
+                function findBuffer(name) {
+                    for (var i = 0; i < buffers.length; i++) if (buffers[i].name === name) return buffers[i];
+                    return null;
+                }
+                function completedTex(name) {
+                    var b = findBuffer(name);
+                    return b ? b.targets[(frame + 1) % 2].tex : null;
+                }
+                function resize() {
+                    var rect = canvas.getBoundingClientRect();
+                    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+                    var nw = Math.max(1, Math.round(rect.width * dpr));
+                    var nh = Math.max(1, Math.round(rect.height * dpr));
+                    if (nw === w && nh === h) return;
+                    w = nw; h = nh;
+                    canvas.width = w; canvas.height = h;
+                    buffers.forEach(function (b) {
+                        if (b.targets) {
+                            gl.deleteTexture(b.targets[0].tex); gl.deleteFramebuffer(b.targets[0].fbo);
+                            gl.deleteTexture(b.targets[1].tex); gl.deleteFramebuffer(b.targets[1].fbo);
+                        }
+                        b.targets = [makeTarget(gl, w, h, type), makeTarget(gl, w, h, type)];
+                    });
+                    frame = 0;
+                }
+                function setCommonUniforms(program, t) {
+                    gl.useProgram(program);
+                    gl.uniform3f(gl.getUniformLocation(program, 'iResolution'), w, h, 1.0);
+                    gl.uniform1f(gl.getUniformLocation(program, 'iTime'), t);
+                    gl.uniform1i(gl.getUniformLocation(program, 'iFrame'), frame);
+                    gl.uniform1i(gl.getUniformLocation(program, 'iChannel0'), 0);
+                    gl.uniform1i(gl.getUniformLocation(program, 'iChannel1'), 1);
+                }
+                function bindUnit(unit, tex) {
+                    gl.activeTexture(gl.TEXTURE0 + unit);
+                    gl.bindTexture(gl.TEXTURE_2D, tex);
+                }
+                function draw() {
+                    resize();
+                    var t = (performance.now() - start) / 1000;
+                    gl.bindVertexArray(vao);
+
+                    buffers.forEach(function (b) {
+                        var src = b.targets[frame % 2];
+                        var dst = b.targets[(frame + 1) % 2];
+                        gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+                        gl.viewport(0, 0, w, h);
+                        var ch0tex = b.channel0 === 'self' ? src.tex : completedTex(b.channel0);
+                        var ch1tex = b.channel1 ? (b.channel1 === 'self' ? src.tex : completedTex(b.channel1)) : null;
+                        bindUnit(0, ch0tex);
+                        bindUnit(1, ch1tex);
+                        setCommonUniforms(b.program, t);
+                        gl.drawArrays(gl.TRIANGLES, 0, 3);
+                    });
+
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                    gl.viewport(0, 0, w, h);
+                    bindUnit(0, imageChannel0 ? completedTex(imageChannel0) : null);
+                    bindUnit(1, imageChannel1 ? completedTex(imageChannel1) : null);
+                    setCommonUniforms(imageProgram, t);
+                    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+                    frame++;
+                    raf = requestAnimationFrame(draw);
+                }
+                raf = requestAnimationFrame(draw);
+                window.__shaderInstances = window.__shaderInstances || [];
+                window.__shaderInstances.push({
+                    stop: function () {
+                        cancelAnimationFrame(raf);
+                        var lose = gl.getExtension('WEBGL_lose_context');
+                        if (lose) lose.loseContext();
+                    }
+                });
+            }
+            window.initShaderEmbeds = function (root) {
+                (root || document).querySelectorAll('.shader-embed:not([data-shader-mounted])').forEach(mount);
+            };
+            window.destroyShaderEmbeds = function () {
+                (window.__shaderInstances || []).forEach(function (inst) { try { inst.stop(); } catch (e) { } });
+                window.__shaderInstances = [];
+            };
+        })();
+
+        initShaderEmbeds(document);</script>
+    <script>
+        renderMathInElement(document.body, { delimiters: [{ left: "$$", right: "$$", display: true }, { left: "$", right: "$", display: false }], throwOnError: false });
+        (function () {
+            const header = document.querySelector("header");
+            const getScroll = () => window.scrollY || document.body.scrollTop || document.documentElement.scrollTop || 0;
+            let lastY = getScroll();
+            function onScroll() {
+                const y = getScroll();
+                if (y > lastY && y > 0) header.classList.add("nav-hidden");
+                else if (y < lastY) header.classList.remove("nav-hidden");
+                lastY = y;
+            }
+            window.addEventListener("scroll", onScroll, { passive: true });
+            document.body.addEventListener("scroll", onScroll, { passive: true });
+        })();
+    </script>
+    <script src="../posts.js"></script>
+    <script>
+        renderReadNext('#read-next', '../');
+    </script>
+</body>
+
+</html>

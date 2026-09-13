@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RK4: Understanding the Universe — ansatz</title>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/microlighter@2.1.0/dist/microlighter.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <link rel="stylesheet" href="post-alt.css">
+</head>
+
+<body data-syntax-theme="monokai-pro">
+    <svg id="tag-icon-defs" style="display: none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 26 1024 1024">
+        <defs>
+            <symbol id="tag-icon" viewBox="0 26 1024 1024">
+                <path
+                    d="M74.9714,634.514C27.4286,585.143 0,521.143 0,453.486L0,307.2C0,257.829 1.82857,215.771 10.9714,179.2C18.2857,142.629 32.9143,109.714 58.5143,84.1143C84.1143,58.5143 117.029,43.8857 153.6,36.5714C190.171,27.4286 232.229,25.6 281.6,25.6L427.886,25.6C495.543,25.6 559.543,53.0286 608.914,100.571L969.143,460.8C1003.89,497.371 1024,544.914 1024,594.286C1024,634.514 1011.2,674.743 985.6,707.657C956.343,746.057 903.314,806.4 842.971,868.571C780.8,930.743 720.457,981.943 682.057,1011.2C649.143,1036.8 608.914,1049.6 568.686,1049.6C519.314,1049.6 471.771,1029.49 435.2,994.743L74.9714,634.514ZM281.6,384C323.657,384 358.4,349.257 358.4,307.2C358.4,265.143 323.657,230.4 281.6,230.4C239.543,230.4 204.8,265.143 204.8,307.2C204.8,349.257 239.543,384 281.6,384Z"
+                    fill="currentColor" fill-opacity="1"></path>
+            </symbol>
+        </defs>
+    </svg>
+    <header>
+        <a href="../blog.html">home</a>
+        <span>ansatz</span>
+        <a href="../index.html">portfolio</a>
+        <a href="../liam-eggleston-cv.pdf">cv</a>
+    </header>
+    <main>
+        <img src="../images/rk4.png"
+            alt=""><span class="title">RK4: Understanding the Universe</span>
+        <div class="tags"><a><svg>
+                    <use href="#tag-icon"></use>
+                </svg>physics</a><a><svg>
+                    <use href="#tag-icon"></use>
+                </svg>lagrangian mechanics</a><a><svg>
+                    <use href="#tag-icon"></use>
+                </svg>math</a></div><span class="description">Making sense of the universe through the lens of numerical
+            methods.</span>
+        <hr>
+        <section class="full">
+            <p>Differential equations are the language of the universe. From the orbit of distant planets to
+                aerodynamics and the fluctuations of financial markets, change is governed by these mathematical
+                relationships. Yet, while nature writes its laws in the precise prose of calculus, solving them exactly
+                is often impossible.</p> 
+            <figure>
+                <div class="shader-embed" style="height:420px"><canvas></canvas>
+                    <script type="x-shader/x-fragment" data-pass="buffer">
+//A strange attractor traced with Euler steps — https://en.wikipedia.org/wiki/R%C3%B6ssler_attractor
+//(the same crude, fixed-step integration this article warns against — appropriate, for once)
+
+//Settings
+#define STEPS 96.0
+#define VIEW_SCALE 0.028
+
+#define SPEED 0.2
+#define INTENSITY 0.1
+#define FADE 0.99
+#define FOCUS 1.
+
+//Camera: a slow, perpetual orbit around the attractor
+#define ROT_SPEED 0.15
+#define ELEVATION radians(24.0)
+#define CENTER vec3(0.0, 0.0, 11.0)
+
+//System Parameters (Rössler)
+float RA = 0.2;
+float RB = 0.2;
+float RC = 5.7;
+
+//Initial Position
+vec3 start = vec3(0.1, 0.0, 0.0);
+
+mat3 rotY(float a)
+{
+    float s = sin(a), c = cos(a);
+    return mat3(c, 0.0, -s,
+                0.0, 1.0, 0.0,
+                s, 0.0, c);
+}
+
+mat3 rotX(float a)
+{
+    float s = sin(a), c = cos(a);
+    return mat3(1.0, 0.0, 0.0,
+                0.0, c, -s,
+                0.0, s, c);
+}
+
+//Orbiting camera: rotate the centered point, then take its xy as an orthographic projection
+vec2 project(vec3 p)
+{
+    p = rotX(ELEVATION) * rotY(iTime * ROT_SPEED) * (p - CENTER);
+    return p.xy;
+}
+
+//Calculate the next position
+vec3 Integrate(vec3 cur, float dt)
+{
+	vec3 next = vec3(0);
+
+    next.x = -cur.y - cur.z;
+    next.y = cur.x + RA * cur.y;
+    next.z = RB + cur.z * (cur.x - RC);
+
+    return cur + next * dt;
+}
+
+//Distance to a line segment
+float dfLine(vec2 start, vec2 end, vec2 uv)
+{
+	vec2 line = end - start;
+	float frac = dot(uv - start,line) / dot(line,line);
+	return distance(start + line * clamp(frac, 0.0, 1.0), uv);
+}
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{
+    vec2 res = iResolution.xy / iResolution.y;
+    vec2 uv = fragCoord / iResolution.y;
+    uv -= res/2.0;
+    float d = 1e6;
+
+    vec3 last = texture(iChannel0, vec2(0,0)).xyz;
+    vec3 next = vec3(0);
+
+    for(float i = 0.0;i < STEPS;i++)
+    {
+    	next = Integrate(last, 0.016 * SPEED);
+
+        d = min(d, dfLine(project(last) * VIEW_SCALE, project(next) * VIEW_SCALE, uv));
+
+        last = next;
+    }
+
+    float c = (INTENSITY / SPEED) * smoothstep(FOCUS / iResolution.y, 0.0, d);
+
+	c += (INTENSITY/8.5) * exp(-1000.0 * d*d);
+
+    //pixel (0,0) saves the current position.
+    if(floor(fragCoord) == vec2(0,0))
+    {
+        if(iFrame == 0) //Setup initial conditions.
+    	{
+    		fragColor = vec4(start, 0);
+    	}
+        else //Save current position.
+        {
+    		fragColor = vec4(next, 0);
+        }
+    }
+    else
+    {
+        vec3 lc = texture(iChannel0, fragCoord / iResolution.xy).rgb;
+        fragColor = vec4(vec3(c) + lc * FADE, 0);
+    }
+}
+</script>
+                    <script type="x-shader/x-fragment" data-pass="image">
+#define COLOR_BACK vec3(0.0, 0.0, 0.0)
+
+//Cosine-based palette (Inigo Quilez) — cycles the trail through a full spectrum as its density changes
+vec3 palette(float t)
+{
+    vec3 a = vec3(0.5, 0.5, 0.5);
+    vec3 b = vec3(0.5, 0.5, 0.5);
+    vec3 c = vec3(1.0, 1.0, 1.0);
+    vec3 d = vec3(0.0, 0.33, 0.67);
+    return a + b * cos(6.28318 * (c * t + d));
+}
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{
+	vec2 uv = fragCoord.xy / iResolution.xy;
+
+    float b = texture(iChannel0, uv).x;
+
+    vec3 trace = palette(b * 0.5 + 0.15);
+
+	fragColor = vec4(mix(COLOR_BACK, trace, smoothstep(0.0, 0.4, b)), 1.0);
+}
+</script>
+                </div>
+                <figcaption><span class="title">Figure 1</span>A Rössler system, a strange attractor, traced live with
+                    Euler integration.</figcaption>
+            </figure>
+            <p>For centuries, scientists have had to rely on approximations to bring these equations to life. For many,
+                the journey into numerical simulation begins with Euler’s method, a beautifully simple approach that
+                steps forward in time using a straight line. But while Euler’s method is intuitive, the real world
+                rarely moves in straight lines, causing simple simulations to quickly drift into chaos. Let's see why
+                this happens.</p>
+            <div class="desmos-embed" style="height:420px" data-expressions="false" data-equations="[]"
+                data-graph-url="https://www.desmos.com/geometry/oneldb4mio"></div>
+            <p>In the last article about modeling a double pendulum, I showed the figure above to show how smaller time
+                steps $\Delta t$ allow for better integration using a method called Euler's method, which uses the
+                equation below to estimate small changes for a function.</p>
+            <p>$$f(t + \Delta t)\approx f(t) + \dot f(t)\Delta t$$</p>
+            <p>If we let $\Delta t$ shrink all the way down to $\Delta t\to0$, we <em>would</em> get a perfect
+                "solution" to the differential equation. Unfortunately, at least for now, it is impossible to calculate
+                so many little steps. Think about it: if our time steps are one millisecond ($\Delta t=0.001s$), we are
+                already doing $1000$ calculations per second of our simulation.</p>
+            <p>You may now be thinking "Okay. But we can approximate a solution with a less infinitesimal $\Delta t$.
+                What's wrong with that?" Well, unfortunately, this type of solution often causes a simulation to "blow
+                up" to infinity. Let's look at it graphically</p>
+            <div class="desmos-embed" style="height:420px" data-expressions="false" data-equations="[]"
+                data-graph-url="https://www.desmos.com/geometry/dvihl5syvm"></div>
+            <p>and practically, using the single pendulum as an example:</p>
+            <div class="desmos-embed" style="height:420px" data-expressions="false" data-equations="[]"
+                data-graph-url="https://www.desmos.com/geometry/l0w38izdta"></div>
+            <p>Notice how the pendulum seems to find momentum out of nowhere. Not only does this violate the law of
+                conservation of energy; it's just plain inaccurate.</p>
+            <p>So... we've established the problem. What now?</p>
+            <p>One solution is to simply make $\Delta t$ smaller, but this comes with a computational cost. Instead,
+                what if we could get more information about what happens <em>between</em> our time steps?</p>
+            <p>This is the idea behind the <strong>Runge-Kutta method</strong>, and specifically the method we'll use
+                here: <strong>fourth-order Runge-Kutta</strong>, or <strong>RK4</strong>.</p>
+            <p>Let's start with our differential equation</p>
+            <p>$$\frac{dy}{dt}=f(t,y).$$</p>
+            <p>The equation tells us the slope of $y$ at any point $(t,y)$. If we knew the slope at every point between
+                $t$ and $t+\Delta t$, we could simply integrate:</p>
+            <p>$$y(t+\Delta t)=y(t)+\int_t^{t+\Delta t}f(t,y(t))\ dt.$$</p>
+            <p>The problem is that we don't know the trajectory $y(t)$ inside the interval. RK4 gets around this by
+                sampling the slope at several carefully chosen points and using those slopes to estimate the average
+                slope over the entire interval.</p>
+            <span class="big">The Four Slopes</span>
+            <p>First, let's recall what Euler's method does. It looks at the slope at the beginning of the interval:</p>
+            <p>$$k_1=f(t,y).$$</p>
+            <p>We can then use this slope to predict where the function will be after a time $\Delta t$:</p>
+            <p>$$y(t+\Delta t)\approx y(t)+k_1\Delta t.$$</p>
+            <p>But this assumes that the slope stays constant throughout the entire interval. Unlike Euler, RK4 checks
+                the slope again in the middle.</p>
+            <p>We can make an initial estimate of the midpoint using $k_1$:</p>
+            <p>$$y\left(t+\frac{\Delta t}{2}\right)
+                \approx
+                y+\frac{\Delta t}{2}k_1.$$</p>
+            <p>We can then evaluate the slope at this estimated midpoint:</p>
+            <p>$$\boxed{
+                k_2=
+                f\left(
+                t+\frac{\Delta t}{2},
+                y+\frac{\Delta t}{2}k_1
+                \right)
+                }.$$</p>
+            <p>Now we have a better idea of what the slope looks like halfway through our interval. We can use $k_2$ to
+                make another estimate of the midpoint:</p>
+            <p>$$y\left(t+\frac{\Delta t}{2}\right)
+                \approx
+                y+\frac{\Delta t}{2}k_2.$$</p>
+            <p>This gives us a third slope:</p>
+            <p>$$\boxed{
+                k_3=
+                f\left(
+                t+\frac{\Delta t}{2},
+                y+\frac{\Delta t}{2}k_2
+                \right)
+                }.$$</p>
+            <p>Finally, we use $k_3$ to estimate where the function will be at the end of the interval:</p>
+            <p>$$y(t+\Delta t)\approx y+\Delta t k_3.$$</p>
+            <p>Evaluating the slope there gives us our fourth and final slope:</p>
+            <p>$$\boxed{
+                k_4=
+                f(t+\Delta t,y+\Delta t k_3)
+                }.$$</p>
+            <p>So RK4 has now sampled the slope four times:</p>
+            <p>$$\boxed{
+                \begin{aligned}
+                k_1&amp;=f(t,y)\\
+                k_2&amp;=f\left(t+\frac{\Delta t}{2},y+\frac{\Delta t}{2}k_1\right)\\
+                k_3&amp;=f\left(t+\frac{\Delta t}{2},y+\frac{\Delta t}{2}k_2\right)\\
+                k_4&amp;=f(t+\Delta t,y+\Delta t k_3).
+                \end{aligned}
+                }$$</p>
+            <span class="big">Combining the Slopes</span>
+            <p>We could simply average the four values:</p>
+            <p>$$\frac{k_1+k_2+k_3+k_4}{4}.$$</p>
+            <p>However, RK4 uses a more carefully chosen weighted average:</p>
+            <p>$$\boxed{
+                y(t+\Delta t)
+                \approx
+                y(t)+
+                \frac{\Delta t}{6}
+                (k_1+2k_2+2k_3+k_4).
+                }$$</p>
+            <p>This is known as the <strong>update equation</strong>. It relies on a specific weight sequence, $1, 2, 2,
+                1$. While this sequence may seem arbitrary at first, it is in fact chosen so that the Taylor expansion
+                of our RK4 approximation matches the Taylor expansion of the true solution through fourth order.</p>
+            <p>Recall the Taylor expansion of a function:</p>
+            <p>$$y(t+\Delta t)
+                =
+                y(t)
+                +\dot y\Delta t
+                +\frac{\ddot y}{2}\Delta t^2
+                +\frac{y^{(3)}}{6}\Delta t^3
+                +\frac{y^{(4)}}{24}\Delta t^4
+                +\mathcal O(\Delta t^5).$$</p>
+            <p>This $\mathcal O(\Delta t^5)$ ("big O") notation describes the polynomial growth rate of the rest of the
+                series. Because the lowest omitted degree is $t^5$, we say that RK4 has a local <strong>truncation
+                    error</strong> of $\mathcal O(\Delta t^5)$ and a global error of $\mathcal O(\Delta t^4)$.</p>
+            <p>Our differential equation gives us</p>
+            <p>$$\dot y=f(t,y),$$</p>
+            <p>so the first derivative is known. The higher derivatives can also be obtained by repeatedly
+                differentiating $f(t,y)$ using the chain rule.</p>
+            <p>RK4 effectively constructs an approximation whose Taylor expansion agrees with this true expansion
+                through the $\Delta t^4$ term.</p>
+            <p>In other words,</p>
+            <p>$$y_{\mathrm{RK4}}(t+\Delta t)
+                =
+                y_{\mathrm{exact}}(t+\Delta t)
+                +\mathcal O(\Delta t^5).$$</p>
+            <p>The error made during a <strong>single step</strong> is therefore proportional to $\Delta t^5$. After
+                taking many steps over a fixed interval, this becomes a global error of $\mathcal O(\Delta t^4)$.</p>
+            <p>This is where the "4" in RK4 comes from. For comparison, Euler's method has global error</p>
+            <p>$$\mathcal O(\Delta t).$$</p>
+            <p>This means that if we cut our timestep in half, the error from Euler decreases roughly by a factor of
+                $2$, while the error from RK4 decreases roughly by a factor of $2^4=16$.</p>
+            <p>We can therefore get substantially more accuracy without making $\Delta t$ nearly as small as we would
+                need with Euler's method. You can see RK4 in action and compare it to Euler's method for the same
+                $\Delta t$ using the graph below.</p>
+            <div class="desmos-embed" style="height:520px" data-expressions="false" data-equations="[]"
+                data-graph-url="https://www.desmos.com/geometry/kvufectayt"></div>
+            <span class="big">RK4 and the Pendulum</span>
+            <p>Recall from earlier the pendulum trajectory which speeds up (or "blows up") to infinity over time as
+                Euler's method accumulates integration error.</p>
+            <div class="desmos-embed" style="height:420px" data-expressions="false" data-equations="[]"
+                data-graph-url="https://www.desmos.com/geometry/l0w38izdta"></div>
+            <p>Using RK4, we see that we no longer have this sudden explosion, and the motion is much more stable.</p>
+            <div class="desmos-embed" style="height:420px" data-expressions="false" data-equations="[]"
+                data-graph-url="https://www.desmos.com/calculator/0s0vobds2a"></div>
+            <p>The improvement comes from the fact that RK4 does not blindly follow the slope at the beginning of each
+                timestep. Instead, it checks what the trajectory is doing in the middle and at the end of the timestep
+                before deciding how far to move.</p>
+            <p>This is particularly useful for physical systems such as pendulums, where the direction and magnitude of
+                the acceleration can change significantly during a single timestep.</p>
+            <span class="big">Implementing RK4</span>
+            <p>Now that we understand the mathematics, let's turn it into a computer program. The first step is to write
+                a function that describes the differential equation. For example, consider</p>
+            <p>$$\frac{dy}{dt}=y.$$</p>
+            <p>In Python, we could write:</p>
+            <pre><code class="language-python">def f(t, y):
+                    return y</code></pre>
+            <p>We can then implement one RK4 timestep directly from the equations above:</p>
+            <pre><code class="language-python">def rk4_step(f, t, y, dt):
+                    k1 = f(t, y)
+
+                    k2 = f(
+                    t + dt/2,
+                    y + dt*k1/2
+                    )
+
+                    k3 = f(
+                    t + dt/2,
+                    y + dt*k2/2
+                    )
+
+                    k4 = f(
+                    t + dt,
+                    y + dt*k3
+                    )
+
+                    return y + dt*(k1 + 2*k2 + 2*k3 + k4)/6</code></pre>
+            <p>We can then repeatedly call this function to move forward through time:</p>
+            <pre><code class="language-python">t = 0
+                    y = 1
+                    dt = 0.01
+
+                    for i in range(1000):
+                    y = rk4_step(f, t, y, dt)
+                    t += dt</code></pre>
+            <p>At every iteration, the program takes the current state, calculates the four slopes, combines them, and
+                produces the next state.</p>
+            <p>The important thing to notice is that RK4 itself does not care what physical system we are modeling. All
+                of the physics is contained inside the function $f(t,y)$.</p>
+            <span class="big">RK4 with Vectors</span>
+            <p>This becomes especially useful when we start working with systems containing multiple variables.</p>
+            <p>Suppose instead of a single number $y$, our state is a vector:</p>
+            <p>$$\mathbf{x}=
+                \begin{bmatrix}
+                x_1\\
+                x_2\\
+                x_3
+                \end{bmatrix}.$$</p>
+            <p>Our differential equation might then be</p>
+            <p>$$\dot{\mathbf{x}}=\mathbf f(t,\mathbf{x}).$$</p>
+            <p>The only difference here is that the four slopes are now the vectors</p>
+            <p>$$\boxed{
+                \begin{aligned}
+                \mathbf{k}_1&amp;=f(t,\mathbf{x})\\
+                \mathbf{k}_2&amp;=f\left(t+\frac{\Delta t}{2},
+                \mathbf{x}+\frac{\Delta t}{2}\mathbf{k}_1\right)\\
+                \mathbf{k}_3&amp;=f\left(t+\frac{\Delta t}{2},
+                \mathbf{x}+\frac{\Delta t}{2}\mathbf{k}_2\right)\\
+                \mathbf{k}_4&amp;=f(t+\Delta t,
+                \mathbf{x}+\Delta t\mathbf{k}_3).
+                \end{aligned}
+                }$$</p>
+            <p>Our update function is then</p>
+            <p>$$\boxed{
+                \mathbf{x}_{n+1}
+                =
+                \mathbf{x}_n+
+                \frac{\Delta t}{6}
+                \left(
+                \mathbf{k}_1+2\mathbf{k}_2+2\mathbf{k}_3+\mathbf{k}_4
+                \right).
+                }$$</p>
+            <p>A pendulum, for example, can be represented using the state</p>
+            <p>$$\mathbf{x}=
+                \begin{bmatrix}
+                \theta\\
+                \dot\theta
+                \end{bmatrix}.$$</p>
+            <p>Recall that its equation of motion is</p>
+            <p>$$\ddot\theta=-\frac{g}{l}\sin\theta.$$</p>
+            <p>We can turn this second-order equation into two first-order equations:</p>
+            <p>$$\dot\theta=\dot\theta,\ \ \ddot\theta=-\frac{g}{l}\sin\theta.$$</p>
+            <p>More clearly, if we define</p>
+            <p>$$x_1=\theta,\ \ x_2=\dot\theta,$$</p>
+            <p>then</p>
+            <p>$$\boxed{
+                \dot{\mathbf{x}}
+                =
+                \begin{bmatrix}
+                x_2\\
+                -\frac{g}{l}\sin x_1
+                \end{bmatrix}.
+                }$$</p>
+            <p>This vector is our function $f(\mathbf{x})$. RK4 can therefore integrate the pendulum simply by
+                repeatedly evaluating this function.</p>
+        </section>
+        <hr style="background: var(--secondary); height: 1px;">
+        <span class="big">Read next</span>
+        <nav id="read-next"></nav>
+    </main>
+    <footer>
+        <div>
+            <a href="https://linkedin.com/in/liameggleston">
+                <svg viewBox="0 0 448 512" aria-hidden="true">
+                    <path
+                        d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zm5 170.2l66.5 0 0 213.8-66.5 0 0-213.8zm71.7-67.7a38.5 38.5 0 1 1 -77 0 38.5 38.5 0 1 1 77 0zM317.9 416l0-104c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9l0 105.8-66.4 0 0-213.8 63.7 0 0 29.2 .9 0c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9l0 117.2-66.4 0z" />
+                </svg>
+                /liameggleston
+            </a>
+            <a href="mailto:liameggs@ucla.edu">
+                <svg viewBox="39 77 986 922" aria-hidden="true">
+                    <path
+                        d="M190.171,992.914C179.2,996.571 168.229,998.4 157.257,998.4C91.4286,998.4 38.4,945.371 38.4,879.543L38.4,872.229C38.4,842.971 47.5429,815.543 65.8286,793.6C107.886,738.743 146.286,680.229 179.2,619.886C188.343,601.6 206.629,588.8 228.571,588.8L512,588.8C541.257,588.8 563.2,566.857 563.2,537.6C563.2,510.171 541.257,486.4 512,486.4L228.571,486.4C206.629,486.4 188.343,473.6 179.2,455.314C146.286,394.971 107.886,336.457 65.8286,283.429C49.3714,259.657 38.4,232.229 38.4,202.971L38.4,195.657C38.4,129.829 91.4286,76.8 157.257,76.8C168.229,76.8 179.2,78.6285 190.171,82.2857C228.571,93.2571 384,140.8 550.4,208.457C634.514,241.371 720.457,279.771 799.086,321.829C875.886,362.057 945.371,407.771 992.914,457.143C1014.86,480.914 1024,510.171 1024,537.6C1024,565.029 1014.86,594.286 992.914,618.057C945.371,667.429 875.886,713.143 799.086,753.371C720.457,795.429 634.514,833.829 550.4,866.743C384,934.4 228.571,981.943 190.171,992.914Z"
+                        fill="currentColor" fill-opacity="1"></path>
+                </svg>
+                liameggs@ucla.edu
+            </a>
+            <a href="https://liameggleston.com/">
+                <svg viewBox="4 47 1019 984" aria-hidden="true">
+                    <path
+                        d="M530.286,54.8571C521.143,43.8857 504.686,43.8857 493.714,54.8571C458.971,98.7429 429.714,157.257 405.943,226.743C378.514,312.686 362.057,409.6 358.4,510.171C358.4,522.971 369.371,535.771 382.171,535.771C422.4,537.6 466.286,537.6 513.829,537.6C559.543,537.6 601.6,537.6 641.829,535.771C656.457,535.771 667.429,522.971 665.6,510.171C663.771,409.6 647.314,312.686 618.057,226.743C596.114,157.257 565.029,98.7429 530.286,54.8571ZM321.829,54.8571C343.771,47.5428 362.057,71.3143 351.086,91.4286C334.629,124.343 321.829,159.086 309.029,193.829C277.943,288.914 259.657,394.971 256,501.029C256,517.486 243.2,528.457 228.571,526.629C175.543,522.971 131.657,517.486 95.0857,512C65.8286,508.343 43.8857,504.686 23.7714,501.029C10.9714,499.2 3.65714,488.229 3.65714,475.429C16.4571,351.086 62.1714,243.2 140.8,166.4C192,115.2 252.343,78.6285 323.657,54.8571ZM261.486,654.629C259.657,641.829 250.514,630.857 237.714,630.857C175.543,625.371 122.514,619.886 80.4571,614.4C64,612.571 51.2,608.914 36.5714,607.086C20.1143,605.257 5.48571,618.057 7.31429,636.343C25.6,744.229 69.4857,839.314 140.8,910.629C190.171,960 252.343,996.571 321.829,1020.34C343.771,1027.66 362.057,1003.89 351.086,983.771C334.629,950.857 321.829,916.114 309.029,881.371C285.257,810.057 270.629,733.257 261.486,654.629ZM493.714,1020.34C502.857,1033.14 521.143,1033.14 530.286,1020.34C565.029,976.457 596.114,917.943 618.057,848.457C636.343,791.771 650.971,731.429 658.286,667.429C660.114,650.971 647.314,638.171 632.686,638.171C596.114,640 555.886,640 513.829,640C469.943,640 429.714,640 393.143,638.171C376.686,638.171 363.886,650.971 365.714,665.6C374.857,729.6 387.657,791.771 405.943,848.457C429.714,917.943 458.971,976.457 495.543,1020.34ZM714.971,193.829C704,159.086 689.371,124.343 672.914,91.4286C663.771,71.3143 680.229,47.5428 702.171,54.8571C773.486,78.6285 835.657,115.2 885.029,164.571C963.657,243.2 1011.2,351.086 1022.17,475.429C1024,488.229 1014.86,499.2 1002.06,501.029C983.771,504.686 960,508.343 932.571,512C894.171,517.486 850.286,522.971 795.429,526.629C780.8,528.457 769.829,515.657 768,501.029C764.343,394.971 747.886,288.914 714.971,193.829ZM714.971,881.371C704,916.114 689.371,950.857 672.914,983.771C663.771,1003.89 680.229,1027.66 702.171,1020.34C773.486,996.571 835.657,960 885.029,910.629C956.343,839.314 1002.06,744.229 1018.51,634.514C1020.34,618.057 1005.71,605.257 989.257,607.086C976.457,608.914 961.829,610.743 945.371,614.4C903.314,619.886 850.286,625.371 788.114,630.857C775.314,630.857 764.343,641.829 762.514,654.629C755.2,733.257 738.743,810.057 716.8,881.371Z"
+                        fill="currentColor" fill-opacity="1"></path>
+                </svg>
+                liameggleston.com
+            </a>
+        </div>
+        <div>
+            <span class="title">About</span>
+            <span>Hello! I'm Liam Eggleston, a B.S. Electrical Engineering and M.A. Mathematics candidate at UCLA.
+                People tell me I'm very mathy.</span>
+            <span class="disclaimer">Made with ❤️ sans AI in vanilla JS/CSS/HTML. <br>Site design heavily inspired by <a
+                    href="https://increment.com/">increment.com</a></span>
+        </div>
+    </footer>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <script>
+        (function () {
+            var API_KEY = 'dcb31709b452b1cf9dc26972add0fda6';
+            var scriptPromise = null;
+            function loadDesmos() {
+                if (window.Desmos) return Promise.resolve();
+                if (scriptPromise) return scriptPromise;
+                scriptPromise = new Promise(function (resolve, reject) {
+                    var s = document.createElement('script');
+                    s.src = 'https://www.desmos.com/api/v1.12/calculator.js?apiKey=' + API_KEY;
+                    s.onload = resolve;
+                    s.onerror = reject;
+                    document.head.appendChild(s);
+                });
+                return scriptPromise;
+            }
+            function applyExtraEquations(calc, el) {
+                var eqs = [];
+                try { eqs = JSON.parse(el.dataset.equations || '[]'); } catch (e) { }
+                eqs.forEach(function (latex, i) { calc.setExpression({ id: 'extra-' + i, latex: latex }); });
+            }
+            function mount(el) {
+                if (!window.Desmos || el.dataset.desmosMounted) return;
+                el.dataset.desmosMounted = '1';
+                var graphUrl = el.dataset.graphUrl;
+                var isGeometry = !!graphUrl && graphUrl.indexOf('/geometry/') !== -1;
+                var Ctor = isGeometry ? Desmos.Geometry : Desmos.GraphingCalculator;
+                var calc = Ctor(el, {
+                    expressions: el.dataset.expressions === 'true',
+                    keypad: false,
+                    border: false
+                });
+                window.__desmosInstances = window.__desmosInstances || [];
+                window.__desmosInstances.push(calc);
+                if (graphUrl) {
+                    fetch(graphUrl, { headers: { Accept: 'application/json' } })
+                        .then(function (r) { return r.json(); })
+                        .then(function (json) {
+                            if (json && json.state) {
+                                if (isGeometry && el.dataset.expressions !== 'true') {
+                                    json.state.geometryToolbar = { toolbar: 'none' };
+                                }
+                                calc.setState(json.state);
+                            }
+                            applyExtraEquations(calc, el);
+                        })
+                        .catch(function (e) { console.error('Desmos embed: failed to load graph ' + graphUrl, e); });
+                } else {
+                    applyExtraEquations(calc, el);
+                }
+            }
+            window.initDesmosEmbeds = function (root) {
+                var els = (root || document).querySelectorAll('.desmos-embed:not([data-desmos-mounted])');
+                if (!els.length) return;
+                loadDesmos().then(function () { els.forEach(mount); });
+            };
+            window.destroyDesmosEmbeds = function () {
+                (window.__desmosInstances || []).forEach(function (c) { try { c.destroy(); } catch (e) { } });
+                window.__desmosInstances = [];
+            };
+        })();
+
+        initDesmosEmbeds(document);</script>
+    <script>
+        (function () {
+            function compileShader(gl, type, source) {
+                var shader = gl.createShader(type);
+                gl.shaderSource(shader, source);
+                gl.compileShader(shader);
+                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                    console.error('Shader embed: compile error', gl.getShaderInfoLog(shader));
+                    gl.deleteShader(shader);
+                    return null;
+                }
+                return shader;
+            }
+            function linkProgram(gl, vsSource, fsSource) {
+                var vs = compileShader(gl, gl.VERTEX_SHADER, vsSource);
+                var fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSource);
+                if (!vs || !fs) return null;
+                var program = gl.createProgram();
+                gl.attachShader(program, vs);
+                gl.attachShader(program, fs);
+                gl.linkProgram(program);
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                    console.error('Shader embed: link error', gl.getProgramInfoLog(program));
+                    gl.deleteProgram(program);
+                    return null;
+                }
+                return program;
+            }
+            var VERTEX_SRC = '#version 300 es\n' +
+                'const vec2 verts[3] = vec2[3](vec2(-1.0,-1.0), vec2(3.0,-1.0), vec2(-1.0,3.0));\n' +
+                'void main() { gl_Position = vec4(verts[gl_VertexID], 0.0, 1.0); }';
+            function wrapFragment(userSource) {
+                return '#version 300 es\n' +
+                    'precision highp float;\n' +
+                    'uniform vec3 iResolution;\n' +
+                    'uniform float iTime;\n' +
+                    'uniform int iFrame;\n' +
+                    'uniform sampler2D iChannel0;\n' +
+                    'out vec4 outColor;\n' +
+                    userSource + '\n' +
+                    'void main() { mainImage(outColor, gl_FragCoord.xy); }';
+            }
+            function makeTarget(gl, w, h, type) {
+                var tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, type === gl.FLOAT ? gl.RGBA32F : gl.RGBA16F, w, h, 0, gl.RGBA, type, null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                var fbo = gl.createFramebuffer();
+                gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.bindTexture(gl.TEXTURE_2D, null);
+                return { tex: tex, fbo: fbo };
+            }
+            function mount(el) {
+                if (el.dataset.shaderMounted) return;
+                el.dataset.shaderMounted = '1';
+                var bufferTag = el.querySelector('script[data-pass="buffer"]');
+                var imageTag = el.querySelector('script[data-pass="image"]');
+                if (!imageTag) return;
+                var canvas = el.querySelector('canvas') || el.appendChild(document.createElement('canvas'));
+                var gl = canvas.getContext('webgl2');
+                if (!gl) { console.warn('Shader embed: WebGL2 unavailable'); return; }
+                var type = gl.getExtension('EXT_color_buffer_float') ? gl.FLOAT : gl.HALF_FLOAT;
+                if (type === gl.HALF_FLOAT && !gl.getExtension('EXT_color_buffer_half_float')) {
+                    console.warn('Shader embed: no floating-point render target support');
+                    return;
+                }
+                var imageProgram = linkProgram(gl, VERTEX_SRC, wrapFragment(imageTag.textContent));
+                var bufferProgram = bufferTag ? linkProgram(gl, VERTEX_SRC, wrapFragment(bufferTag.textContent)) : null;
+                if (!imageProgram || (bufferTag && !bufferProgram)) return;
+                var vao = gl.createVertexArray();
+
+                var targets = null, w = 0, h = 0, frame = 0, start = performance.now(), raf = 0;
+                function resize() {
+                    var rect = canvas.getBoundingClientRect();
+                    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+                    var nw = Math.max(1, Math.round(rect.width * dpr));
+                    var nh = Math.max(1, Math.round(rect.height * dpr));
+                    if (nw === w && nh === h) return;
+                    w = nw; h = nh;
+                    canvas.width = w; canvas.height = h;
+                    if (targets) {
+                        gl.deleteTexture(targets[0].tex); gl.deleteFramebuffer(targets[0].fbo);
+                        gl.deleteTexture(targets[1].tex); gl.deleteFramebuffer(targets[1].fbo);
+                    }
+                    targets = bufferProgram ? [makeTarget(gl, w, h, type), makeTarget(gl, w, h, type)] : null;
+                    frame = 0;
+                }
+                function setCommonUniforms(program, t) {
+                    gl.useProgram(program);
+                    gl.uniform3f(gl.getUniformLocation(program, 'iResolution'), w, h, 1.0);
+                    gl.uniform1f(gl.getUniformLocation(program, 'iTime'), t);
+                    gl.uniform1i(gl.getUniformLocation(program, 'iFrame'), frame);
+                    gl.uniform1i(gl.getUniformLocation(program, 'iChannel0'), 0);
+                }
+                function draw() {
+                    resize();
+                    var t = (performance.now() - start) / 1000;
+                    gl.bindVertexArray(vao);
+                    gl.activeTexture(gl.TEXTURE0);
+                    var readTex = null;
+                    if (bufferProgram && targets) {
+                        var src = targets[frame % 2];
+                        var dst = targets[(frame + 1) % 2];
+                        gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+                        gl.viewport(0, 0, w, h);
+                        gl.bindTexture(gl.TEXTURE_2D, src.tex);
+                        setCommonUniforms(bufferProgram, t);
+                        gl.drawArrays(gl.TRIANGLES, 0, 3);
+                        readTex = dst.tex;
+                    }
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                    gl.viewport(0, 0, w, h);
+                    gl.bindTexture(gl.TEXTURE_2D, readTex);
+                    setCommonUniforms(imageProgram, t);
+                    gl.drawArrays(gl.TRIANGLES, 0, 3);
+                    frame++;
+                    raf = requestAnimationFrame(draw);
+                }
+                raf = requestAnimationFrame(draw);
+                window.__shaderInstances = window.__shaderInstances || [];
+                window.__shaderInstances.push({
+                    stop: function () {
+                        cancelAnimationFrame(raf);
+                        var lose = gl.getExtension('WEBGL_lose_context');
+                        if (lose) lose.loseContext();
+                    }
+                });
+            }
+            window.initShaderEmbeds = function (root) {
+                (root || document).querySelectorAll('.shader-embed:not([data-shader-mounted])').forEach(mount);
+            };
+            window.destroyShaderEmbeds = function () {
+                (window.__shaderInstances || []).forEach(function (inst) { try { inst.stop(); } catch (e) { } });
+                window.__shaderInstances = [];
+            };
+        })();
+
+        initShaderEmbeds(document);</script>
+    <script>
+        renderMathInElement(document.body, { delimiters: [{ left: "$$", right: "$$", display: true }, { left: "$", right: "$", display: false }], throwOnError: false });
+        (function () {
+            const header = document.querySelector("header");
+            const getScroll = () => window.scrollY || document.body.scrollTop || document.documentElement.scrollTop || 0;
+            let lastY = getScroll();
+            function onScroll() {
+                const y = getScroll();
+                if (y > lastY && y > 0) header.classList.add("nav-hidden");
+                else if (y < lastY) header.classList.remove("nav-hidden");
+                lastY = y;
+            }
+            window.addEventListener("scroll", onScroll, { passive: true });
+            document.body.addEventListener("scroll", onScroll, { passive: true });
+        })();
+    </script>
+    <script src="../posts.js"></script>
+    <script>
+        renderReadNext('#read-next', '../');
+    </script>
+</body>
+
+</html>

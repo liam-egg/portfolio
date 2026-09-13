@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        @font-face {
+            font-family: 'Geist';
+            src: url('src/Geist[wght].ttf') format('truetype-variations');
+            font-weight: 100 900;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Geist';
+            src: url('src/Geist-Italic[wght].ttf') format('truetype-variations');
+            font-weight: 100 900;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Fira Code';
+            src: url('src/FiraCode-VariableFont_wght.ttf') format('truetype');
+            font-weight: 300 700;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Gluten';
+            src: url('src/Gluten.ttf') format('truetype');
+        }
+        @font-face {
+            font-family: 'Aktura';
+            src: url('src/Aktura.woff2') format('woff2');
+        }
+
+        :root {
+            --border: #1f1f1f;
+            --secondary: #a1a1a1;
+            --first: #0a0a0a;
+            --second: #1a1a1a;
+            --lightBorder: #ffffff30;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            outline: none;
+            border: none;
+            font-family: 'Geist', sans-serif;
+            background: black;
+            color: white;
+        }
+
+        button {
+            all: unset;
+            cursor: pointer;
+        }
+        .code {
+            font-family: 'Fira Code', monospace;
+        }
+
+        body > iframe {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+        }
+
+        body > header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            box-sizing: border-box;
+            border-bottom: 1px solid var(--border);
+            height: 60px;
+            padding: 0 20px;
+            background: #00000080;
+            z-index: 1;
+            backdrop-filter: blur(15px);
+
+            display: flex;
+            align-items: center;
+        }
+        body > header > span.name {
+            margin-right: auto;
+            font-size: 26px;
+            font-family: 'Aktura', serif;
+            letter-spacing: 1px;
+            height: 32px;
+            transform-origin: center;
+        }
+        body > header > span.name.spin { animation: name-spin 0.6s ease-out; }
+        @keyframes name-spin {
+            to { transform: rotate(720deg); }
+        }
+
+        body > header > a {
+            margin-left: 30px;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+            color: white;
+            text-decoration: none;
+        }
+        body > header > a:hover {
+            opacity: 1;
+            text-shadow: 0 0 10px #ffffffa0;
+        }
+        body > header > a > span {
+            color: var(--secondary);
+        }
+
+        main {
+            padding: 0 max(20px, calc(50vw - 500px));
+            overflow: hidden;
+
+            display: flex;
+            flex-direction: column;
+        }
+        section > span.header {
+            display: block;
+            font-size: 42px;
+            font-weight: 500;
+            margin: 80px 0 20px;
+        }
+        section > span.header > span {
+            color: var(--secondary);
+            animation: blink 1s steps(1) infinite;
+        }
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        section#top {
+            position: relative;
+            padding: calc(50vh - 200px) 50px;
+            margin: 0;
+            align-items: start;
+            font-size: 18px;
+            line-height: 25px;
+
+            display: grid;
+            grid-template: 200px 1fr / auto auto;
+            gap: 20px 40px;
+        }
+        body > canvas.shader {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+            transition: opacity 0.15s linear;
+        }
+        section#top > img {
+            grid-area: span 2;
+            border-radius: 13px;
+            overflow: hidden;
+            object-fit: cover;
+            width: 320px;
+            height: 400px;
+        }
+        section#top > span.big {
+            font-size: 120px;
+            font-family: 'Gluten', serif;
+            font-weight: 700;
+            align-self: end;
+            line-height: 20px;
+        }
+        section#top a[href] {
+            cursor: pointer;
+            text-decoration: solid underline 2px;
+        }
+        section#top a {
+            font-weight: 600;
+            text-underline-offset: 3px;
+        }
+
+        main > section { position: relative; }
+        main > section::after {
+            content: '';
+            position: absolute;
+            background: linear-gradient(to right, transparent, var(--lightBorder) 15%, var(--lightBorder) 85%, transparent);
+            
+            left: min(-20px, calc(500px - 50vw));
+            bottom: 0;
+            height: 2px;
+            width: 100vw;
+        }
+        main > section > span {
+            display: block;
+            font-size: 18px;
+            margin-bottom: 50px;
+        }
+        main > section > span.top {
+            /* background: #00000050;
+            padding: 12px 15px;
+            border-radius: 8px; */
+            text-shadow: 0 0 15px black;
+        }
+
+        section.projects > nav {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 50px;
+        }
+
+        section.projects > nav > article {
+            border: 1px solid var(--border);
+            background: #121212;
+            border-radius: 10px;
+            overflow: hidden;
+
+            display: grid;
+            flex-direction: column;
+            grid-template: 40px 1fr / 100%;
+        }
+        section.projects > nav > article > header {
+            background: var(--first);
+            color: var(--secondary);
+
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+        }
+        section.projects > nav > article > header > div {
+            margin-right: 10px;
+            
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        section.projects > nav > article > header > div > span {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        section.projects > nav > article > section {
+            position: relative;
+            padding: 15px;
+            border-top: var(--border) 1px solid;
+
+            display: flex;
+            flex-direction: column;
+        }
+        section.projects > nav > article > section > span.name {
+            font-weight: 500;
+            font-size: 18px;
+        }
+        section.projects > nav > article > section > p {
+            all: unset;
+            color: var(--secondary);
+            margin-top: 5px;
+        }
+        section.projects > nav > article > section > p.code { white-space: pre-wrap; }
+        section.projects > nav > article.code {
+            background: #161622;
+            --border: #2a2a40;
+        }
+        section.projects > nav > article.code > header {
+            background: #1e1e2e;
+        }
+        section.projects > nav > article.tcp > header { padding: 0 11px; }
+        section.projects > nav > article.tcp > header > span {
+            padding: 3px 7px 5px 7px;
+            align-self: end;
+            border: 1px solid var(--border);
+            border-bottom: 0;
+            border-radius: 7px 7px 0 0;
+            background: #121212;
+        }
+        nav > article.tcp > section > span.terminal {
+            padding: 5px 9px;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            background: var(--first);
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: var(--secondary);
+        }
+        section.projects > nav > article.multimeter > header { background: #1a1a1a; }
+        section.projects > nav > article.multimeter > section > span.reading {
+            background: #071207;
+            border: 1px solid #1a3a1a;
+            border-radius: 7px;
+            height: 50px;
+            padding-right: 15px;
+            color: #5dcaa5;
+            font-size: 22px;
+            font-family: 'Fira Code', monospace;
+
+            display: flex;
+            align-items: center;
+            justify-content: end;
+            gap: 14px;
+        }
+        section.projects > nav > article.multimeter > section > span.reading > span {
+            font-size: 18px;
+            color: #2b814b;
+            margin-top: 5px;
+        }
+        section.projects > nav > article.multimeter > section > span.sub {
+            margin-top: 5px;
+            color: var(--secondary);
+            font-size: 14px;
+            text-transform: uppercase;
+            color: #4b4a46;
+            font-weight: 450;
+            font-family: 'Fira Code', monospace;
+        }
+
+        section.blog > nav {
+            margin-bottom: 50px;
+            
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        section.blog > nav > a {
+            color: inherit;
+            text-decoration: none;
+
+            display: block;
+        }
+        section.blog > nav > a > article {
+            position: relative;
+            padding: 15px 0;
+            font-size: 18px;
+            color: var(--secondary);
+            cursor: pointer;
+
+            display: grid;
+            grid-template: auto auto auto / 150px 1fr;
+            gap: 8px;
+        }
+        section.blog > nav > a > article > span.date {
+            grid-area: span 3;
+            color: var(--secondary);
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+        }
+        section.blog > nav > a > article > span.title {
+            font-weight: 500;
+            color: white;
+        }
+        section.blog > nav > a > article > div {
+            margin-top: 5px;
+
+            display: flex;
+            gap: 10px;
+        }
+        section.blog > nav > a > article > div > span {
+            padding: 3px 7px;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            background: #121212;
+            font-size: 14px;
+            font-family: 'Fira Code', monospace;
+        }
+        
+        section.cv > nav {
+            border: 1px solid var(--border);
+            background: var(--first);
+            border-radius: 10px;
+            font-family: 'Fira Code', monospace;
+            color: var(--secondary);
+            margin-bottom: 50px;
+
+            display: grid;
+            grid-template: 400px 50px / 100%;
+        }
+        section.cv > nav > div {
+            border-top: 1px solid var(--border);
+            padding: 0 15px;
+
+            display: grid;
+            grid-template: 100% / auto 1fr auto;
+            align-items: center;
+        }
+        section.cv > nav > div > div {
+            position: relative;
+            height: 100%;
+        }
+        section.cv > nav > div > div > input { opacity: 0; }
+        section.cv > nav > div > div > button {
+            justify-self: end;
+            width: max-content;
+            margin-right: 20px;
+        }
+        section.cv > nav > div > div > span::after {
+            content: '_';
+            opacity: 0;
+            font-weight: 500;
+            color: #78909C;
+        }
+        section.cv > nav > div > div > span.blink:has(+ input:focus)::after { animation: blink 1s steps(1) infinite; }
+        section.cv > nav > div > div > * {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            appearance: none;
+            background: none;
+            border: none;
+            outline: none;
+            padding: 0;
+
+            display: flex;
+            align-items: center;
+            font-size: 16px;
+            font-family: 'Fira Code', monospace;
+        }
+        section.cv > nav > div > button {
+            background: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: black;
+            font-size: 14px;
+            font-family: 'Geist', sans-serif;
+        }
+        section.cv > nav > section {
+            position: relative;
+            min-height: 0;
+            overflow: hidden auto;
+            padding: 15px 15px 12px;
+
+            display: flex;
+            flex-direction: column-reverse;
+            gap: 5px;
+        }
+        section.cv > nav > section > span.big {
+            font-size: 20px;
+            font-weight: 600;
+            color: #FFB74D; /* Cyan: 4DB6AC, Gold: FFB74D, Blue: 7986CB */
+        }
+        section.cv > nav > section > span.medium {
+            font-size: 18px;
+            color: white;
+            font-weight: 500;
+        }
+        section.cv > nav > section > span:not([class]) { margin-bottom: 15px; }
+        section.cv > nav > section > span.command { color: white; }
+        section.cv > nav > section > span.command > span {
+            color: #4DB6AC;
+            font-style: italic;
+        }
+
+        section.contact > nav {
+            margin-bottom: 40px;
+
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+        section.contact > nav > a {
+            padding: 16px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: #121212;
+            color: white;
+            text-decoration: none;
+            transition: border-color 0.2s, background 0.2s;
+
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        section.contact > nav > a:hover {
+            border-color: color-mix(in srgb, var(--brand) 45%, transparent);
+        }
+        section.contact > nav > a > svg {
+            width: 26px;
+            height: 26px;
+            margin-bottom: 12px;
+            fill: var(--secondary);
+            transition: fill 0.2s;
+        }
+        section.contact > nav > a:hover > svg { fill: var(--brand); }
+        section.contact > nav > a > span.name {
+            font-weight: 500;
+            font-size: 16px;
+        }
+        section.contact > nav > a > span.handle {
+            color: var(--secondary);
+            font-family: 'Fira Code', monospace;
+            font-size: 13px;
+        }
+        section.contact > nav > a.github { --brand: #f5f5f5; }
+        section.contact > nav > a.linkedin { --brand: #0a66c2; }
+        section.contact > nav > a.youtube { --brand: #ff0000; }
+        section.contact > nav > a.email { --brand: #b0bec5; }
+        @media (min-width: 800px) {
+            section.contact > nav { grid-template-columns: repeat(4, 1fr); }
+        }
+
+        section.contact > form {
+            margin-bottom: 50px;
+
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        section.contact > form > label {
+            position: relative;
+            padding: 15px 0;
+
+            display: grid;
+            grid-template-columns: 80px 1fr;
+            gap: 10px;
+            align-items: start;
+        }
+        section.contact > form > label::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -15px;
+            right: -10px;
+            bottom: -5px;
+            background: white;
+            border-radius: 8px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        section.contact > form > label:focus-within::after { opacity: 0.03; }
+        section.contact > form > label > span.key {
+            padding: 3px 8px 0 0;
+            color: var(--secondary);
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+            text-align: right;
+        }
+        section.contact > form > label > input,
+        section.contact > form > label > textarea {
+            appearance: none;
+            background: none;
+            border: none;
+            outline: none;
+            border-bottom: 1px solid var(--lightBorder);
+            margin-left: -10px;
+            padding-bottom: 6px;
+            color: white;
+            font-size: 16px;
+            font-family: 'Geist', sans-serif;
+        }
+        section.contact > form > label > textarea {
+            min-height: 80px;
+            line-height: 22px;
+            resize: vertical;
+        }
+        section.contact > form > label:focus-within > input,
+        section.contact > form > label:focus-within > textarea { border-color: var(--secondary); }
+        section.contact > form > label:focus-within > span.key { color: white; }
+        section.contact > form > button {
+            width: max-content;
+            margin-top: 10px;
+            margin-left: 80px;
+            padding: 10px 16px;
+            border-radius: 8px;
+            background: white;
+            color: black;
+            font-size: 16px;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            scroll-padding-top: 80px;
+        }
+
+        body > header { transition: background 0.3s ease, box-shadow 0.3s ease; }
+        body > header.scrolled {
+            background: #000000cc;
+            box-shadow: 0 12px 34px -16px #000;
+        }
+        body > header > a { position: relative; }
+        body > header > a::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -6px;
+            height: 2px;
+            background: #a0a0a0;
+            transform: scaleX(0);
+            transition: transform 0.2s ease;
+        }
+        body > header > a:hover::after,
+        body > header > a.active::after { transform: scaleX(1); }
+        body > header > a.active { opacity: 1; }
+
+        section#top a[href] { transition: text-shadow 0.2s ease; }
+        section#top a[href]:hover { text-shadow: 0 0 12px; }
+
+        section.projects > nav > article {
+            transition: opacity 0.6s ease, transform 0.6s ease, box-shadow 0.3s ease;
+        }
+        section.projects > nav > article:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 18px 44px -24px #000;
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
+        }
+        section.projects > nav > article > header > div > span { transition: transform 0.25s ease; }
+        
+        section.blog > nav > a > article > span.date { transition: color 0.2s ease; }
+        section.blog > nav > a:hover > article > span.date { color: white; }
+        section.blog > nav > a > article { transition: scale 0.3s ease; }
+        section.blog > nav > a:hover > article { scale: 1.01; }
+
+        section.contact > nav > a {
+            transition: border-color 0.2s ease, opacity 0.6s ease, transform 0.6s ease, box-shadow 0.25s ease;
+        }
+        section.contact > nav > a:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 18px 64px -26px color-mix(in srgb, var(--brand) 50%, transparent);
+            transition: border-color 0.2s ease, transform 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        section.contact > form > label > input,
+        section.contact > form > label > textarea { transition: border-color 0.2s ease; }
+        section.contact > form > label > span.key { transition: color 0.2s ease; }
+
+        section.cv > nav > div > button,
+        section.contact > form > button {
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        section.cv > nav > div > button:hover,
+        section.contact > form > button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 22px -10px #ffffff70;
+        }
+        section.cv > nav > div > button:active,
+        section.contact > form > button:active { transform: translateY(0); }
+        section.contact::after { display: none; }
+
+        html.js :is(
+            main > section:not(#top) > span.header,
+            main > section:not(#top) > span.header ~ span,
+            section.projects > nav > article,
+            section.blog > nav > a > article,
+            section.cv > nav,
+            section.contact > nav > a,
+            section.contact > form > label
+        ):not(.in) {
+            opacity: 0;
+            transform: translateY(16px);
+        }
+        [data-reveal] { transition: opacity 0.6s ease, transform 0.6s ease; }
+
+        @media (prefers-reduced-motion: reduce) {
+            html { scroll-behavior: auto; }
+        }
+    </style>
+</head>
+<body>
+    <script>try{if(!matchMedia('(prefers-reduced-motion:reduce)').matches)document.documentElement.classList.add('js')}catch(e){}</script>
+    <canvas class="shader"></canvas>
+    <header>
+        <span class="name">liam eggleston</span>
+        <a href="#projects"><span>cd </span>projects</a>
+        <a href="#blog"><span>cd </span>blog</a>
+        <a href="#cv"><span>cd </span>cv</a>
+        <a href="#contact"><span>cd </span>contact</a>
+    </header>
+    <main>
+        <section id="top">
+            <img src="images/headshot-bg.png" alt="">
+            <span class="big">HEY!</span>
+            <span class="top">I'm Liam, an undergraduate student at <a style="color: #5C6BC0;" href="">UCLA</a> studying <a style="color: #FFCA28;">electrical engineering</a> and <a style="color: #42A5F5;">mathematics</a>. Consequently, I love all things math, physics, and computer science. I hail from <a style="color: #EF5350;">Austin, TX</a>, where I attended <a style="color: #B0BEC5;" href="https://sstx.org/">St. Stephen's Episcopal School</a>.</span>
+        </section>
+        <section class="projects" id="projects">
+            <span class="header">projects<span>_</span></span>
+            <span>Things I've built in a MakerSpace or at home. These range from entirely software-based projects like the music-text association framework to hardware projects like the cloud chamber.</span>
+            <nav>
+                <article>
+                    <header>
+                        <div>
+                            <span style="background: #e24b4a;"></span><span style="background: #ef9f27;"></span><span style="background: #639922;"></span>
+                        </div>
+                        <span>dip-swingup</span>
+                    </header>
+                    <section>
+                        <span class="name">Double Inverted Pendulum Balance</span>
+                        <p>Designed a carriage system and reinforcement learning pipeline to balance a double inverted pendulum.</p>
+                    </section>
+                </article>
+                <article class="tcp">
+                    <header>
+                        <span>synethesia</span>
+                    </header>
+                    <section>
+                        <span class="terminal">localhost:8080/projects/tribe</span>
+                        <span class="name">Music-Text Association Framework</span>
+                        <p>Uses Meta's TRIBE v2 dataset to compare the cognitive (fMRI) response of various poems to a chosen musical stimulus to find the most similar pair.</p>
+                    </section>
+                </article>
+                <article class="multimeter">
+                    <header>multimeter</header>
+                    <section>
+                        <span class="reading">
+                            Cloud Chamber
+                            <span>Ω</span>
+                        </span>
+                        <span class="sub">Mode: Resistance · Range: Auto · ±0.05%</span>
+                        <p>Constructed a cloud chamber using a glass canister from Target and a high-voltage transformer from a fly swatter. The device ionizes air and creates visible trails of radiation particles, allowing observation of real-time atomic decay events.</p>
+                    </section>
+                </article>
+                <article class="code">
+                    <header>
+                        <div>
+                            <span style="background: #e24b4a;"></span><span style="background: #ef9f27;"></span><span style="background: #639922;"></span>
+                        </div>
+                        <span>main.obs</span>
+                    </header>
+                    <section>
+                        <span class="name">Obsidian Programming Language</span>
+                        <p class="code"><span style="color:#7dd3fc;">// Obsidian blends ML framework idioms into a single syntax</span>
+<span style="color:#a78bfa;">using</span> <span style="color:#c4b5fd;">Backend</span> = <span style="color:#34d399;">TensorFlow</span>;
+<span style="color:#60a5fa;">auto</span> <span style="color:#f97316;">compile</span>() <span style="color:#60a5fa;">const</span> -> <span style="color:#f8fafc;">std::string</span> {
+    <span style="color:#9ca3af;">// synthesizes model primitives and syntax sugar</span>
+    <span style="color:#f1d42d;">return</span> <span style="color:#34d399;">"hybrid ML idiom"</span>;
+}
+<span style="color:#7dd3fc;">// captures the best aspects of ML frameworks and syntaxes</span></p>
+                    </section>
+                </article>
+            </nav>
+        </section>
+        <section class="blog" id="blog">
+            <span class="header">blog<span>_</span></span>
+            <span>What I've been up to.</span>
+            <nav id="blog-list"></nav>
+        </section>
+        <section class="cv" id="cv">
+            <span class="header">cv<span>_</span></span>
+            <nav>
+                <section id="terminal"><span>Sends this help message.</span><span class="medium">ls</span><span>Finds information about my education, experience, projects, publications, or volunteering. Try 'cat projects' to hear about my projects.</span><span class="medium">cat [file]</span><span class="big">Command List</span>
+                    <span class="command">
+                        <span>W:/home/</span>
+                        &gt; ls
+                    </span><br></section>
+                <div>
+                    <span>>&nbsp;</span>
+                    <div>
+                        <span class="blink"></span>
+                        <input type="text" name="" id="command">
+                        <button id="skip" style="display: none;">Skip Animation</button>
+                    </div>
+                    <button id="downloadPDF">Download PDF</button>
+                </div>
+            </nav>
+        </section>
+        <section class="contact" id="contact">
+            <span class="header">contact<span>_</span></span>
+            <span>Contact me with questions, opportunities, or even cool project ideas!</span>
+            <nav>
+                <a class="github" href="https://github.com/else-1f">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+                    <span class="name">GitHub</span>
+                    <span class="handle">else-1f</span>
+                </a>
+                <a class="linkedin" href="https://www.linkedin.com/in/liameggleston">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.225 0z"/></svg>
+                    <span class="name">LinkedIn</span>
+                    <span class="handle">/liameggleston</span>
+                </a>
+                <a class="youtube" href="https://www.youtube.com/@else1f">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                    <span class="name">YouTube</span>
+                    <span class="handle">@else1f</span>
+                </a>
+                <a class="email" href="mailto:liameggs@ucla.edu">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+                    <span class="name">Email</span>
+                    <span class="handle">liameggs@ucla.edu</span>
+                </a>
+            </nav>
+            <form>
+                <label>
+                    <span class="key">name</span>
+                    <input type="text" name="name" required>
+                </label>
+                <label>
+                    <span class="key">email</span>
+                    <input type="email" name="email" required>
+                </label>
+                <label>
+                    <span class="key">message</span>
+                    <textarea name="message" rows="4" required></textarea>
+                </label>
+                <button type="submit">Send Message</button>
+            </form>
+        </section>
+    </main>
+    <script>
+        const command = document.getElementById('command'),
+            commandSpan = command.previousElementSibling,
+            skipButton = document.getElementById('skip'),
+            terminal = document.getElementById('terminal'),
+            pdfButton = document.getElementById('downloadPDF');
+
+        let timeout;
+        let currentTypewrite = null;
+
+        pdfButton.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.href = '/liam-eggleston-cv.pdf';
+            link.download = 'cv.pdf';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        });
+
+        async function finishTypewrite () {
+            if (currentTypewrite) {
+                currentTypewrite.skip();
+                await currentTypewrite.promise;
+            }
+        }
+
+        command.addEventListener('keydown', async e => {
+            let value = command.value;
+            if (e.key == 'Enter') {
+                if (value === '') return;
+                await finishTypewrite();
+
+                terminal.innerHTML = `
+                <span class="command">
+                    <span>W:/home/</span>
+                    > ${value}
+                </span>${terminal.innerHTML}<br>`;
+                command.setAttribute('value', '');
+
+                const key = value.split(' ')[1]?.toLowerCase();
+                switch (value.split(' ')[0].toLowerCase()) {
+                    case 'cat':
+                        switch (key) {
+                            case 'education':
+                            case 'experience':
+                            case 'projects':
+                            case 'publications':
+                            case 'volunteering':
+                                typewrite(textDict[key]);
+                                break;
+                            default:
+                                typewrite(textDict['error']);
+                        }
+                        break;
+                    case 'dir':
+                    case 'ls':
+                        typewrite(textDict['list']);
+                        break;
+                    case 'pdf':
+                        typewrite(textDict['pdf']);
+                        pdfButton.click();
+                        break;
+                    default:
+                        typewrite(textDict['command'])
+                }
+                commandSpan.innerHTML = command.value = '';
+                return;
+            } else if (e.key == 'Backspace') {
+                value = value.slice(0, -1)
+            } else if (e.key.length !== 1) return
+            else value += e.key;
+
+            const words = value.split(' ');
+            commandSpan.innerHTML = `<span style="color: #7986CB;">${words[0]}</span><span style="color: #FFB74D;">${words.length < 2 ? '' : '&nbsp;' + words.slice(1).join('&nbsp;')}</span>`;
+            if (timeout) clearTimeout(timeout);
+            commandSpan.classList.remove('blink');
+            timeout = setTimeout(() => {
+                commandSpan.classList.add('blink');
+            }, 500)
+        })
+
+        async function typewrite (content, parent = document.getElementById('terminal'), duration = 10, jitter = 10) {
+            await finishTypewrite();
+
+            let skipped = false;
+            const skip = () => { skipped = true; };
+            let resolveDone;
+            const promise = new Promise(resolve => { resolveDone = resolve; });
+            currentTypewrite = { skip, promise };
+
+            skipButton.style.setProperty('display', '');
+            const onSkipClick = () => skip();
+            skipButton.addEventListener('click', onSkipClick);
+
+            const elements = Array.from(content.matchAll(/<(.*?) (.*?)>(.*?)<\/.*?>/gm));
+
+            for (const element of elements) {
+                const newElement = document.createElement(element[1]);
+                parent.prepend(newElement);
+                for (const [_, p, v] of element[2].matchAll(/(.*?)="(.*?)"/g)) newElement.setAttribute(p, v)
+
+                for (let letter = 0; letter < element[3].length; letter ++) {
+                    if (skipped) {
+                        newElement.innerHTML += element[3].slice(letter);
+                        break;
+                    }
+                    await new Promise(resolve => {
+                        setTimeout(() => {
+                            newElement.innerHTML += element[3].charAt(letter);
+                            resolve();
+                        }, duration + 2 * Math.random() * jitter - jitter)
+                    })
+                }
+            }
+
+            skipButton.removeEventListener('click', onSkipClick);
+            skipButton.style.setProperty('display', 'none');
+            currentTypewrite = null;
+            resolveDone();
+        }
+
+        const textDict = {
+            education: `<span class="big">University of California, Los Angeles</span>
+<span class="medium">Bachelor of Science, Physics (2026-2030)</span>
+<span >Pursuing electrical engineering coursework alongside the mathematics major.</span>
+
+<span class="big">St. Stephen's Episcopal School</span>
+<span class="medium">High School Diploma (2022-2026)</span>
+<span >Participated in programming club (Founder & President), mathematics team, orchestra, sinfonietta, and jazz band. Achieved Cum Laude Society (top 10%) and High Honor Roll.</span>
+
+<span class="big">CIEE Council on International Educational Exchange</span>
+<span class="medium">Automotive Engineering (2026)</span>
+<span >Coursework in vehicle systems, control theory, and computer-aided design. Achieved the highest-scoring car in program history.</span>
+
+<span class="big">Texas Christian University</span>
+<span class="medium">Neeley Data Analytics Academy, Data Science (2024)</span>
+<span >Data acquisition, cleaning, and analysis pipelines.</span>
+
+<span class="big">The University of Texas at Austin</span>
+<span class="medium">Summer Academy for Robotics, Robotics/Engineering (2024)</span>
+<span >Exercised programming skills with embedded C++ on Arduino. Designed and tuned a PID controller for a line-following robot, deriving gains from first principles.</span>
+
+<span class="big">Stanford Online High School (2021-2022)</span>
+<span class="medium">Algebra II, Spanish Foundations</span>`,
+            experience: `<span class="big">TrueAuto</span>
+<span class="medium">Founding Engineer & Chief Technology Officer (2025)</span>
+<span >Built and shipped the full stack solo — Python backend on a Supabase database, deployed on Vercel — plus the marketing site and the consultation intake pipeline the business runs on. Returned $75,000 in surplus to 15 clients, an average of $5,000 each above the dealership offers they would otherwise have accepted.</span>
+ 
+<span class="big">YouTube</span>
+<span class="medium">Content Creator, elseif (2020-Present)</span>
+<span >Write and produce technical explainers on programming language design, systems behavior, and the ways working code goes wrong. 10,000+ subscribers; the "programming war crimes" series has roughly 4 million views. Featured on ThePrimeTime.</span>
+ 
+<span class="big">Climology</span>
+<span class="medium">Founder & Writer (2024-Present)</span>
+<span >Founded and write a publication on climate change and long-range policy response.</span>
+ 
+<span class="big">Eyelid & Facial Plastic Surgery Associates PLLC</span>
+<span class="medium">Clinical Observership, Oculofacial Plastic Surgery (2025)</span>
+<span >Month-long observership in oculofacial plastic and reconstructive surgery. Observed entropion repair, blepharoplasty, and ptosis correction, and supported patient intake in the ophthalmology clinic.</span>
+ 
+<span class="big">St. Stephen's Episcopal School</span>
+<span class="medium">Peer Tutor, Mathematics & Spanish (2025-Present)</span>
+<span >Selected for the peer tutor program on faculty recommendation following recognition in both subjects.</span>`,
+            projects: `<span class="big">Precision Timing Research</span>
+<span class="medium">Open Compute Project (2025)</span>
+<span >Micro-grant recipient for timing-service research under Stephen Wolfram, contributing to the Open Compute Project.</span>
+ 
+<span class="big">Obsidian</span>
+<span class="medium">Programming Language for Machine Learning (2023)</span>
+<span >Designed and implemented a language targeting C++-level performance for machine-learning workloads.</span>
+ 
+<span class="big">Double Inverted Pendulum Balancer</span>
+<span class="medium">Control Systems</span>
+<span >Built a stabilization rig for a double inverted pendulum, an underactuated system requiring continuous feedback control.</span>
+ 
+<span class="big">PID Line-Following Robot</span>
+<span class="medium">Embedded C++, Arduino (2024)</span>
+<span >Derived and tuned a PID controller from first principles for closed-loop line tracking.</span>
+ 
+<span class="big">Assistive Mechanical Pen</span>
+<span class="medium">Mechanical Design (2025)</span>
+<span >Built a mechanical writing aid for teaching blind students to write.</span>
+ 
+<span class="big">AI-Assisted Live Piano Accompaniment</span>
+<span class="medium">Real-Time Audio (in progress)</span>
+<span >System that tracks a live performer and generates accompaniment in real time.</span>
+ 
+<span class="big">Student Utilities</span>
+<span class="medium">Web Applications</span>
+<span >A grades calculator and a paper-sparing printing app, both built for use at St. Stephen's.</span>
+ 
+<span class="big">Client Web Development</span>
+<span class="medium">JavaScript, Vercel</span>
+<span >Designed and built trueauto.com, pianobyangelo.com for a private piano studio, and the St. Stephen's Haiti Partnership site.</span>`,
+            publications: `<span class="big">Can You Hear Naples? Building and Benchmarking a Neapolitan Speech Corpus</span>
+<span class="medium">Accepted to COLM, LowResNLP; published to arXiv</span>
+<span >Built and benchmarked a speech corpus for Neapolitan, a historically rich but under-resourced Romance dialect.</span>
+ 
+<span class="big">Bridging the Gap: Leveraging Cherokee to Improve Language Identification for Endangered Iroquoian Languages</span>
+<span class="medium">Published to arXiv</span>
+<span >Trained and benchmarked a model showing that commercial systems fail basic language-identification tasks for endangered Native languages like Cherokee.</span>`,
+            volunteering: `<span class="big">Rustic Pathways</span>
+<span class="medium">Climate Leaders Fellow (2025)</span>
+<span >Completed a Climate Leaders Fellowship in collaboration with the Stanford Deliberative Democracy Lab. Led a team building an awareness site on environmental racism and inequitable legislation; invited to the Fellowship Summit.</span>
+ 
+<span class="big">Belize Council for the Visually Impaired &amp; Lions Club of Belize City</span>
+<span class="medium">Medical Mission, Belize (2025)</span>
+<span >Supported eyecare service delivery alongside a nonprofit providing ophthalmic care to underserved patients.</span>
+ 
+<span class="big">Hoi An Hospital</span>
+<span class="medium">Medical Mission, Vietnam (2023)</span>
+<span >Screened over 200 patients and supported pre- and post-operative care for children and adults undergoing craniofacial and eyelid reconstructive surgery.</span>
+ 
+<span class="big">International Medical Relief Foundation</span>
+<span class="medium">Medical Mission, Cambodia (2019)</span>
+<span >Worked with Singaporean and Australian surgical teams, organized pharmacy inventory, and delivered food and medicine to patients on islands off Thailand.</span>
+ 
+<span class="big">iAct</span>
+<span class="medium">Refugee Tutoring (2022-Present)</span>
+<span >Teach English reading and writing skills to refugee children.</span>
+ 
+<span class="big">Ronald McDonald House &amp; Mobile Loaves &amp; Fishes</span>
+<span class="medium">Volunteer (2022-Present)</span>
+<span >Prepare and serve meals and distribute resources to families of children receiving medical care and to people experiencing homelessness.</span>
+ 
+<span class="big">Haiti Club</span>
+<span class="medium">Web Lead (2023-Present)</span>
+<span >Built and maintain the site for St. Etienne, the school's sister school in Haiti, and organized fundraising events.</span>`,
+            error: `<span >File not found. For a list of valid commands, please type 'ls'.</span>`,
+            command: `<span >Command not found. For a list of valid commands, please type 'ls'.</span>`,
+            pdf: `<span >Your PDF is being downloaded. If the download doesn't work, try using the "Download PDF" button.</span>`,
+            list: `<span class="big">Command List</span>
+<span class="medium">cat [file]</span>
+<span >Finds information about my education, experience, projects, publications, or volunteering. Try 'cat projects' to hear about my projects.</span>
+<span class="medium">ls</span>
+<span >Sends this help message.</span>`
+        }
+    </script>
+    <script src="posts.js"></script>
+    <script>
+        renderBlogPreview('#blog-list', '', 3);
+    </script>
+    <script>
+        (function () {
+            const root = document.documentElement;
+            const header = document.querySelector('body > header');
+            const setScrolled = () => header.classList.toggle('scrolled', window.scrollY > 8);
+            setScrolled();
+            addEventListener('scroll', setScrolled, { passive: true });
+
+            const links = Array.from(document.querySelectorAll('body > header > a'));
+            const linkByID = {};
+            links.forEach(a => { linkByID[a.getAttribute('href').slice(1)] = a; });
+
+            if (!('IntersectionObserver' in window)) { root.classList.remove('js'); return; }
+
+            const spy = new IntersectionObserver(entries => {
+                entries.forEach(e => {
+                    if (!e.isIntersecting) return;
+                    links.forEach(a => a.classList.remove('active'));
+                    linkByID[e.target.id]?.classList.add('active');
+                });
+            }, { rootMargin: '-45% 0px -45% 0px' });
+            document.querySelectorAll('main > section[id]').forEach(s => spy.observe(s));
+
+            if (!root.classList.contains('js')) return;
+
+            const revealer = new IntersectionObserver((entries, obs) => {
+                entries.forEach(e => {
+                    if (!e.isIntersecting) return;
+                    const el = e.target;
+                    el.classList.add('in');
+                    setTimeout(() => { el.style.transitionDelay = ''; }, 900);
+                    obs.unobserve(el);
+                });
+            }, { rootMargin: '0px 0px -8% 0px', threshold: 0.12 });
+
+            const selector = [
+                'main > section:not(#top) > span.header',
+                'main > section:not(#top) > span.header ~ span',
+                'section.projects > nav > article',
+                'section.blog > nav > a > article',
+                'section.cv > nav',
+                'section.contact > nav > a',
+                'section.contact > form > label'
+            ].join(',');
+
+            document.querySelectorAll(selector).forEach((el, i) => {
+                el.setAttribute('data-reveal', '');
+                el.style.transitionDelay = (i % 6) * 45 + 'ms';
+                revealer.observe(el);
+            });
+        })();
+
+        (function () {
+            const name = document.querySelector('body > header > span.name');
+            name.addEventListener('mouseenter', () => name.classList.add('spin'));
+            name.addEventListener('animationend', () => name.classList.remove('spin'));
+        })();
+
+        (function () {
+            const canvas = document.querySelector('body > canvas.shader');
+            if (!canvas) return;
+            const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, powerPreference: 'high-performance' });
+            if (!gl) return;
+
+            const renderFloat = gl.getExtension('EXT_color_buffer_float');
+            const linearFloat = gl.getExtension('OES_texture_float_linear');
+            if (!renderFloat && !gl.getExtension('EXT_color_buffer_half_float')) return;
+            const use32 = renderFloat && linearFloat;
+            const INTERNAL = use32 ? gl.RGBA32F : gl.RGBA16F;
+            const TYPE = use32 ? gl.FLOAT : gl.HALF_FLOAT;
+
+            const IMAGE = `
+            vec2 R;
+            vec4 T ( vec2 U ) {return texture(iChannel0,U/R);}
+            vec3 get_fluid_color(float t) {
+                vec3 c1 = vec3(0.0, 0.0, 0.0);
+                vec3 c2 = vec3(0.16, 0.05, 0.5);
+                vec3 c3 = vec3(0.0, 0.35, 0.95);
+                vec3 c4 = vec3(0.0, 0.85, 0.9);
+                vec3 c5 = vec3(0.25, 1.0, 0.55);
+                if(t < 0.25) return mix(c1, c2, smoothstep(0.0, 1.0, t * 4.0));
+                if(t < 0.50) return mix(c2, c3, smoothstep(0.0, 1.0, (t - 0.25) * 4.0));
+                if(t < 0.75) return mix(c3, c4, smoothstep(0.0, 1.0, (t - 0.50) * 4.0));
+                return mix(c4, c5, smoothstep(0.0, 1.0, (t - 0.75) * 4.0));
+            }
+            void mainImage( out vec4 C, in vec2 U )
+            {
+                R = iResolution.xy;
+                vec2 S = (U.x < 1.0 && U.y < 1.0) ? U + vec2(2.0) : U;
+                vec4 v = T(S);
+                float density = pow(v.w, 0.8);
+                vec3 col = get_fluid_color(clamp(density, 0.0, 1.0));
+                vec2 dz = v.xy - vec2(.5, 0);
+                float ndz = length(dz);
+                C.xyz = col * (0.6 + 0.8 * ndz);
+                C.w = 1.0;
+            }`;
+
+            const BUFFER_A = `
+            #define k 0.25
+            #define l .7
+            #define MOUSE_RADIUS 20.0
+            #define PUSH_STRENGTH 5.0
+            #define MAX_STROKE 200.0
+            vec2 R;
+            vec4 T ( vec2 U ) {
+                if (U.x < 1.0 && U.y < 1.0) return vec4(0.0);
+                return texture(iChannel0, U/R);
+            }
+            void mainImage( out vec4 Q, in vec2 U )
+            {
+                R = iResolution.xy;
+                vec2 O = U;
+                if (O.x < 1.0 && O.y < 1.0) {
+                    Q = vec4(iMouse.xy / R, iMouse.z > 0.0 ? 1.0 : 0.0, 0.0);
+                    return;
+                }
+                vec2 A = U+vec2(1,0), B = U+vec2(0,1), C = U+vec2(-1,0), D = U+vec2(0,-1);
+                vec4 u, a, b, c, d;
+                vec2 g = vec2(0);
+                float s = 0.5;
+                u = T(U);
+                U -= u.xy * s;
+                a = T(A); b = T(B); c = T(C); d = T(D);
+                A -= a.xy * s; B -= b.xy * s; C -= c.xy * s; D -= d.xy * s;
+                g += vec2(a.z-c.z, b.z-d.z);
+                Q = T(U);
+                vec4 N = 0.25 * (a+b+c+d);
+                float div = 0.25 * ((c.x-a.x) + (d.y-b.y));
+                Q.z = N.z - k * div;
+                Q.xy += g * l;
+                Q.xyw *= 0.999;
+                vec4 pm = texture(iChannel0, vec2(0.5)/R);
+                if (iMouse.z > 0.0 && pm.z > 0.0) {
+                    vec2 mPrev = pm.xy * R;
+                    // A jump longer than MAX_STROKE is the cursor snapping in from an
+                    // edge (a teleport, not a swipe) - collapse the capsule to a point
+                    // at the new spot so we don't draw a ribbon across the whole screen.
+                    if (distance(iMouse.xy, mPrev) > MAX_STROKE) mPrev = iMouse.xy;
+                    vec2 vel = iMouse.xy - mPrev;
+                    float velLen = length(vel);
+                    if (velLen > 0.1) {
+                        // Distance from this cell to the segment the cursor swept this
+                        // frame (mPrev -> iMouse). Treating the stroke as a capsule
+                        // instead of a point at iMouse means a fast-moving mouse paints
+                        // one continuous ribbon rather than a string of detached blobs.
+                        vec2 pa = O - mPrev;
+                        float h = clamp(dot(pa, vel) / dot(vel, vel), 0.0, 1.0);
+                        float d = length(pa - vel * h);
+                        float falloff = 1.0 - smoothstep(MOUSE_RADIUS * 0.5, MOUSE_RADIUS, d);
+                        if (falloff > 0.0) {
+                            Q.xy += (vel / velLen) * PUSH_STRENGTH * min(velLen * 0.2, 1.0) * falloff;
+                            Q.w = max(Q.w, falloff);
+                        }
+                    }
+                }
+                if (iFrame < 1) Q = vec4(0.0);
+                if (O.x < 1. || O.y < 1. || R.x - O.x < 1. || R.y - O.y < 1.) Q.xy *= 0.1;
+            }`;
+
+            const VERT = `#version 300 es
+            void main(){ vec2 p = vec2(float((gl_VertexID<<1)&2), float(gl_VertexID&2)); gl_Position = vec4(p*2.0-1.0, 0.0, 1.0); }`;
+            const HEAD = `#version 300 es
+            precision highp float; precision highp int;
+            uniform vec3 iResolution; uniform float iTime; uniform float iTimeDelta;
+            uniform int iFrame; uniform vec4 iMouse; uniform vec4 iDate;
+            uniform sampler2D iChannel0;
+            out vec4 _outColor;
+            #line 1
+            `;
+            const TAIL = `
+            void main(){ mainImage(_outColor, gl_FragCoord.xy); }`;
+
+            const compile = (type, src) => {
+                const s = gl.createShader(type);
+                gl.shaderSource(s, src); gl.compileShader(s);
+                if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+                return s;
+            };
+            const build = src => {
+                const p = gl.createProgram();
+                gl.attachShader(p, compile(gl.VERTEX_SHADER, VERT));
+                gl.attachShader(p, compile(gl.FRAGMENT_SHADER, HEAD + src + TAIL));
+                gl.linkProgram(p);
+                if (!gl.getProgramParameter(p, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(p));
+                const u = {};
+                ['iResolution', 'iTime', 'iTimeDelta', 'iFrame', 'iMouse', 'iDate', 'iChannel0']
+                    .forEach(n => u[n] = gl.getUniformLocation(p, n));
+                return { p, u };
+            };
+            const progImage = build(IMAGE);
+            const progBufA = build(BUFFER_A);
+
+            const targets = [null, null];
+            const makeTarget = (w, h) => {
+                const tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, INTERNAL, w, h, 0, gl.RGBA, TYPE, null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                const fbo = gl.createFramebuffer();
+                gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                return { tex, fbo };
+            };
+
+            const mouse = { x: 0, y: 0 };
+            addEventListener('pointermove', e => {
+                mouse.x = e.clientX * canvas.width / canvas.clientWidth;
+                mouse.y = (canvas.clientHeight - e.clientY) * canvas.height / canvas.clientHeight;
+            }, { passive: true });
+
+            let frame = 0, t0 = performance.now(), last = t0, raf = 0, running = false;
+
+            const resize = () => {
+                const dpr = Math.min(devicePixelRatio || 1, 1.5);
+                const w = Math.max(1, innerWidth * dpr | 0);
+                const h = Math.max(1, innerHeight * dpr | 0);
+                if (w === canvas.width && h === canvas.height) return;
+                canvas.width = w; canvas.height = h;
+                targets.forEach(t => { if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); } });
+                targets[0] = makeTarget(w, h);
+                targets[1] = makeTarget(w, h);
+                [0, 1].forEach(i => {
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, targets[i].fbo);
+                    gl.clearColor(0, 0, 0, 0);
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+                });
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                mouse.x = w / 2; mouse.y = h / 2;
+                frame = 0;
+            };
+            addEventListener('resize', resize);
+            resize();
+
+            let dt = 0;
+            const runPass = (prog, srcTex, fbo) => {
+                gl.useProgram(prog.p);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+                gl.viewport(0, 0, canvas.width, canvas.height);
+                gl.uniform3f(prog.u.iResolution, canvas.width, canvas.height, 1);
+                gl.uniform1f(prog.u.iTime, (last - t0) / 1000);
+                gl.uniform1f(prog.u.iTimeDelta, dt);
+                gl.uniform1i(prog.u.iFrame, frame);
+                gl.uniform4f(prog.u.iMouse, mouse.x, mouse.y, mouse.x, mouse.y);
+                const dd = new Date();
+                gl.uniform4f(prog.u.iDate, dd.getFullYear(), dd.getMonth(), dd.getDate(),
+                    dd.getHours() * 3600 + dd.getMinutes() * 60 + dd.getSeconds());
+                gl.uniform1i(prog.u.iChannel0, 0);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, srcTex);
+                gl.drawArrays(gl.TRIANGLES, 0, 3);
+            };
+
+            const draw = now => {
+                dt = Math.min(0.05, (now - last) / 1000);
+                last = now;
+                const src = targets[frame & 1];
+                const dst = targets[(frame + 1) & 1];
+                runPass(progBufA, src.tex, dst.fbo);
+                runPass(progImage, dst.tex, null);
+                frame++;
+                if (running) raf = requestAnimationFrame(draw);
+            };
+            const start = () => { if (running) return; running = true; last = performance.now(); raf = requestAnimationFrame(draw); };
+            const stop = () => { running = false; cancelAnimationFrame(raf); };
+
+            const CEIL = 0.8, FLOOR = 0.2;
+            const fade = () => { canvas.style.opacity = Math.max(FLOOR, CEIL - scrollY / innerHeight).toFixed(3); };
+            fade();
+            addEventListener('scroll', fade, { passive: true });
+
+            if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                draw(performance.now());
+            } else {
+                document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+                start();
+            }
+        })();
+    </script>
+</body>
+</html>

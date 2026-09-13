@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PID: The Balance of Things</title>
+<script type="module" src="https://cdn.jsdelivr.net/npm/microlighter@2.1.0/dist/microlighter.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<link rel="stylesheet" href="post-alt.css">
+</head>
+<body data-syntax-theme="monokai-pro">
+<svg id="tag-icon-defs" style="display: none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 26 1024 1024">
+        <defs>
+            <symbol id="tag-icon" viewBox="0 26 1024 1024">
+                <path d="M74.9714,634.514C27.4286,585.143 0,521.143 0,453.486L0,307.2C0,257.829 1.82857,215.771 10.9714,179.2C18.2857,142.629 32.9143,109.714 58.5143,84.1143C84.1143,58.5143 117.029,43.8857 153.6,36.5714C190.171,27.4286 232.229,25.6 281.6,25.6L427.886,25.6C495.543,25.6 559.543,53.0286 608.914,100.571L969.143,460.8C1003.89,497.371 1024,544.914 1024,594.286C1024,634.514 1011.2,674.743 985.6,707.657C956.343,746.057 903.314,806.4 842.971,868.571C780.8,930.743 720.457,981.943 682.057,1011.2C649.143,1036.8 608.914,1049.6 568.686,1049.6C519.314,1049.6 471.771,1029.49 435.2,994.743L74.9714,634.514ZM281.6,384C323.657,384 358.4,349.257 358.4,307.2C358.4,265.143 323.657,230.4 281.6,230.4C239.543,230.4 204.8,265.143 204.8,307.2C204.8,349.257 239.543,384 281.6,384Z" fill="currentColor" fill-opacity="1"></path>
+            </symbol>
+        </defs>
+    </svg>
+<header>
+        <a href="../blog.html">home</a>
+        <span>ansatz</span>
+        <a href="../index.html">portfolio</a>
+        <a href="../liam-eggleston-cv.pdf">cv</a>
+    </header>
+<main>
+<img src="../images/pid-gain.png" alt=""><span class="title">PID: The Balance of Things</span><div class="tags"><a><svg><use href="#tag-icon"></use></svg>physics</a><a><svg><use href="#tag-icon"></use></svg>lagrangian mechanics</a><a><svg><use href="#tag-icon"></use></svg>math</a></div><span class="description">Closing the loop on the pendulum simulations with proportional-integral-derivative control, from a single tuned gain to a live map of every tuning at once.</span><hr><section class="full"><p>In the last few articles, we learned how to simulate a physical system using Lagrangian mechanics and integration methods including Euler's method and RK4. But simulation is only half of the problem. What if we want to actually control that system?</p>
+<p>Imagine balancing a pendulum upright. If the pendulum begins to fall to the right, we need to move the base to the right to catch it. If it begins falling to the left, we need to move the base to the left. Unfortunately, movement is not just a "left or right" binary; we have to figure out exactly how quickly to move it.</p>
+<p>This idea is known as <strong>control theory</strong>. One of the simplest and most widely used solutions for the single pendulum is <strong>PID control</strong>.</p>
+<p>PID stands for <strong>Proportional–Integral–Derivative</strong>. The basic idea is to measure how far we are from where we want to be, and use that error to decide what the system should do next. Let's start with a simple example and build up from there.</p>
+<span class="big">Proportional Control</span>
+<p>Suppose we want a motor to move an object linearly from the position $x$ to some desired position $x_d$. We can define the error as</p>
+<p>$$e(t)=x_d(t)-x(t).$$</p>
+<p>If the object is too far to the left, $e(t)$ is positive. If it is too far to the right, $e(t)$ is negative.</p>
+<p>The most obvious thing we could do is make our control input proportional to this error:</p>
+<p>$$u(t)=K_pe(t).$$</p>
+<p>Here, $u$ is the force, motor command, or other control input we apply to the system, and $K_p$ is a constant that determines how aggressively we respond to the error.</p>
+<p>For example, if we've set $K_p=10$ and the error is $e=0.2$ then our controller produces</p>
+<p>$$u=10(0.2)=2.$$</p>
+<p>This is <strong>proportional control</strong>. While sufficient for some systems, proportional control has a couple of problems.</p>
+<p>Imagine you are flying a drone weighing one kilogram, and you want it to reach a certain height. Since your drone is only a meter below its desired height, your proportional algorithm using $K_p=9$ calculates that it should generate</p>
+<p>$$K_p\cdot e(t)=9\cdot1m=9N$$</p>
+<p>of vertical thrust. Unfortunately, gravity is pulling on your drone with a downforce of $F=ma=1\cdot g=9.81N$. The resulting acceleration is thus</p>
+<p>$$a=9N-9.81N=\boxed{-0.81N}.$$</p>
+<p>The drone's height as a function of time would look something like the graph below.</p>
+<div class="desmos-embed" style="height:420px" data-expressions="false" data-equations="[]" data-graph-url="https://www.desmos.com/calculator/vmvpd0aql1"></div>
+<p>While your drone would need to move upward to approach its goal height, your algorithm's instructions cause it to accelerate downward and away from its target height. This issue is known as a <strong>steady-state error</strong>. The solution is to find a way to account for errors that have accumulated over time.</p>
+<span class="big">Integral Control</span>
+<p>Instead of only looking at the error right now, we can keep track of the error over the entire history of the system.</p>
+<p>The accumulated error is represented by an integral:</p>
+<p>$$\int_0^t e(\tau)\,d\tau.$$</p>
+<p>We multiply this by its own constant, $K_i$, giving</p>
+<p>$$u_I(t)=K_i\int_0^t e(\tau)\,d\tau.$$</p>
+<p>If the system has been slightly below its target for a long time, the integral continues to grow. This means the controller gradually increases its response until the persistent error is eliminated.</p>
+<p>This is the <strong>integral</strong> term.</p>
+<p>You may notice that the integral doesn't care only about how large the error is. It also cares about how long the error has existed. A small error that persists for a long time can therefore produce a substantial integral response.</p>
+<div class="desmos-embed" style="height:420px" data-expressions="false" data-equations="[]" data-graph-url="https://www.desmos.com/calculator/mkiht0mjna"></div>
+<span class="big">Derivative Control</span>
+<p>There is another problem.</p>
+<p>Suppose the error is currently large, but it is rapidly getting smaller. Your drone may be soaring towards its desired height, but be soon to overshoot. If we only use proportional control, we still see a large error and therefore apply a large correction.</p>
+<p>We can rectify this by also considering how quickly the error is changing. This is represented by the error's derivative $\frac{de}{dt}$.</p>
+<p>We multiply this by a third constant, $K_d$:</p>
+<p>$$u_D(t)=K_d\frac{de}{dt}.$$</p>
+<p>The derivative acts somewhat like a prediction. If the error is changing rapidly, the controller knows that the system is moving quickly toward or away from the target and can adjust its response accordingly.</p>
+<p>Now we simply add the three terms together. The complete PID controller is</p>
+<p>$$\boxed{
+u(t)=K_pe(t)
++K_i\int_0^t e(\tau)\,d\tau
++K_d\frac{de}{dt}
+}$$</p>
+<p>Each term is doing something different:</p>
+<p>$$\underbrace{K_pe}_{\text{Proportional}}
++
+\underbrace{K_i\int e\,dt}_{\text{Integral}}
++
+\underbrace{K_d\dot e}_{\text{Derivative}}$$</p>
+<p>You can play around with the three coefficients to find the best balancing regime. A lot of the time, constants are determined by this trial-and-error process.</p>
+<div class="desmos-embed" style="height:420px" data-expressions="false" data-equations="[]" data-graph-url="https://www.desmos.com/calculator/euni9ag0ju"></div>
+<p>It's hard to determine exactly what the "best" regime is, though. A common yardstick is <strong>ITAE</strong> (integral of time-weighted absolute error), which changes the way error is calculated by weighting errors more if they have persisted for longer. As a result, a response that overshoots briefly is scored much more kindly than one that never quite settles (like a steady-state error). Rather than tune one controller at a time and see how it scores, we can score every combination of $K_p$ and $K_d$ at once and look at the whole landscape.</p>
+<figure>
+    <div class="shader-embed" style="height:460px"><canvas></canvas>
+        <script type="x-shader/x-fragment" data-pass="image">
+// ---- plant ------------------------------------------------------------
+#define A0  1.0      // stiffness
+#define A1  0.6      // natural damping
+#define BG  1.0      // input gain
+#define REF 1.0      // step setpoint
+
+// ---- gain-space window (log10) ----------------------------------------
+#define LKP0 -1.30   // Kp from 0.05 ...
+#define LKP1  1.70   // ... to 50
+#define LKD0 -1.50   // Kd from 0.03 ...
+#define LKD1  1.20   // ... to 16
+
+// ---- integral gain sweep ----------------------------------------------
+#define TIME_SCALE 1.0
+#define KI_MIN     0.02
+#define KI_MAX     6.00
+#define SWEEP_RATE 0.13
+
+// ---- simulation -------------------------------------------------------
+#define NSTEP  200      // main perf knob
+#define DT     0.04     // 200 * 0.04 = 8 s of step response
+#define BLOWUP 60.0     // |y| past this counts as unstable
+
+// ---- cost mapping, in natural log of ITAE -----------------------------
+#define LC0 -1.0
+#define LC1  4.2
+
+// ---- palette ----------------------------------------------------------
+#define S0 vec3(0.98, 0.99, 0.92)   // best tunings
+#define S1 vec3(0.62, 0.86, 0.35)
+#define S2 vec3(0.16, 0.62, 0.55)
+#define S3 vec3(0.09, 0.29, 0.50)
+#define S4 vec3(0.05, 0.09, 0.23)   // sluggish or wildly oscillatory
+
+#define U0 vec3(0.040, 0.018, 0.030)  // blows up instantly
+#define U1 vec3(0.520, 0.110, 0.055)
+#define U2 vec3(0.980, 0.420, 0.120)  // barely unstable, right on the edge
+// -----------------------------------------------------------------------
+
+vec3 ramp5(float u)
+{
+    u = clamp(u, 0.0, 1.0)*4.0;
+    if (u < 1.0) return mix(S0, S1, u);
+    if (u < 2.0) return mix(S1, S2, u - 1.0);
+    if (u < 3.0) return mix(S2, S3, u - 2.0);
+    return mix(S3, S4, u - 3.0);
+}
+
+vec3 ramp3(float u)
+{
+    u = clamp(u, 0.0, 1.0)*2.0;
+    if (u < 1.0) return mix(U0, U1, u);
+    return mix(U1, U2, u - 1.0);
+}
+
+// state = (y, ydot, integral of e)
+vec3 deriv(vec3 s, vec3 k)
+{
+    float e  = REF - s.x;
+    float de = -s.y;                       // setpoint is constant
+    float u  = k.x*e + k.y*s.z + k.z*de;
+    return vec3(s.y, BG*u - A1*s.y - A0*s.x, e);
+}
+
+// returns (ITAE, crossing count, divergence time or 0)
+vec3 runLoop(vec3 k)
+{
+    vec3  s   = vec3(0.0);
+    float itae = 0.0, cross = 0.0, tDiv = 0.0;
+    float prevSign = 1.0;                  // e starts at +REF
+
+    for (int i = 0; i < NSTEP; i++) {
+        float t = float(i)*DT;
+
+        vec3 k1 = deriv(s, k);
+        vec3 k2 = deriv(s + 0.5*DT*k1, k);
+        vec3 k3 = deriv(s + 0.5*DT*k2, k);
+        vec3 k4 = deriv(s +     DT*k3, k);
+        s += (DT/6.0)*(k1 + 2.0*k2 + 2.0*k3 + k4);
+
+        float e = REF - s.x;
+        itae += t*abs(e)*DT;
+
+        float sg = sign(e);
+        if (sg != 0.0 && sg != prevSign) { cross += 1.0; prevSign = sg; }
+
+        if (abs(s.x) > BLOWUP || abs(s.z) > BLOWUP*20.0) { tDiv = t + DT; break; }
+    }
+    return vec3(itae, cross, tDiv);
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord)
+{
+    vec2 uv = fragCoord / iResolution.xy;
+
+    float lkp = mix(LKP0, LKP1, uv.x);
+    float lkd = mix(LKD0, LKD1, uv.y);
+
+    float ki = mix(KI_MIN, KI_MAX,
+                   0.5 - 0.5*cos(iTime*SWEEP_RATE*TIME_SCALE));
+
+    vec3 k = vec3(pow(10.0, lkp), ki, pow(10.0, lkd));
+    vec3 r = runLoop(k);
+
+    float lc = log(r.x + 1e-4);
+    vec3  col;
+
+    if (r.z > 0.0) {
+        // unstable: how long it held together before running away
+        col = ramp3(r.z / (float(NSTEP)*DT));
+    } else {
+        float u = (lc - LC0) / (LC1 - LC0);
+        col = ramp5(u);
+
+        // contours of equal cost
+        float g = u*14.0;
+        float w = fwidth(g)*1.2 + 1e-5;
+        col *= mix(0.66, 1.0, smoothstep(0.0, w, abs(fract(g + 0.5) - 0.5)));
+
+        // curves separating tunings by overshoot count
+        col *= 1.0 - 0.55*clamp(fwidth(r.y), 0.0, 1.0);
+
+        // flat spot on the cost surface = the optimal tuning
+        float gm  = length(vec2(dFdx(lc), dFdy(lc)));
+        float opt = (1.0 - smoothstep(0.0, 0.0035, gm)) * (1.0 - smoothstep(0.30, 0.55, u));
+        col = mix(col, vec3(1.0), opt);
+    }
+
+    // decade gridlines, since both axes are logarithmic
+    float dx = abs(lkp - floor(lkp + 0.5));
+    float dy = abs(lkd - floor(lkd + 0.5));
+    float grid = max(1.0 - smoothstep(0.0, 1.6*fwidth(lkp), dx),
+                     1.0 - smoothstep(0.0, 1.6*fwidth(lkd), dy));
+    col = mix(col, col*0.55 + vec3(0.16, 0.19, 0.22), grid*0.5);
+
+    vec2 q = (2.0*fragCoord - iResolution.xy)/iResolution.y;
+    col *= 1.0 - 0.10*dot(q, q);
+
+    fragColor = vec4(pow(max(col, 0.0), vec3(0.88)), 1.0);
+}
+        </script>
+    </div>
+    <figcaption><span class="title">Figure 1</span>$K_p$ runs left to right and $K_d$ runs bottom to top, both on a log scale, with brightness tracking the ITAE cost of that pixel's own step response — greener is better tuned. The dark ember region is outright instability, shaded by how long the loop held together before it ran away. $K_i$ sweeps slowly on its own axis: watch the stable region shrink as it climbs, which is integral action trading away phase margin for the steady-state error it just erased.</figcaption>
+</figure>
+<p>The proportional term responds to the <strong>current</strong> error, the integral term to the <strong>accumulated</strong> error, and the derivative term to the <strong>rate of change</strong> of the error. This gives us a controller that considers the present, the past, and the direction in which the system is moving (the future?!).</p>
+<span class="big">Implementing PID on a Computer</span>
+<p>Of course, a computer cannot calculate a continuous integral or derivative directly. We have to approximate them using discrete time steps.</p>
+<p>Suppose our controller runs every $\Delta t$ seconds, taking its height measurement and calculating the desired lift.</p>
+<p>At each step, we measure the current error $e_k=x_d-x_k.$ We can approximate the integral using a running sum (very much like a Riemann sum, though we only need to add the area of the last rectangle at each iteration):</p>
+<p>$$I_k=I_{k-1}+e_k\Delta t.$$</p>
+<p>We approximate the derivative using a finite difference</p>
+<p>$$D_k=\frac{e_k-e_{k-1}}{\Delta t}$$</p>
+<p>and write our discrete PID equation:</p>
+<p>$$\begin{aligned}
+u_k&amp;=K_pe_k+K_iI_k+K_dD_k \\
+&amp;=\boxed{K_pe_k+K_i\sum_{j=0}^{k}e_j\Delta t+K_d\frac{e_k-e_{k-1}}{\Delta t}}.
+\end{aligned}$$</p>
+<p>This is exactly the kind of calculation that a microcontroller can perform thousands of times per second.</p>
+<p>In Python, a basic implementation looks like this:</p>
+<pre><code class="language-python">class PID:
+    def __init__(self, kp, ki, kd):
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+
+        self.integral = 0.0
+        self.previous_error = 0.0
+
+    def update(self, error, dt):
+        # Integral
+        self.integral += error * dt
+
+        # Derivative
+        derivative = (error - self.previous_error) / dt
+
+        # PID output
+        output = (
+            self.kp * error
+            + self.ki * self.integral
+            + self.kd * derivative
+        )
+
+        self.previous_error = error
+
+        return output</code></pre>
+<p>We use this class in a control loop:</p>
+<pre><code class="language-python">pid = PID(kp=10, ki=1, kd=2)
+
+while True:
+    position = measure_position()
+    error = target_position - position
+
+    control = pid.update(error, dt)
+
+    apply_control(control)</code></pre>
+<span class="big">Applying PID to a Single Pendulum</span>
+<p>Recall that the pendulum's equation of motion we derived earlier was</p>
+<p>$$\boxed{
+\ddot\theta+\frac{g}{l}\sin\theta=0
+}$$</p>
+<p>In order to control the pendulum, however, we introduce a control input. Suppose we attach the pendulum to a cart, commonly referred to as a "carriage," which moves left and right on a rail.</p>
+<div class="desmos-embed" style="height:420px" data-expressions="false" data-equations="[]" data-graph-url="https://www.desmos.com/geometry/ulnkdv2rl3"></div>
+<p>The motor controls the horizontal force on the cart, and the motion of the cart indirectly controls the pendulum.</p>
+<p>Let's first derive the equation that describes the pendulum's motion.</p>
+<p>Let $x$ be the horizontal position of the cart and $\theta$ the angle of the pendulum measured from the upright vertical.</p>
+<p>The position of the pendulum bob is then</p>
+<p>$$x_p=x+l\sin\theta,\ \ y_p=-l\cos\theta.$$</p>
+<p>The velocities are</p>
+<p>$$\dot x_p=\dot x+l\cos\theta\dot\theta,\ \ \dot y_p=l\sin\theta\dot\theta.$$</p>
+<p>Therefore,</p>
+<p>$$v^2=(\dot x+l\cos\theta\dot\theta)^2+(l\sin\theta\dot\theta)^2.$$</p>
+<p>Given the mass, velocity, and acceleration $m_c$, $v_c$, and $a_c$ of the cart, the system's kinetic energy is therefore</p>
+<p>$$\begin{aligned}
+T_p&amp;=\frac12m_p\left((\dot x+l\cos\theta\dot\theta)^2+(l\sin\theta\dot\theta)^2\right) \\
+T_c&amp;=\frac12m_cv_c^2.
+\end{aligned}$$</p>
+<p>and the potential energy is</p>
+<p>$$V_p=m_pg(-l\cos\theta) \\
+V_c=0.$$</p>
+<p>Our Lagrangian is therefore</p>
+<p>$$L=T_p+T_c-V_p-V_c.$$</p>
+<p>Substituting and noting that $v_c=\dot x$, the Lagrangian expands to</p>
+<p>$$L=\frac12m_p\left(\dot x^2+2l\cos\theta\,\dot x\dot\theta+l^2\dot\theta^2\right)+\frac12m_c\dot x^2+m_pgl\cos\theta.$$</p>
+<span class="big">The $\theta$ equation</span>
+<p>Taking the conjugate momentum and the generalized force, and skipping the algebra,</p>
+<p>$$\frac{\partial L}{\partial\dot\theta}=m_pl\cos\theta\,\dot x+m_pl^2\dot\theta \\
+\frac{\partial L}{\partial\theta}=-m_pl\sin\theta\,\dot x\dot\theta-m_pgl\sin\theta.$$</p>
+<p>Differentiating the first with respect to time,</p>
+<p>$$\frac{d}{dt}\frac{\partial L}{\partial\dot\theta}=m_pl\cos\theta\,\ddot x-m_pl\sin\theta\,\dot x\dot\theta+m_pl^2\ddot\theta.$$</p>
+<p>The Euler-Lagrange equation is</p>
+<p>$$\frac{d}{dt}\frac{\partial L}{\partial\dot\theta}-\frac{\partial L}{\partial\theta}=0,$$</p>
+<p>and the $-m_pl\sin\theta\,\dot x\dot\theta$ terms cancel between the two expressions, leaving</p>
+<p>$$m_pl^2\ddot\theta+m_pl\cos\theta\,\ddot x+m_pgl\sin\theta=0.$$</p>
+<p>Dividing through by $m_pl$ and solving for the tangential acceleration $a_\theta=l\ddot\theta$,</p>
+<p>$$a_\theta=-g\sin\theta-\ddot x\cos\theta.$$</p>
+<p>This is the acceleration of the bob along $\hat e_\theta$ as measured in the cart's frame. The rod tension is purely radial and so never appears, and the cart enters only through $\ddot x$, acting as a driving term weighted by $\cos\theta$.</p>
+<span class="big">The $x$ equation</span>
+<p>Since $x$ is cyclic apart from any applied force $F$ on the cart,</p>
+<p>$$\frac{\partial L}{\partial\dot x}=(m_c+m_p)\dot x+m_pl\cos\theta\,\dot\theta,$$</p>
+<p>which is the total horizontal momentum. Setting its time derivative equal to $F$,</p>
+<p>$$(m_c+m_p)\ddot x+m_pl\cos\theta\,\ddot\theta-m_pl\sin\theta\,\dot\theta^2=F.$$</p>
+<p>Together with the $\theta$ equation this closes the system. With $F=0$ the horizontal momentum is conserved, as expected.</p>
+<p>We can apply our PID equation using $e(t)=\theta_d-\theta$, where $\theta_d$ is the desired (upright) orientation for $\theta$. Since we are measuring from the downwards vertical, $\theta_d=\pi$. Using our PID equation,</p>
+<p>$$\boxed{
+u(t)=K_pe(t)
++K_i\int_0^t e(\tau)\,d\tau
++K_d\frac{de}{dt}
+}$$</p>
+<p>we see that... the pendulum balances!</p>
+<div class="desmos-embed" style="height:540px" data-expressions="false" data-equations="[]" data-graph-url="https://www.desmos.com/geometry/sbdh9ajgdm"></div>
+<p>The pendulum is actually quite sensitive. If you wish to try it out for yourself, switch to the "manual" option in the graph above.</p></section>
+</main>
+<footer>
+            <div>
+                <a href="https://linkedin.com/in/liameggleston">
+                    <svg viewBox="0 0 448 512" aria-hidden="true"><path d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zm5 170.2l66.5 0 0 213.8-66.5 0 0-213.8zm71.7-67.7a38.5 38.5 0 1 1 -77 0 38.5 38.5 0 1 1 77 0zM317.9 416l0-104c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9l0 105.8-66.4 0 0-213.8 63.7 0 0 29.2 .9 0c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9l0 117.2-66.4 0z"/></svg>
+                    /liameggleston
+                </a>
+                <a href="mailto:liameggs@ucla.edu">
+                    <svg viewBox="39 77 986 922" aria-hidden="true">
+                        <path d="M190.171,992.914C179.2,996.571 168.229,998.4 157.257,998.4C91.4286,998.4 38.4,945.371 38.4,879.543L38.4,872.229C38.4,842.971 47.5429,815.543 65.8286,793.6C107.886,738.743 146.286,680.229 179.2,619.886C188.343,601.6 206.629,588.8 228.571,588.8L512,588.8C541.257,588.8 563.2,566.857 563.2,537.6C563.2,510.171 541.257,486.4 512,486.4L228.571,486.4C206.629,486.4 188.343,473.6 179.2,455.314C146.286,394.971 107.886,336.457 65.8286,283.429C49.3714,259.657 38.4,232.229 38.4,202.971L38.4,195.657C38.4,129.829 91.4286,76.8 157.257,76.8C168.229,76.8 179.2,78.6285 190.171,82.2857C228.571,93.2571 384,140.8 550.4,208.457C634.514,241.371 720.457,279.771 799.086,321.829C875.886,362.057 945.371,407.771 992.914,457.143C1014.86,480.914 1024,510.171 1024,537.6C1024,565.029 1014.86,594.286 992.914,618.057C945.371,667.429 875.886,713.143 799.086,753.371C720.457,795.429 634.514,833.829 550.4,866.743C384,934.4 228.571,981.943 190.171,992.914Z" fill="currentColor" fill-opacity="1"></path>
+                    </svg>
+                    liameggs@ucla.edu
+                </a>
+                <a href="https://liameggleston.com/">
+                    <svg viewBox="4 47 1019 984" aria-hidden="true">
+                    <path d="M530.286,54.8571C521.143,43.8857 504.686,43.8857 493.714,54.8571C458.971,98.7429 429.714,157.257 405.943,226.743C378.514,312.686 362.057,409.6 358.4,510.171C358.4,522.971 369.371,535.771 382.171,535.771C422.4,537.6 466.286,537.6 513.829,537.6C559.543,537.6 601.6,537.6 641.829,535.771C656.457,535.771 667.429,522.971 665.6,510.171C663.771,409.6 647.314,312.686 618.057,226.743C596.114,157.257 565.029,98.7429 530.286,54.8571ZM321.829,54.8571C343.771,47.5428 362.057,71.3143 351.086,91.4286C334.629,124.343 321.829,159.086 309.029,193.829C277.943,288.914 259.657,394.971 256,501.029C256,517.486 243.2,528.457 228.571,526.629C175.543,522.971 131.657,517.486 95.0857,512C65.8286,508.343 43.8857,504.686 23.7714,501.029C10.9714,499.2 3.65714,488.229 3.65714,475.429C16.4571,351.086 62.1714,243.2 140.8,166.4C192,115.2 252.343,78.6285 323.657,54.8571ZM261.486,654.629C259.657,641.829 250.514,630.857 237.714,630.857C175.543,625.371 122.514,619.886 80.4571,614.4C64,612.571 51.2,608.914 36.5714,607.086C20.1143,605.257 5.48571,618.057 7.31429,636.343C25.6,744.229 69.4857,839.314 140.8,910.629C190.171,960 252.343,996.571 321.829,1020.34C343.771,1027.66 362.057,1003.89 351.086,983.771C334.629,950.857 321.829,916.114 309.029,881.371C285.257,810.057 270.629,733.257 261.486,654.629ZM493.714,1020.34C502.857,1033.14 521.143,1033.14 530.286,1020.34C565.029,976.457 596.114,917.943 618.057,848.457C636.343,791.771 650.971,731.429 658.286,667.429C660.114,650.971 647.314,638.171 632.686,638.171C596.114,640 555.886,640 513.829,640C469.943,640 429.714,640 393.143,638.171C376.686,638.171 363.886,650.971 365.714,665.6C374.857,729.6 387.657,791.771 405.943,848.457C429.714,917.943 458.971,976.457 495.543,1020.34ZM714.971,193.829C704,159.086 689.371,124.343 672.914,91.4286C663.771,71.3143 680.229,47.5428 702.171,54.8571C773.486,78.6285 835.657,115.2 885.029,164.571C963.657,243.2 1011.2,351.086 1022.17,475.429C1024,488.229 1014.86,499.2 1002.06,501.029C983.771,504.686 960,508.343 932.571,512C894.171,517.486 850.286,522.971 795.429,526.629C780.8,528.457 769.829,515.657 768,501.029C764.343,394.971 747.886,288.914 714.971,193.829ZM714.971,881.371C704,916.114 689.371,950.857 672.914,983.771C663.771,1003.89 680.229,1027.66 702.171,1020.34C773.486,996.571 835.657,960 885.029,910.629C956.343,839.314 1002.06,744.229 1018.51,634.514C1020.34,618.057 1005.71,605.257 989.257,607.086C976.457,608.914 961.829,610.743 945.371,614.4C903.314,619.886 850.286,625.371 788.114,630.857C775.314,630.857 764.343,641.829 762.514,654.629C755.2,733.257 738.743,810.057 716.8,881.371Z" fill="currentColor" fill-opacity="1"></path>
+                    </svg>
+                    liameggleston.com
+                </a>
+            </div>
+            <div>
+                <span class="title">About</span>
+                <span>Hello! I'm Liam Eggleston, a B.S. Electrical Engineering and M.A. Mathematics candidate at UCLA. People tell me I'm very mathy.</span>
+                <span class="disclaimer">Made with ❤️ sans AI in vanilla JS/CSS/HTML. <br>Site design heavily inspired by <a href="https://increment.com/">increment.com</a></span>
+            </div>
+        </footer>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script>
+        (function () {
+            var API_KEY = 'dcb31709b452b1cf9dc26972add0fda6';
+            var scriptPromise = null;
+            function loadDesmos() {
+                if (window.Desmos) return Promise.resolve();
+                if (scriptPromise) return scriptPromise;
+                scriptPromise = new Promise(function (resolve, reject) {
+                    var s = document.createElement('script');
+                    s.src = 'https://www.desmos.com/api/v1.12/calculator.js?apiKey=' + API_KEY;
+                    s.onload = resolve;
+                    s.onerror = reject;
+                    document.head.appendChild(s);
+                });
+                return scriptPromise;
+            }
+            function applyExtraEquations(calc, el) {
+                var eqs = [];
+                try { eqs = JSON.parse(el.dataset.equations || '[]'); } catch (e) {}
+                eqs.forEach(function (latex, i) { calc.setExpression({ id: 'extra-' + i, latex: latex }); });
+            }
+            function mount(el) {
+                if (!window.Desmos || el.dataset.desmosMounted) return;
+                el.dataset.desmosMounted = '1';
+                var graphUrl = el.dataset.graphUrl;
+                var isGeometry = !!graphUrl && graphUrl.indexOf('/geometry/') !== -1;
+                var Ctor = isGeometry ? Desmos.Geometry : Desmos.GraphingCalculator;
+                var calc = Ctor(el, {
+                    expressions: el.dataset.expressions === 'true',
+                    keypad: false,
+                    border: false
+                });
+                window.__desmosInstances = window.__desmosInstances || [];
+                window.__desmosInstances.push(calc);
+                if (graphUrl) {
+                    fetch(graphUrl, { headers: { Accept: 'application/json' } })
+                        .then(function (r) { return r.json(); })
+                        .then(function (json) {
+                            if (json && json.state) {
+                                if (isGeometry && el.dataset.expressions !== 'true') {
+                                    json.state.geometryToolbar = { toolbar: 'none' };
+                                }
+                                calc.setState(json.state);
+                            }
+                            applyExtraEquations(calc, el);
+                        })
+                        .catch(function (e) { console.error('Desmos embed: failed to load graph ' + graphUrl, e); });
+                } else {
+                    applyExtraEquations(calc, el);
+                }
+            }
+            window.initDesmosEmbeds = function (root) {
+                var els = (root || document).querySelectorAll('.desmos-embed:not([data-desmos-mounted])');
+                if (!els.length) return;
+                loadDesmos().then(function () { els.forEach(mount); });
+            };
+            window.destroyDesmosEmbeds = function () {
+                (window.__desmosInstances || []).forEach(function (c) { try { c.destroy(); } catch (e) {} });
+                window.__desmosInstances = [];
+            };
+        })();
+        
+initDesmosEmbeds(document);</script>
+<script>
+        (function () {
+            function compileShader(gl, type, source) {
+                var shader = gl.createShader(type);
+                gl.shaderSource(shader, source);
+                gl.compileShader(shader);
+                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                    console.error('Shader embed: compile error', gl.getShaderInfoLog(shader));
+                    gl.deleteShader(shader);
+                    return null;
+                }
+                return shader;
+            }
+            function linkProgram(gl, vsSource, fsSource) {
+                var vs = compileShader(gl, gl.VERTEX_SHADER, vsSource);
+                var fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSource);
+                if (!vs || !fs) return null;
+                var program = gl.createProgram();
+                gl.attachShader(program, vs);
+                gl.attachShader(program, fs);
+                gl.linkProgram(program);
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                    console.error('Shader embed: link error', gl.getProgramInfoLog(program));
+                    gl.deleteProgram(program);
+                    return null;
+                }
+                return program;
+            }
+            var VERTEX_SRC = '#version 300 es\n' +
+                'const vec2 verts[3] = vec2[3](vec2(-1.0,-1.0), vec2(3.0,-1.0), vec2(-1.0,3.0));\n' +
+                'void main() { gl_Position = vec4(verts[gl_VertexID], 0.0, 1.0); }';
+            function wrapFragment(userSource) {
+                return '#version 300 es\n' +
+                    'precision highp float;\n' +
+                    'uniform vec3 iResolution;\n' +
+                    'uniform float iTime;\n' +
+                    'uniform int iFrame;\n' +
+                    'uniform sampler2D iChannel0;\n' +
+                    'out vec4 outColor;\n' +
+                    userSource + '\n' +
+                    'void main() { mainImage(outColor, gl_FragCoord.xy); }';
+            }
+            function makeTarget(gl, w, h, type) {
+                var tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, type === gl.FLOAT ? gl.RGBA32F : gl.RGBA16F, w, h, 0, gl.RGBA, type, null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                var fbo = gl.createFramebuffer();
+                gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.bindTexture(gl.TEXTURE_2D, null);
+                return { tex: tex, fbo: fbo };
+            }
+            function mount(el) {
+                if (el.dataset.shaderMounted) return;
+                el.dataset.shaderMounted = '1';
+                var bufferTag = el.querySelector('script[data-pass="buffer"]');
+                var imageTag = el.querySelector('script[data-pass="image"]');
+                if (!imageTag) return;
+                var canvas = el.querySelector('canvas') || el.appendChild(document.createElement('canvas'));
+                var gl = canvas.getContext('webgl2');
+                if (!gl) { console.warn('Shader embed: WebGL2 unavailable'); return; }
+                var type = gl.getExtension('EXT_color_buffer_float') ? gl.FLOAT : gl.HALF_FLOAT;
+                if (type === gl.HALF_FLOAT && !gl.getExtension('EXT_color_buffer_half_float')) {
+                    console.warn('Shader embed: no floating-point render target support');
+                    return;
+                }
+                var imageProgram = linkProgram(gl, VERTEX_SRC, wrapFragment(imageTag.textContent));
+                var bufferProgram = bufferTag ? linkProgram(gl, VERTEX_SRC, wrapFragment(bufferTag.textContent)) : null;
+                if (!imageProgram || (bufferTag && !bufferProgram)) return;
+                var vao = gl.createVertexArray();
+
+                var targets = null, w = 0, h = 0, frame = 0, start = performance.now(), raf = 0;
+                function resize() {
+                    var rect = canvas.getBoundingClientRect();
+                    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+                    var nw = Math.max(1, Math.round(rect.width * dpr));
+                    var nh = Math.max(1, Math.round(rect.height * dpr));
+                    if (nw === w && nh === h) return;
+                    w = nw; h = nh;
+                    canvas.width = w; canvas.height = h;
+                    if (targets) {
+                        gl.deleteTexture(targets[0].tex); gl.deleteFramebuffer(targets[0].fbo);
+                        gl.deleteTexture(targets[1].tex); gl.deleteFramebuffer(targets[1].fbo);
+                    }
+                    targets = bufferProgram ? [makeTarget(gl, w, h, type), makeTarget(gl, w, h, type)] : null;
+                    frame = 0;
+                }
+                function setCommonUniforms(program, t) {
+                    gl.useProgram(program);
+                    gl.uniform3f(gl.getUniformLocation(program, 'iResolution'), w, h, 1.0);
+                    gl.uniform1f(gl.getUniformLocation(program, 'iTime'), t);
+                    gl.uniform1i(gl.getUniformLocation(program, 'iFrame'), frame);
+                    gl.uniform1i(gl.getUniformLocation(program, 'iChannel0'), 0);
+                }
+                function draw() {
+                    resize();
+                    var t = (performance.now() - start) / 1000;
+                    gl.bindVertexArray(vao);
+                    gl.activeTexture(gl.TEXTURE0);
+                    var readTex = null;
+                    if (bufferProgram && targets) {
+                        var src = targets[frame % 2];
+                        var dst = targets[(frame + 1) % 2];
+                        gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+                        gl.viewport(0, 0, w, h);
+                        gl.bindTexture(gl.TEXTURE_2D, src.tex);
+                        setCommonUniforms(bufferProgram, t);
+                        gl.drawArrays(gl.TRIANGLES, 0, 3);
+                        readTex = dst.tex;
+                    }
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                    gl.viewport(0, 0, w, h);
+                    gl.bindTexture(gl.TEXTURE_2D, readTex);
+                    setCommonUniforms(imageProgram, t);
+                    gl.drawArrays(gl.TRIANGLES, 0, 3);
+                    frame++;
+                    raf = requestAnimationFrame(draw);
+                }
+                raf = requestAnimationFrame(draw);
+                window.__shaderInstances = window.__shaderInstances || [];
+                window.__shaderInstances.push({
+                    stop: function () {
+                        cancelAnimationFrame(raf);
+                        var lose = gl.getExtension('WEBGL_lose_context');
+                        if (lose) lose.loseContext();
+                    }
+                });
+            }
+            window.initShaderEmbeds = function (root) {
+                (root || document).querySelectorAll('.shader-embed:not([data-shader-mounted])').forEach(mount);
+            };
+            window.destroyShaderEmbeds = function () {
+                (window.__shaderInstances || []).forEach(function (inst) { try { inst.stop(); } catch (e) {} });
+                window.__shaderInstances = [];
+            };
+        })();
+        
+initShaderEmbeds(document);</script>
+<script>
+renderMathInElement(document.body, { delimiters: [{ left: "$$", right: "$$", display: true }, { left: "$", right: "$", display: false }], throwOnError: false });
+(function () {
+  const header = document.querySelector("header");
+  const getScroll = () => window.scrollY || document.body.scrollTop || document.documentElement.scrollTop || 0;
+  let lastY = getScroll();
+  function onScroll() {
+    const y = getScroll();
+    if (y > lastY && y > 0) header.classList.add("nav-hidden");
+    else if (y < lastY) header.classList.remove("nav-hidden");
+    lastY = y;
+  }
+  window.addEventListener("scroll", onScroll, { passive: true });
+  document.body.addEventListener("scroll", onScroll, { passive: true });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,473 @@
+/* ==========================================================================
+   post-alt.css — alternate "lab notebook" dark skin for article pages.
+   Structurally identical to post.css (same selectors, same HTML hooks) —
+   swap the <link href> in a post page between the two files to compare.
+   url() paths are resolved relative to this file (posts/), so ../src/ points
+   at the site-root asset folder no matter which page links the stylesheet.
+   ========================================================================== */
+
+@font-face {
+    font-family: 'Newsreader';
+    src: url('../src/Newsreader.ttf') format('truetype-variations'),
+         url('../src/Newsreader.ttf') format('truetype');
+    font-weight: 200 800;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Newsreader';
+    src: url('../src/NewsreaderItalic.ttf') format('truetype-variations'),
+         url('../src/NewsreaderItalic.ttf') format('truetype');
+    font-weight: 200 800;
+    font-style: italic;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Schibsted';
+    src: url('../src/Schibsted.ttf') format('truetype-variations'),
+         url('../src/Schibsted.ttf') format('truetype');
+    font-weight: 200 800;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Schibsted';
+    src: url('../src/SchibstedItalic.ttf') format('truetype-variations'),
+         url('../src/SchibstedItalic.ttf') format('truetype');
+    font-weight: 200 800;
+    font-style: italic;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Fira Code';
+    src: url('../src/FiraCode-VariableFont_wght.ttf') format('truetype');
+    font-weight: 300 700;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'Aktura';
+    src: url('../src/Aktura.woff2') format('woff2');
+}
+
+:root {
+    --background: #020202;
+    --background-soft: #505050;
+    --panel: #10141a;
+    --panel-soft: #0a0d11;
+    --secondary: #8b939c;
+    --tertiary: #e2e8f0;
+    --accent: #3d6dcc;
+}
+
+code { font-family: 'Fira Code', monospace; }
+pre { margin: 0 0 25px 0; }
+
+[data-syntax-theme="monokai-pro"] {
+    --syntax-background: #2d2a2e;
+    --syntax-foreground: #fcfcfa;
+    --syntax-comment: #727072;
+    --syntax-keyword: #ff6188;
+    --syntax-operator: #ff6188;
+    --syntax-string: #ffd866;
+    --syntax-constant: #ab9df2;
+    --syntax-function: #a9dc76;
+    --syntax-type: #78dce8;
+    --syntax-variable: #fc9867;
+    --syntax-property: #a9dc76;
+    --syntax-tag: #ff6188;
+    --syntax-selector: #a9dc76;
+    --syntax-inserted: #a9dc76;
+    --syntax-deleted: #ff6188;
+    color-scheme: dark;
+}
+[data-syntax-theme="monokai-pro"] pre:has(code) {
+    background-color: var(--syntax-background);
+    color: var(--syntax-foreground);
+    padding: 16px 20px;
+    border-radius: 8px;
+    overflow-x: auto;
+}
+::highlight(comment), ::highlight(quote) { color: var(--syntax-comment); }
+::highlight(keyword), ::highlight(storage), ::highlight(at-rule), ::highlight(doctype), ::highlight(important), ::highlight(section) { color: var(--syntax-keyword); }
+::highlight(operator), ::highlight(punctuation) { color: var(--syntax-operator); }
+::highlight(string), ::highlight(regexp), ::highlight(attribute-value), ::highlight(link), ::highlight(raw) { color: var(--syntax-string); }
+::highlight(numeric), ::highlight(boolean), ::highlight(constant), ::highlight(symbol), ::highlight(character-entity), ::highlight(anchor), ::highlight(entity) { color: var(--syntax-constant); }
+::highlight(function), ::highlight(decorator), ::highlight(animation) { color: var(--syntax-function); }
+::highlight(type), ::highlight(support) { color: var(--syntax-type); }
+::highlight(variable), ::highlight(interpolation) { color: var(--syntax-variable); }
+::highlight(property), ::highlight(key), ::highlight(attribute-name) { color: var(--syntax-property); }
+::highlight(tag) { color: var(--syntax-tag); }
+::highlight(selector) { color: var(--syntax-selector); }
+::highlight(inserted) { color: var(--syntax-inserted); }
+::highlight(deleted) { color: var(--syntax-deleted); }
+
+main > img {
+    width: calc(100% + 50px);
+    max-height: 600px;
+    object-fit: contain;
+    border-radius: 8px;
+    transform: translateX(-25px);
+    /* tone-matches arbitrary stock photography to the dark palette without swapping assets */
+    filter: grayscale(0.2) contrast(1) brightness(0.94) saturate(0.95);
+}
+main > span.caption {
+    display: block;
+    margin: 16px 0 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--secondary);
+}
+main > span.title {
+    display: block;
+    font-family: 'Newsreader', serif;
+    font-weight: 700;
+    font-size: 48px;
+    line-height: 1.2;
+    margin: 70px 0 0;
+    color: var(--tertiary);
+}
+main > div.tags {
+    display: flex;
+    gap: 20px;
+    margin: 10px 0 30px;
+}
+main > span.description {
+    display: block;
+    font-weight: 400;
+    font-size: 20px;
+    line-height: 1.4;
+    margin: 10px 0 0;
+    color: var(--secondary);
+}
+hr {
+    margin: 60px 0;
+    height: 2px;
+    border: none;
+    background: linear-gradient(90deg, transparent, var(--accent) 20%, var(--accent) 80%, transparent);
+}
+main > div.tags a {
+    padding: 4px 10px;
+    border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+    border-radius: 4px;
+    text-decoration: none;
+    color: var(--secondary);
+    transition: color 0.2s, border-color 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+main > div.tags a:hover { color: var(--accent); border-color: var(--accent); }
+main > div.tags svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    fill: currentColor;
+    transform: translateY(1px);
+    transition: fill 0.2s;
+}
+main > section {
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    column-gap: 30px;
+}
+main > section > p {
+    font-family: 'Newsreader', serif;
+    font-size: 22px;
+    line-height: 30px;
+    margin: 0 0 25px 0;
+}
+main > section > p em {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+}
+main > section > article {
+    position: relative;
+    grid-column: 2;
+    grid-row: 1 / span 99;
+    align-self: center;
+    background: linear-gradient(165deg, var(--panel), var(--panel-soft));
+    border: 1px solid color-mix(in srgb, var(--accent) 12%, transparent);
+    border-radius: 10px;
+    overflow: hidden;
+    padding: 200px 30px 30px;
+    cursor: pointer;
+    transition: transform 0.35s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    display: flex;
+    flex-direction: column;
+}
+article > img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    /* tone-matches arbitrary stock photography to the dark palette without swapping assets */
+    filter: grayscale(0.2) contrast(1) brightness(0.9) saturate(0.95);
+}
+article > span.label {
+    text-transform: uppercase;
+    padding-top: 30px;
+    font-size: 15px;
+    letter-spacing: 0.7px;
+    font-weight: 600;
+    color: var(--secondary);
+}
+article > span.label::before { content: '// '; color: var(--accent); }
+article > span.text {
+    font-weight: 550;
+    font-size: 23px;
+    line-height: 1.2;
+    margin: 10px 0 0;
+    color: var(--tertiary);
+}
+article > span.description {
+    font-weight: 400;
+    font-size: 15px;
+    line-height: 23px;
+    margin: 10px 0 0;
+    color: var(--secondary);
+}
+main > section > article:hover {
+    transform: translateY(-5px);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    box-shadow: 0 20px 45px -28px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+main > section.left { grid-template-columns: 350px 1fr; }
+main > section.left > article { grid-column: 1; }
+main > section.full { grid-template-columns: 1fr; }
+main > section > figure {
+    grid-column: 1 / -1;
+    margin: 10px 0 30px;
+}
+main > section > figure > img {
+    display: block;
+    width: 100%;
+    max-height: 500px;
+    object-fit: cover;
+    border-radius: 6px;
+    /* faked dark-mode render of a white-background plot export (e.g. matplotlib) without swapping the asset */
+    filter: invert(0.85) hue-rotate(180deg) contrast(0.82) brightness(1.05);
+}
+main > section > figure > figcaption {
+    margin-top: 12px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--secondary);
+}
+main > section > figure > figcaption > span.title {
+    font-weight: 600;
+    color: var(--tertiary);
+    margin-right: 6px;
+}
+main span.big {
+    font-size: 35px;
+    font-weight: 550;
+    margin: 0 0 25px;
+    color: var(--tertiary);
+}
+main span.big::before { content: '## '; color: var(--accent); }
+main > section:not(:first-of-type) { margin-top: 60px; }
+.desmos-embed {
+    width: 100%;
+    margin: 10px 0 30px;
+    border: 1px solid color-mix(in srgb, var(--accent) 15%, transparent);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff; /* Desmos renders its own light canvas inside; only the frame is themed */
+}
+main > section > .desmos-embed { grid-column: 1 / -1; }
+/* --- shader visuals: a real-time WebGL2 canvas, sized/placed the same way as a Desmos embed --- */
+.shader-embed {
+    width: 100%;
+    margin: 10px 0 30px;
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #000;
+}
+.shader-embed > canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+main > section > .shader-embed { grid-column: 1 / -1; }
+/* let grid items shrink below their content so wide math can scroll instead of stretching <main> */
+main > section > * { min-width: 0; }
+.katex-display {
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-width: 100%;
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+/* --- "Read next" section (styling mirrored from blog.html's Continue Reading) --- */
+main > nav {
+    padding: 30px 0 0; /* <main> already contributes the 100px bottom padding */
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    column-gap: 30px;
+    row-gap: 40px;
+}
+main > nav > a {
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+}
+main > nav > a > article {
+    position: relative;
+    flex: 1 1 auto;
+    padding: 200px 20px 20px;
+    overflow: hidden;
+    cursor: pointer;
+    background: linear-gradient(165deg, var(--panel), var(--panel-soft));
+    border: 1px solid color-mix(in srgb, var(--accent) 12%, transparent);
+    border-radius: 10px;
+    transition: transform 0.4s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    display: flex;
+    flex-direction: column;
+}
+main > nav > a > article > hr {
+    margin: 0;
+    width: 35%;
+    transition: width 0.2s, background 0.3s;
+}
+main > nav > a > article > span.text {
+    margin: 30px 0 10px;
+    font-size: 28px;
+    color: var(--tertiary);
+    transition: color 0.2s;
+}
+main > nav > a > article > img { transition: transform 0.4s ease; }
+main > nav > a:hover > article {
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    box-shadow: 0 20px 45px -28px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+main > nav > a:hover > article > hr {
+    width: 100%;
+    background: var(--secondary);
+}
+main > nav > a:hover > article > span.text { color: var(--accent); }
+
+
+body {
+    margin: 0;
+    width: 100vw;
+    max-height: 100vh;
+    background: var(--background);
+    color: #d7dde3;
+    font-family: 'Fira Code', monospace;
+    overflow: hidden auto;
+}
+button {
+    appearance: none;
+    font-family: inherit;
+    border: none;
+    background: none;
+    cursor: pointer;
+}
+header {
+    position: fixed;
+    top: 0;
+    height: 96px;
+    width: min(1000px, calc(100% - 50px));
+    padding: 0 max(25px, calc(50% - 500px));
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    z-index: 1;
+    background: color-mix(in srgb, var(--panel) 85%, transparent);
+    box-shadow: 0 16px 32px -26px #00000090;
+    backdrop-filter: blur(14px);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    transition: transform 0.4s ease;
+}
+header.nav-hidden { transform: translateY(-100%); }
+header > span {
+    margin: 0 auto;
+    font-family: 'Aktura', sans-serif;
+    font-size: 35px;
+    transform: translateY(3px);
+    transition: transform 0.3s ease;
+}
+header > span:hover { transform: translateY(3px) scale(1.05); }
+header > a {
+    position: relative;
+    font-weight: 500;
+    opacity: 0.75;
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+    transition: opacity 0.2s;
+}
+header > a::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: -8px;
+    height: 3px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transition: transform 0.2s ease;
+}
+header > a:hover { opacity: 1; }
+header > a:hover::after { transform: scaleX(1); }
+main {
+    position: relative;
+    width: min(1000px, calc(94% - 50px));
+    padding: 96px max(calc(25px + 3%), calc(50% - 500px)) 100px;
+    background-image:
+        linear-gradient(color-mix(in srgb, var(--background-soft) 4%, transparent) 1px, transparent 1px),
+        linear-gradient(90deg, color-mix(in srgb, var(--background-soft) 4%, transparent) 1px, transparent 1px);
+    background-size: 32px 32px, 32px 32px, 100% 100%;
+}
+footer {
+    background: linear-gradient(160deg, var(--background) 0%, var(--background-soft) 100%);
+    border-top: 1px solid color-mix(in srgb, var(--accent) 14%, transparent);
+    color: #767676;
+    width: min(1000px, calc(94% - 50px));
+    padding: 80px max(calc(25px + 3%), calc(50% - 500px));
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr;
+    gap: 20px;
+}
+footer > div {
+    line-height: 25px;
+    font-weight: 450;
+    font-size: 15px;
+    display: flex;
+    flex-direction: column;
+}
+footer > div > span.title {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    margin-bottom: 10px;
+}
+footer > div > span.disclaimer {
+    color: #5a6169;
+    margin-top: 50px;
+    align-self: center;
+    text-align: center;
+}
+footer > div:first-of-type { gap: 6px; }
+footer > div a {
+    color: inherit;
+    font-weight: 500;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 2px;
+    width: max-content;
+    transition: color 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+footer > div a svg {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    fill: currentColor;
+    transition: fill 0.2s;
+}
+footer > div a:hover { color: var(--accent); }

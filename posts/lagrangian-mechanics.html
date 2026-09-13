@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lagrangian Mechanics from the Ground Up — ansatz</title>
+<script type="module" src="https://cdn.jsdelivr.net/npm/microlighter@2.1.0/dist/microlighter.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<link rel="stylesheet" href="post-alt.css">
+</head>
+<body data-syntax-theme="monokai-pro">
+<svg id="tag-icon-defs" style="display: none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 26 1024 1024">
+        <defs>
+            <symbol id="tag-icon" viewBox="0 26 1024 1024">
+                <path d="M74.9714,634.514C27.4286,585.143 0,521.143 0,453.486L0,307.2C0,257.829 1.82857,215.771 10.9714,179.2C18.2857,142.629 32.9143,109.714 58.5143,84.1143C84.1143,58.5143 117.029,43.8857 153.6,36.5714C190.171,27.4286 232.229,25.6 281.6,25.6L427.886,25.6C495.543,25.6 559.543,53.0286 608.914,100.571L969.143,460.8C1003.89,497.371 1024,544.914 1024,594.286C1024,634.514 1011.2,674.743 985.6,707.657C956.343,746.057 903.314,806.4 842.971,868.571C780.8,930.743 720.457,981.943 682.057,1011.2C649.143,1036.8 608.914,1049.6 568.686,1049.6C519.314,1049.6 471.771,1029.49 435.2,994.743L74.9714,634.514ZM281.6,384C323.657,384 358.4,349.257 358.4,307.2C358.4,265.143 323.657,230.4 281.6,230.4C239.543,230.4 204.8,265.143 204.8,307.2C204.8,349.257 239.543,384 281.6,384Z" fill="currentColor" fill-opacity="1"></path>
+            </symbol>
+        </defs>
+    </svg>
+<header>
+        <a href="../blog.html">home</a>
+        <span>ansatz</span>
+        <a href="../index.html">portfolio</a>
+        <a href="../liam-eggleston-cv.pdf">cv</a>
+    </header>
+<main>
+<img src="../images/geodesic-lagrangian.png" alt=""><span class="title">Lagrangian Mechanics from the Ground Up</span><div class="tags"><a><svg><use href="#tag-icon"></use></svg>physics</a><a><svg><use href="#tag-icon"></use></svg>pendulum</a></div><span class="description">Deriving the Euler–Lagrange equation from Newton’s laws and introductory calculus, then putting it to work on the simple pendulum.</span><hr><section class="right"><article><img src="https://www.thoughtco.com/thmb/mstYU3OL9TAslV_NdrYbzjC-9ow=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/JosephLouisLagrange-c21f7a64c22f4ee7b357988bb6f826b4.jpg" alt=""><span class="label">Who was</span><span class="text">Joseph-Louis Lagrange</span><span class="description">Joseph-Louis Lagrange was an Italian mathematician, physicist and astronomer. He made significant contributions to the fields of analysis, number theory, and both classical and celestial mechanics.</span></article>
+<p>Lagrangian mechanics is one of the most elegant ways to describe how physical systems move. Developed by Joseph-Louis Lagrange in the 18th century, it reformulated classical mechanics in terms of energy rather than directly tracking forces. Today, the Lagrangian approach is useful far beyond simple projectile or block-and-pulley problems—it provides a powerful framework for analyzing everything from pendulums and planetary motion to complicated mechanical systems and modern theoretical physics.</p>
+<p>In this article, we'll look at the central ideas of Lagrangian mechanics from the tools of Physics 1 and introductory calculus. Rather than treating the Lagrangian as a formula to memorize, we’ll see where it comes from and see how familiar ideas like Newton’s laws, work, energy, and derivatives naturally lead us to it.</p></section>
+<section class="full"><span class="big">Newton's Second Law</span>
+<p>Let's start by considering a particle moving in one dimension:</p>
+<p>$$x=x(t).$$</p>
+<p>We can consider the work ($W$) done by a force on this particle, which follows</p>
+<p>$$W=Fd$$</p>
+<p>or, for infinitessimal differences,</p>
+<p>$$dW=Fdx.$$</p>
+<p>We can define the potential energy for a conservative force by</p>
+<p>$$dW=-dV,$$</p>
+<p>which suggests that a force doing positive work decreases potential energy. If I push a falling object downward, for example, it has less height to fall from and thus has less potential energy.</p>
+<p>We can integrate both sides and isolate $F$ to obtain</p>
+<p>$$F=-\frac{dV}{dx}.$$</p>
+<p>We've found that a <strong>conservative force</strong> is one whose work can be represented by a potential-energy function $V(x)$. The force points "downhill" in $V$.</p>
+<p>Now, let's return to introductory physics, where Newton tells us that</p>
+<p>$$F=ma=m\ddot x.$$</p>
+<p>We just learned that</p>
+<p>$$F=-\frac{dV}{dx}$$</p>
+<p>and can thus rearrange to obtain</p>
+<p>$$m\ddot x+\frac{dV}{dx}=0.$$</p>
+<p>This is an equation we will ultimately want to reproduce with Lagrangian mechanics.</p>
+<span class="big">Kinetic and Potential Energy</span>
+<p>From introductory physics, we can define the kinetic energy $T$ as</p>
+<p>$$T=\frac12m\dot x^2$$</p>
+<p>and the potential energy $V$ as a function of $x$, which could represent a particle's height:</p>
+<p>$$V=mgx\rightarrow V=V(x).$$</p>
+<p>For our particle, we will define the <strong>Lagrangian</strong> as</p>
+<p>$$\boxed{L(x,\dot x, t)=T-V}=\frac12m\dot x^2-V(x).$$</p>
+<p>But why $T-V$? Well, let's see.</p>
+<span class="big">Optimizing a Trajectory</span>
+<p>Consider the ideal (blue) trajectory $x(t)$ between the two purple endpoints below and its nearby red trajectory $x_{\epsilon}(t)=x(t)+\epsilon\eta(t)$.</p>
+<div class="desmos-embed" style="height:520px" data-expressions="false" data-equations="[]" data-graph-url="https://www.desmos.com/geometry/g2lcany3uj"></div>
+<p>In this demonstration, $\epsilon$ is an arbitrarily small number and $\eta(t)$ is a function describing a disturbance in the trajectory.</p>
+<p>Because both trajectories have the same endpoints,</p>
+<p>$$x_\epsilon(t_1)=x(t_1)$$</p>
+<p>and</p>
+<p>$$x_\epsilon(t_2)=x(t_2).$$</p>
+<p>Therefore,</p>
+<p>$$\eta(t_1)=\eta(t_2)=0.$$</p>
+<p>The important thing is that $\eta(t)$ can otherwise be anything.</p>
+<p>Now, imagine that we assign a number to each trajectory $x_\epsilon(t)$. This principle is known as a <strong>functional</strong>. In our case, we can use the <strong>action</strong> of the trajectory as our functional, which is a quantity that accumulates over time. Over our interval, we can define action ($S$) as</p>
+<p>$$S[x(t)]=\int_{t_1}^{t_2}L\ dt.$$</p>
+<p>$L$ is our Lagrangian. Don't worry about what it means just yet.</p>
+<p>Since the action operates over the whole period of the particle ($t\in[t_1,t_2]$), it captures its entire history. The central principle is that the actual trajectory $x(t)$ is one for which the action is stationary. Imagine slightly changing the trajectory while keeping its endpoints fixed:</p>
+<p>$$x(t)\rightarrow x(t)+\epsilon\eta(t).$$</p>
+<p>This produces a slightly different action:</p>
+<p>$$S\rightarrow S(\epsilon).$$</p>
+<p>For the optimal, physical trajectory,</p>
+<p>$$\boxed{\left. \frac{dS}{d\epsilon}\right|_{\epsilon=0}=0}.$$</p>
+<p>This is known as <strong>Hamilton's principle</strong>. It is sometimes written as</p>
+<p>$$\delta S=0,$$</p>
+<p>meaning that the actual trajectory of a system makes the action stationary.</p>
+<p>Let's see what's going on here.</p>
+<p>Consider the two trajectories below. Use the point slider to switch between them.</p>
+<div class="desmos-embed" style="height:600px" data-expressions="false" data-equations="[]" data-graph-url="https://www.desmos.com/geometry/q7mkbobsi8"></div>
+<p>During your time on Earth, you've probably observed that the trajectory above labeled "optimal" is closer to the one a ball bouncing under the influence of gravity will follow. For this trajectory, $\epsilon=0$ and, as suggested above, its corresponding action $S[x(t)]$ is at a critical point. It follows, then, that minimizing the action helps us discover a system's equations of motion.</p>
+<p>Let's find the $\epsilon$ that puts $S[x_\epsilon(t)]$ at a critical point by differentiating with respect to $\epsilon$. First, we define $L$, which is a function of our system state determined by variables $x_\epsilon$, $\dot x_\epsilon$, and $t$.</p>
+<p>$$L\rightarrow L(x_\epsilon,\dot x_\epsilon, t)$$</p>
+<p>The action and its derivative are</p>
+<p>$$S(\epsilon)=\int_{t_1}^{t_2}L(x_\epsilon,\dot x_\epsilon, t)\ dt \\
+\frac{dS}{d\epsilon}=\int_{t_1}^{t_2}\frac{dL}{d\epsilon}\ dt.$$</p>
+<p>Both $x_\epsilon$ and $\dot x_\epsilon$ depend on $\epsilon$, so the multivariable chain rule reveals</p>
+<p>$$\frac{dL}{d\epsilon}=\frac{\partial L}{\partial x_\epsilon}\frac{\partial x_\epsilon}{\partial\epsilon}+\frac{\partial L}{\partial\dot x_\epsilon}\frac{\partial\dot x_\epsilon}{\partial\epsilon}.$$</p>
+<p>Since $x_\epsilon=x+\epsilon\eta$ and $\dot x_\epsilon=\dot x+\epsilon\dot\eta$,</p>
+<p>$$\frac{\partial x_\epsilon}{\partial\epsilon}=\eta$$</p>
+<p>and</p>
+<p>$$\frac{\partial\dot x_\epsilon}{\partial\epsilon}=\dot\eta.$$</p>
+<p>Thus,</p>
+<p>$$\frac{dL}{d\epsilon}=\frac{\partial L}{\partial x_\epsilon}\eta+\frac{\partial L}{\partial\dot x_\epsilon}\dot\eta.$$</p>
+<p>And so, for our ideal trajectory,</p>
+<p>$$\frac{dS}{d\epsilon}=\boxed{\int_{t_1}^{t_2}\left[\frac{\partial L}{\partial x_\epsilon}\eta+\frac{\partial L}{\partial\dot x_\epsilon}\dot\eta\right]\ dt=0}.$$</p>
+<p>Almost there.</p>
+<span class="big">The Annoying $\dot\eta$ Term</span>
+<p>It's hard to work with a derivative on $\eta$ because $\eta(t)$ is arbitrary. To reconcile this, let's get rid of it using integration by parts.</p>
+<p>$$\int\frac{\partial L}{\partial\dot x_\epsilon}\dot\eta\ dt$$</p>
+<p>Using</p>
+<p>$$u=\frac{\partial L}{\partial\dot x_\epsilon},\ \ dv=\dot\eta\ dt \\
+v=\eta,\ \ du=\frac{d}{dt}\left(\frac{\partial L}{\partial\dot x_\epsilon}\right)$$</p>
+<p>reveals that</p>
+<p>$$\int_{t_1}^{t_2}\frac{\partial L}{\partial\dot x}\dot\eta\ dt=\left[\frac{\partial L}{\partial\dot x_\epsilon}\eta\right]_{t_1}^{t_2}-\int_{t_1}^{t_2}\frac{d}{dt}\left(\frac{\partial L}{\partial\dot x_\epsilon}\right)\eta\ dt.$$</p>
+<p>Recall that $\eta$ vanishes at the boundaries. As such,</p>
+<p>$$\eta(t_1)=\eta(t_2)=0\rightarrow\left[\frac{\partial L}{\partial\dot x_\epsilon}\eta\right]_{t_1}^{t_2}=0$$</p>
+<p>and hence</p>
+<p>$$\int_{t_1}^{t_2}\frac{\partial L}{\partial\dot x}\dot\eta\ dt=-\int_{t_1}^{t_2}\frac{d}{dt}\left(\frac{\partial L}{\partial\dot x_\epsilon}\right)\eta\ dt.$$</p>
+<p>Finally, we can write our integral in terms of $\eta$ only:</p>
+<p>$$\int_{t_1}^{t_2}\left[\frac{\partial L}{\partial x_\epsilon}\eta+\frac{\partial L}{\partial\dot x_\epsilon}\dot\eta\right]\ dt=0 \\
+\int_{t_1}^{t_2}\left[\frac{\partial L}{\partial x_\epsilon}\eta-\frac{d}{dt}\left(\frac{\partial L}{\partial\dot x_\epsilon}\right)\eta\right]\ dt=0 \\
+\int_{t_1}^{t_2}\left[\frac{\partial L}{\partial x_\epsilon}-\frac{d}{dt}\left(\frac{\partial L}{\partial\dot x_\epsilon}\right)\right]\eta\ dt=0 \\$$</p>
+<span class="big">Getting Rid of $\eta$</span>
+<p>Let's represent the term in brackets as $f(t)$ so that we can rewrite the equation as</p>
+<p>$$\int_{t_1}^{t_2}f(t)\eta(t)\ dt=0.$$</p>
+<p>Because of how we have defined $\eta(t)$, we know this is true for every possible function $\eta(t)$ that vanishes at the endpoints.</p>
+<p>Let's now suppose that</p>
+<p>$$f(t)\neq0$$</p>
+<p>in a region between the endpoints.</p>
+<p>We can choose $\eta(t)$ to be nonzero specifically in that region and with the same sign as $f(t)$ such that</p>
+<p>$$f(t)\eta(t)&gt;0$$</p>
+<p>there, causing the integral to be nonzero. That contradicts our assumption and thus proves that the only possibility is $f(t)=0$ everywhere.</p>
+<p>Using our definition for $f(t)$, we see that</p>
+<p>$$\left[\frac{\partial L}{\partial x_\epsilon}-\frac{d}{dt}\left(\frac{\partial L}{\partial\dot x_\epsilon}\right)\right]=0$$</p>
+<p>or, equivalently,</p>
+<p>$$\boxed{\frac{d}{dt}\left(\frac{\partial L}{\partial\dot x_\epsilon}\right)-\frac{\partial L}{\partial x_\epsilon}=0}$$</p>
+<p>This is the <strong>Euler-Lagrange equation</strong>.</p>
+<span class="big">Testing the Equation</span>
+<p>Let's see if our Lagrangian $L$ works by applying the Euler-Lagrange equation to it.</p>
+<p>For our particle,</p>
+<p>$$L=T-V=\frac12m\dot x^2-V(x).$$</p>
+<p>We calculate</p>
+<p>$$\frac{\partial L}{\partial\dot x}=m\dot x$$</p>
+<p>and differentiate with respect to time:</p>
+<p>$$\frac{d}{dt}\left(\frac{\partial L}{\partial\dot x}\right)=m\ddot x.$$</p>
+<p>Then, for the second term, we calculate</p>
+<p>$$\frac{\partial L}{\partial x}=-\frac{dV}{dx}.$$</p>
+<p>Applying Euler-Lagrange yields</p>
+<p>$$m\ddot x-\left(-\frac{dV}{dx}\right)=0.$$</p>
+<p>But $F=-\frac{dV}{dx}$, so</p>
+<p>$$m\ddot x-F=0\rightarrow\boxed{F=m\ddot x}.$$</p>
+<p>We have proven that Euler-Lagrange works to recover Newton's second law.</p>
+<span class="big">Why $L=T-V$?</span>
+<p>We've already established that if a physical trajectory makes the action stationary, then the Euler-Lagrange equation follows. But why should nature care that the action is $\int T-V\ dt$?</p>
+<p>If you have faith in $F=ma$, then you should have equal faith in action and $L=T-V$. For ordinary classical mechanics, one can motivate $T-V$ by starting with Newton's law and looking for a function $L(x,\dot x,t)$ whose Euler-Lagrange equation reproduces it. For our function</p>
+<p>$$L=\frac12m\dot x^2-V(x),$$</p>
+<p>we just found that its Euler-Lagrange equation is exactly Newton's law. It is simply a scalar function whose variational equation parallels Newtonian dynamics.</p>
+<span class="big">The Simple Pendulum</span>
+<p>Let's apply our Lagrangian solution method to a more complicated system: the single pendulum. We'll begin by finding an expression for the velocity of the pendulum's bob (its swinging mass).</p>
+<p>If we measure $\theta$ from the downward vertical, we can write</p>
+<p>$$x=l\sin\theta,\ \ y=-l\cos\theta.$$</p>
+<p>We then calculate the bob's velocity:</p>
+<p>$$\dot x=l\cos\theta\dot\theta,\ \ \dot y=l\sin\theta\dot\theta \\
+v^2=\dot x^2+\dot y^2$$</p>
+<p>and substitute to find</p>
+<p>$$v^2=l^2\cos^2\theta\dot\theta^2+l^2\sin^2\theta\dot\theta \\
+\boxed{v^2=l^2\dot\theta^2}.$$</p>
+<p>Using the classical definition for kinetic energy,</p>
+<p>$$T=\frac12mv^2=\boxed{\frac12ml^2\dot\theta^2}.$$</p>
+<p>Potential energy is simple, relying only on the vertical position of the bob. Gravity gives</p>
+<p>$$V=mgy=mg(-l\cos\theta)=\boxed{-mgl\cos\theta}$$</p>
+<p>The Lagrangian is thus</p>
+<p>$$L=T-V=\boxed{\frac12ml^2\dot\theta^2-(-mgl\cos\theta)}.$$</p>
+<p>Now we apply Euler-Lagrange. We have</p>
+<p>$$\frac{d}{dt}\left(\frac{\partial L}{\partial\dot\theta}\right)-\frac{\partial L}{\partial\theta}=0.$$</p>
+<p>We calculate</p>
+<p>$$\frac{\partial L}{\partial\dot\theta}=ml^2\dot\theta\rightarrow\frac{d}{dt}\left(ml^2\dot\theta\right)=ml^2\ddot\theta$$</p>
+<p>and</p>
+<p>$$\frac{\partial L}{\partial\theta}=-mgl\sin\theta.$$</p>
+<p>Therefore,</p>
+<p>$$ml^2\ddot\theta-(-mgl\sin\theta)=0 \\
+\boxed{\ddot\theta+\frac{g}{l}\sin\theta=0}$$</p>
+<p>This is the nonlinear equation of motion for a single pendulum. Furthermore, for small $\theta$, the substitution $\sin\theta\approx\theta$ is made, giving</p>
+<p>$$\ddot\theta+\frac{g}{l}\theta=0,$$</p>
+<p>which is the simple harmonic oscillator.</p>
+<p>Notice how the plots of the simple harmonic oscillator (blue) and the exact single pendulum (red) diverge over time.</p>
+<div class="desmos-embed" style="height:420px" data-expressions="false" data-equations="[]" data-graph-url="https://www.desmos.com/calculator/kdwekftsrb"></div>
+<span class="big">Cheat Sheet</span>
+<p>Below is a quick review and summary of the relevant conceptual picture behind Lagrangian dynamics. The derivation can be compressed into this chain:</p>
+<p>Define our trajectory function</p>
+<p>$$x(t)\rightarrow x(t)+\epsilon\eta(t),$$</p>
+<p>where $\eta(t)$ represents an arbitrary perturbance. We assign a number to every possible trajectory over the period $T$ using its <strong>action</strong> (which is called a <strong>functional</strong>):</p>
+<p>$$S[x(t)]=\int_TL(x,\dot x,t)\ dt.$$</p>
+<p>Then we apply <strong>Hamilton's principle</strong>, demanding that</p>
+<p>$$\frac{dS}{d\epsilon}=0.$$</p>
+<p>Using the chain rule on the action integrand gives</p>
+<p>$$\frac{\partial L}{\partial x}\eta+\frac{\partial L}{\partial\dot x}\dot\eta=0.$$</p>
+<p>Integration by parts and factoring out $\eta$ then gives</p>
+<p>$$\left[\frac{\partial L}{\partial x}-\frac{d}{dt}\frac{\partial L}{\partial\dot x}\right]\eta=0$$</p>
+<p>and, because $\eta(t)$ is arbitrary,</p>
+<p>$$\boxed{\frac{\partial}{dt}\left(\frac{\partial L}{\partial\dot x}\right)-\frac{\partial L}{\partial x}}=0.$$</p>
+<span class="big">One Level Up: Geodesics</span>
+<p>Everything above came from one idea: nature picks the path that makes $S=\int L\,dt$ stationary, and Euler-Lagrange turns that into an equation of motion. Nothing in that argument required $L=T-V$ in a force field. Let's see what happens if we hand the same machinery the geometry of spacetime itself.</p>
+<p>General relativity trades "a particle moving through space" for "a particle following a path through curved spacetime," and it trades our $L=T-V$ for</p>
+<p>$$L=\frac12g_{\mu\nu}\frac{dx^\mu}{d\lambda}\frac{dx^\nu}{d\lambda},$$</p>
+<p>where $g_{\mu\nu}$ is the metric, the object that tells you how to measure distance and time at each point, and $\lambda$ is some parameter along the path, standing in for the $t$ used above. Plug in the Schwarzschild metric, the spacetime surrounding a non-rotating mass $M$, and grind through the same Euler-Lagrange machinery from earlier, and out come the geodesic equations: the paths that light and free-falling particles actually follow. I'll write more about this in a future post.</p>
+<p>We can shortcut most of that grinding. Notice that whenever a coordinate doesn't appear in $L$ itself (only its derivative does), Euler-Lagrange simplifies to</p>
+<p>$$\frac{d}{d\lambda}\left(\frac{\partial L}{\partial\dot x}\right)=\frac{\partial L}{\partial x}=0\ \ \Rightarrow\ \ \frac{\partial L}{\partial\dot x}=\text{constant}.$$</p>
+<p>A coordinate like this is called <em>cyclic</em>, and it hands you a conserved quantity for free. In the Schwarzschild metric, $t$ and $\phi$ are both cyclic — the geometry doesn't care what time it is, or which direction you decided to call $\phi=0$, so energy and angular momentum become two conserved quantities. This is Noether's theorem, and we've been using a special case of it the whole article; it's the same reason a cyclic $x$ handed us a conserved momentum back when we first looked at $\partial L/\partial\dot x$.</p>
+<p>With those two constants in hand, the four-dimensional geodesic problem collapses to a single ordinary differential equation for the shape of the orbit. Writing $u=1/r$ as a function of the orbit's angle $\phi$,</p>
+<p>$$\boxed{\frac{d^2u}{d\phi^2}+u=3Mu^2}.$$</p>
+<p>Drop the right side and this is just $u''+u=0$ — a straight line, written in polar coordinates, exactly what a photon should do with no gravity around. The $3Mu^2$ term is the departure from Newton (towards space-time jazz), and it alone is responsible for everything below: the black hole's shadow, the bright ring wrapped around it, and the disk, which appears to fold up and over the top of the hole it's orbiting.</p>
+<figure>
+    <div class="shader-embed" style="height:460px"><canvas></canvas>
+        <script type="x-shader/x-fragment" data-pass="image">
+// =====================================================================
+//  GEODESICS FROM A SPACETIME LAGRANGIAN
+//  Single Image pass. No buffers.
+//
+//  Same machinery as the pendulum shaders, one level up. The Lagrangian
+//  is no longer (kinetic - potential) on a configuration space, it is
+//
+//      L = (1/2) g_uv  dx^u/dl  dx^v/dl
+//
+//  on Schwarzschild spacetime, and its Euler-Lagrange equations are the
+//  geodesic equations: the paths free particles and light actually take.
+//
+//  Two coordinates, t and phi, never appear in the metric itself, only
+//  their derivatives do. Noether then hands us two constants of motion,
+//  energy and angular momentum, and the whole 4D problem collapses to a
+//  planar orbit equation in u = 1/r:
+//
+//      d2u/dphi2 + u = 3 M u^2
+//
+//  The right-hand side is the entire difference between Newton and
+//  Einstein. Written back in vector form, with the horizon at r = 1
+//  (so M = 1/2), that is the one line of physics in this shader:
+//
+//      d2x/dl2 = -1.5 * h^2 * x / r^5,     h = |x cross v|
+//
+//  Every pixel integrates that backwards from the camera. The warped
+//  grid is the flat background sky, bent by the geometry alone.
+// =====================================================================
+
+#define PI 3.14159265359
+
+// ---- tuning -----------------------------------------------------------
+#define TIME_SCALE 1.0     // camera orbit and disk rotation speed
+#define CAM_R      11.0    // camera distance, in horizon radii
+#define CAM_TILT   0.17    // how far above the disk plane we sit
+#define FOCAL      1.6     // lens; raise to zoom in
+
+#define RS         1.0     // event horizon. photon sphere is at 1.5,
+                           // the shadow edge at 3*sqrt(3)/2 = 2.598
+#define DISK_IN    3.0     // innermost stable circular orbit (6M)
+#define DISK_OUT   9.0
+#define DISK_GAIN  0.55
+#define BEAM       0.72    // strength of the Doppler asymmetry
+
+#define MAX_STEPS  260
+#define FAR        60.0
+// -----------------------------------------------------------------------
+
+float hash13(vec3 p)
+{
+    p = fract(p*0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y)*p.z);
+}
+
+float hash12(vec2 p)
+{
+    p = fract(p*vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x*p.y);
+}
+
+float vnoise(vec2 p)
+{
+    vec2 i = floor(p), f = fract(p);
+    f = f*f*(3.0 - 2.0*f);
+    return mix(mix(hash12(i),              hash12(i + vec2(1,0)), f.x),
+               mix(hash12(i + vec2(0,1)),  hash12(i + vec2(1,1)), f.x), f.y);
+}
+
+// Flat background: a latitude/longitude cage plus stars, so the lensing
+// has something rigid to distort.
+vec3 sky(vec3 d)
+{
+    float lat = asin(clamp(d.y, -1.0, 1.0));
+    float lon = atan(d.z, d.x);
+
+    float a = abs(fract(lat*(9.0/PI)) - 0.5)*2.0;
+    float b = abs(fract(lon*(9.0/PI)) - 0.5)*2.0;
+    float cage = max(smoothstep(0.90, 0.995, a), smoothstep(0.90, 0.995, b));
+
+    vec3 col = mix(vec3(0.012, 0.016, 0.035), vec3(0.03, 0.05, 0.10),
+                   0.5 + 0.5*d.y);
+    col += vec3(0.10, 0.30, 0.38)*cage*0.55;
+
+    vec3 sp = d*170.0;
+    vec3 id = floor(sp);
+    float h = hash13(id);
+    if (h > 0.986) {
+        float s = smoothstep(0.30, 0.0, length(fract(sp) - 0.5));
+        col += vec3(0.9, 0.94, 1.0)*s*(0.3 + 0.7*hash13(id + 11.0));
+    }
+    return col;
+}
+
+// the geodesic "force", straight off the orbit equation
+vec3 accel(vec3 p, float h2)
+{
+    float r2 = dot(p, p);
+    return -1.5*h2*p / (r2*r2*sqrt(r2));
+}
+
+void rk4(inout vec3 p, inout vec3 v, float h, float h2)
+{
+    vec3 k1p = v,             k1v = accel(p, h2);
+    vec3 k2p = v + 0.5*h*k1v, k2v = accel(p + 0.5*h*k1p, h2);
+    vec3 k3p = v + 0.5*h*k2v, k3v = accel(p + 0.5*h*k2p, h2);
+    vec3 k4p = v +     h*k3v, k4v = accel(p +     h*k3p, h2);
+    p += (h/6.0)*(k1p + 2.0*k2p + 2.0*k3p + k4p);
+    v += (h/6.0)*(k1v + 2.0*k2v + 2.0*k3v + k4v);
+}
+
+vec3 diskSample(vec3 q, vec3 v, float t)
+{
+    float rr = length(q.xz);
+    float f  = clamp((rr - DISK_IN)/(DISK_OUT - DISK_IN), 0.0, 1.0);
+
+    // differential rotation: inner rings shear past outer ones
+    float spin = 2.4*t / pow(rr, 1.5);
+    float ca = cos(spin), sa = sin(spin);
+    vec2 dq = vec2(q.x*ca - q.z*sa, q.x*sa + q.z*ca);
+
+    float n = vnoise(dq*1.5)*0.62 + vnoise(dq*4.3)*0.28 + vnoise(dq*11.0)*0.10;
+
+    // relativistic beaming: the limb swinging toward us is brighter
+    vec3  tang = normalize(cross(vec3(0,1,0), q));
+    float beta = 0.62/sqrt(rr);
+    float mu   = -dot(tang, normalize(v));
+    float dop  = pow(1.0/max(1.0 - beta*mu, 0.15), 3.0);
+
+    float temp = pow(1.0 - f, 1.7);
+    vec3  hue  = mix(vec3(1.00, 0.40, 0.10), vec3(0.95, 0.92, 0.85), temp);
+
+    float dens = (0.22 + 0.85*n) * pow(1.0 - f, 1.3)
+               * smoothstep(0.0, 0.10, f) * smoothstep(1.0, 0.82, f);
+
+    return hue * dens * dop * DISK_GAIN;
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord)
+{
+    vec2 uv = (2.0*fragCoord - iResolution.xy) / iResolution.y;
+    float t = iTime*TIME_SCALE;
+
+    float ang = t*0.06;
+    vec3  ro  = vec3(cos(ang), CAM_TILT, sin(ang));
+    ro = normalize(ro)*CAM_R;
+
+    vec3 ww = normalize(-ro);
+    vec3 uu = normalize(cross(ww, vec3(0.0, 1.0, 0.0)));
+    vec3 vv = cross(uu, ww);
+    vec3 rd = normalize(uv.x*uu + uv.y*vv + FOCAL*ww);
+
+    vec3 p = ro, v = rd;
+    vec3 cr = cross(p, v);
+    float h2 = dot(cr, cr);          // conserved, so compute it once
+
+    vec3 col = vec3(0.0);
+    bool done = false;
+
+    for (int i = 0; i < MAX_STEPS; i++) {
+        float r = length(p);
+
+        if (r < RS)                        { done = true; break; }   // horizon
+        if (r > FAR && dot(p, v) > 0.0)    { col += sky(normalize(v)); done = true; break; }
+
+        vec3 prev = p;
+        rk4(p, v, 0.035*r + 0.02, h2);
+
+        // did the ray cross the equatorial plane inside the disk?
+        if (prev.y*p.y < 0.0) {
+            float s = prev.y/(prev.y - p.y);
+            vec3  q = mix(prev, p, s);
+            float rr = length(q.xz);
+            if (rr > DISK_IN && rr < DISK_OUT) col += diskSample(q, v, t);
+        }
+    }
+    if (!done) col += sky(normalize(v))*0.4;
+
+    col = col/(1.0 + col);
+    vec2 q = uv;
+    col *= 1.0 - 0.12*dot(q, q);
+    fragColor = vec4(pow(max(col, 0.0), vec3(0.85)), 1.0);
+}
+        </script>
+    </div>
+    <figcaption><span class="title">Figure 1</span>Every pixel fires a light ray backward from the camera and integrates the orbit equation above to find where it came from. The background is an undistorted lat/long cage. Any warping near the shadow is due to the $3Mu^2$ term.</figcaption>
+</figure>
+</section>
+
+<hr style="background: var(--secondary); height: 1px;">
+<span class="big">Read next</span>
+<nav id="read-next"></nav>
+</main>
+<footer>
+            <div>
+                <a href="https://linkedin.com/in/liameggleston">
+                    <svg viewBox="0 0 448 512" aria-hidden="true"><path d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zm5 170.2l66.5 0 0 213.8-66.5 0 0-213.8zm71.7-67.7a38.5 38.5 0 1 1 -77 0 38.5 38.5 0 1 1 77 0zM317.9 416l0-104c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9l0 105.8-66.4 0 0-213.8 63.7 0 0 29.2 .9 0c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9l0 117.2-66.4 0z"/></svg>
+                    /liameggleston
+                </a>
+                <a href="mailto:liameggs@ucla.edu">
+                    <svg viewBox="39 77 986 922" aria-hidden="true">
+                        <path d="M190.171,992.914C179.2,996.571 168.229,998.4 157.257,998.4C91.4286,998.4 38.4,945.371 38.4,879.543L38.4,872.229C38.4,842.971 47.5429,815.543 65.8286,793.6C107.886,738.743 146.286,680.229 179.2,619.886C188.343,601.6 206.629,588.8 228.571,588.8L512,588.8C541.257,588.8 563.2,566.857 563.2,537.6C563.2,510.171 541.257,486.4 512,486.4L228.571,486.4C206.629,486.4 188.343,473.6 179.2,455.314C146.286,394.971 107.886,336.457 65.8286,283.429C49.3714,259.657 38.4,232.229 38.4,202.971L38.4,195.657C38.4,129.829 91.4286,76.8 157.257,76.8C168.229,76.8 179.2,78.6285 190.171,82.2857C228.571,93.2571 384,140.8 550.4,208.457C634.514,241.371 720.457,279.771 799.086,321.829C875.886,362.057 945.371,407.771 992.914,457.143C1014.86,480.914 1024,510.171 1024,537.6C1024,565.029 1014.86,594.286 992.914,618.057C945.371,667.429 875.886,713.143 799.086,753.371C720.457,795.429 634.514,833.829 550.4,866.743C384,934.4 228.571,981.943 190.171,992.914Z" fill="currentColor" fill-opacity="1"></path>
+                    </svg>
+                    liameggs@ucla.edu
+                </a>
+                <a href="https://liameggleston.com/">
+                    <svg viewBox="4 47 1019 984" aria-hidden="true">
+                    <path d="M530.286,54.8571C521.143,43.8857 504.686,43.8857 493.714,54.8571C458.971,98.7429 429.714,157.257 405.943,226.743C378.514,312.686 362.057,409.6 358.4,510.171C358.4,522.971 369.371,535.771 382.171,535.771C422.4,537.6 466.286,537.6 513.829,537.6C559.543,537.6 601.6,537.6 641.829,535.771C656.457,535.771 667.429,522.971 665.6,510.171C663.771,409.6 647.314,312.686 618.057,226.743C596.114,157.257 565.029,98.7429 530.286,54.8571ZM321.829,54.8571C343.771,47.5428 362.057,71.3143 351.086,91.4286C334.629,124.343 321.829,159.086 309.029,193.829C277.943,288.914 259.657,394.971 256,501.029C256,517.486 243.2,528.457 228.571,526.629C175.543,522.971 131.657,517.486 95.0857,512C65.8286,508.343 43.8857,504.686 23.7714,501.029C10.9714,499.2 3.65714,488.229 3.65714,475.429C16.4571,351.086 62.1714,243.2 140.8,166.4C192,115.2 252.343,78.6285 323.657,54.8571ZM261.486,654.629C259.657,641.829 250.514,630.857 237.714,630.857C175.543,625.371 122.514,619.886 80.4571,614.4C64,612.571 51.2,608.914 36.5714,607.086C20.1143,605.257 5.48571,618.057 7.31429,636.343C25.6,744.229 69.4857,839.314 140.8,910.629C190.171,960 252.343,996.571 321.829,1020.34C343.771,1027.66 362.057,1003.89 351.086,983.771C334.629,950.857 321.829,916.114 309.029,881.371C285.257,810.057 270.629,733.257 261.486,654.629ZM493.714,1020.34C502.857,1033.14 521.143,1033.14 530.286,1020.34C565.029,976.457 596.114,917.943 618.057,848.457C636.343,791.771 650.971,731.429 658.286,667.429C660.114,650.971 647.314,638.171 632.686,638.171C596.114,640 555.886,640 513.829,640C469.943,640 429.714,640 393.143,638.171C376.686,638.171 363.886,650.971 365.714,665.6C374.857,729.6 387.657,791.771 405.943,848.457C429.714,917.943 458.971,976.457 495.543,1020.34ZM714.971,193.829C704,159.086 689.371,124.343 672.914,91.4286C663.771,71.3143 680.229,47.5428 702.171,54.8571C773.486,78.6285 835.657,115.2 885.029,164.571C963.657,243.2 1011.2,351.086 1022.17,475.429C1024,488.229 1014.86,499.2 1002.06,501.029C983.771,504.686 960,508.343 932.571,512C894.171,517.486 850.286,522.971 795.429,526.629C780.8,528.457 769.829,515.657 768,501.029C764.343,394.971 747.886,288.914 714.971,193.829ZM714.971,881.371C704,916.114 689.371,950.857 672.914,983.771C663.771,1003.89 680.229,1027.66 702.171,1020.34C773.486,996.571 835.657,960 885.029,910.629C956.343,839.314 1002.06,744.229 1018.51,634.514C1020.34,618.057 1005.71,605.257 989.257,607.086C976.457,608.914 961.829,610.743 945.371,614.4C903.314,619.886 850.286,625.371 788.114,630.857C775.314,630.857 764.343,641.829 762.514,654.629C755.2,733.257 738.743,810.057 716.8,881.371Z" fill="currentColor" fill-opacity="1"></path>
+                    </svg>
+                    liameggleston.com
+                </a>
+            </div>
+            <div>
+                <span class="title">About</span>
+                <span>Hello! I'm Liam Eggleston, a B.S. Electrical Engineering and M.A. Mathematics candidate at UCLA. People tell me I'm very mathy.</span>
+                <span class="disclaimer">Made with ❤️ sans AI in vanilla JS/CSS/HTML.</span>
+            </div>
+        </footer>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script>
+        (function () {
+            var API_KEY = 'dcb31709b452b1cf9dc26972add0fda6';
+            var scriptPromise = null;
+            function loadDesmos() {
+                if (window.Desmos) return Promise.resolve();
+                if (scriptPromise) return scriptPromise;
+                scriptPromise = new Promise(function (resolve, reject) {
+                    var s = document.createElement('script');
+                    s.src = 'https://www.desmos.com/api/v1.12/calculator.js?apiKey=' + API_KEY;
+                    s.onload = resolve;
+                    s.onerror = reject;
+                    document.head.appendChild(s);
+                });
+                return scriptPromise;
+            }
+            function applyExtraEquations(calc, el) {
+                var eqs = [];
+                try { eqs = JSON.parse(el.dataset.equations || '[]'); } catch (e) {}
+                eqs.forEach(function (latex, i) { calc.setExpression({ id: 'extra-' + i, latex: latex }); });
+            }
+            function mount(el) {
+                if (!window.Desmos || el.dataset.desmosMounted) return;
+                el.dataset.desmosMounted = '1';
+                var graphUrl = el.dataset.graphUrl;
+                var isGeometry = !!graphUrl && graphUrl.indexOf('/geometry/') !== -1;
+                var Ctor = isGeometry ? Desmos.Geometry : Desmos.GraphingCalculator;
+                var calc = Ctor(el, {
+                    expressions: el.dataset.expressions === 'true',
+                    keypad: false,
+                    border: false
+                });
+                window.__desmosInstances = window.__desmosInstances || [];
+                window.__desmosInstances.push(calc);
+                if (graphUrl) {
+                    fetch(graphUrl, { headers: { Accept: 'application/json' } })
+                        .then(function (r) { return r.json(); })
+                        .then(function (json) {
+                            if (json && json.state) {
+                                if (isGeometry && el.dataset.expressions !== 'true') {
+                                    json.state.geometryToolbar = { toolbar: 'none' };
+                                }
+                                calc.setState(json.state);
+                            }
+                            applyExtraEquations(calc, el);
+                        })
+                        .catch(function (e) { console.error('Desmos embed: failed to load graph ' + graphUrl, e); });
+                } else {
+                    applyExtraEquations(calc, el);
+                }
+            }
+            window.initDesmosEmbeds = function (root) {
+                var els = (root || document).querySelectorAll('.desmos-embed:not([data-desmos-mounted])');
+                if (!els.length) return;
+                loadDesmos().then(function () { els.forEach(mount); });
+            };
+            window.destroyDesmosEmbeds = function () {
+                (window.__desmosInstances || []).forEach(function (c) { try { c.destroy(); } catch (e) {} });
+                window.__desmosInstances = [];
+            };
+        })();
+        
+initDesmosEmbeds(document);</script>
+<script>
+        (function () {
+            function compileShader(gl, type, source) {
+                var shader = gl.createShader(type);
+                gl.shaderSource(shader, source);
+                gl.compileShader(shader);
+                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                    console.error('Shader embed: compile error', gl.getShaderInfoLog(shader));
+                    gl.deleteShader(shader);
+                    return null;
+                }
+                return shader;
+            }
+            function linkProgram(gl, vsSource, fsSource) {
+                var vs = compileShader(gl, gl.VERTEX_SHADER, vsSource);
+                var fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSource);
+                if (!vs || !fs) return null;
+                var program = gl.createProgram();
+                gl.attachShader(program, vs);
+                gl.attachShader(program, fs);
+                gl.linkProgram(program);
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                    console.error('Shader embed: link error', gl.getProgramInfoLog(program));
+                    gl.deleteProgram(program);
+                    return null;
+                }
+                return program;
+            }
+            var VERTEX_SRC = '#version 300 es\n' +
+                'const vec2 verts[3] = vec2[3](vec2(-1.0,-1.0), vec2(3.0,-1.0), vec2(-1.0,3.0));\n' +
+                'void main() { gl_Position = vec4(verts[gl_VertexID], 0.0, 1.0); }';
+            function wrapFragment(userSource) {
+                return '#version 300 es\n' +
+                    'precision highp float;\n' +
+                    'uniform vec3 iResolution;\n' +
+                    'uniform float iTime;\n' +
+                    'uniform int iFrame;\n' +
+                    'uniform sampler2D iChannel0;\n' +
+                    'out vec4 outColor;\n' +
+                    userSource + '\n' +
+                    'void main() { mainImage(outColor, gl_FragCoord.xy); }';
+            }
+            function makeTarget(gl, w, h, type) {
+                var tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, type === gl.FLOAT ? gl.RGBA32F : gl.RGBA16F, w, h, 0, gl.RGBA, type, null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                var fbo = gl.createFramebuffer();
+                gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.bindTexture(gl.TEXTURE_2D, null);
+                return { tex: tex, fbo: fbo };
+            }
+            function mount(el) {
+                if (el.dataset.shaderMounted) return;
+                el.dataset.shaderMounted = '1';
+                var bufferTag = el.querySelector('script[data-pass="buffer"]');
+                var imageTag = el.querySelector('script[data-pass="image"]');
+                if (!imageTag) return;
+                var canvas = el.querySelector('canvas') || el.appendChild(document.createElement('canvas'));
+                var gl = canvas.getContext('webgl2');
+                if (!gl) { console.warn('Shader embed: WebGL2 unavailable'); return; }
+                var type = gl.getExtension('EXT_color_buffer_float') ? gl.FLOAT : gl.HALF_FLOAT;
+                if (type === gl.HALF_FLOAT && !gl.getExtension('EXT_color_buffer_half_float')) {
+                    console.warn('Shader embed: no floating-point render target support');
+                    return;
+                }
+                var imageProgram = linkProgram(gl, VERTEX_SRC, wrapFragment(imageTag.textContent));
+                var bufferProgram = bufferTag ? linkProgram(gl, VERTEX_SRC, wrapFragment(bufferTag.textContent)) : null;
+                if (!imageProgram || (bufferTag && !bufferProgram)) return;
+                var vao = gl.createVertexArray();
+
+                var targets = null, w = 0, h = 0, frame = 0, start = performance.now(), raf = 0;
+                function resize() {
+                    var rect = canvas.getBoundingClientRect();
+                    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+                    var nw = Math.max(1, Math.round(rect.width * dpr));
+                    var nh = Math.max(1, Math.round(rect.height * dpr));
+                    if (nw === w && nh === h) return;
+                    w = nw; h = nh;
+                    canvas.width = w; canvas.height = h;
+                    if (targets) {
+                        gl.deleteTexture(targets[0].tex); gl.deleteFramebuffer(targets[0].fbo);
+                        gl.deleteTexture(targets[1].tex); gl.deleteFramebuffer(targets[1].fbo);
+                    }
+                    targets = bufferProgram ? [makeTarget(gl, w, h, type), makeTarget(gl, w, h, type)] : null;
+                    frame = 0;
+                }
+                function setCommonUniforms(program, t) {
+                    gl.useProgram(program);
+                    gl.uniform3f(gl.getUniformLocation(program, 'iResolution'), w, h, 1.0);
+                    gl.uniform1f(gl.getUniformLocation(program, 'iTime'), t);
+                    gl.uniform1i(gl.getUniformLocation(program, 'iFrame'), frame);
+                    gl.uniform1i(gl.getUniformLocation(program, 'iChannel0'), 0);
+                }
+                function draw() {
+                    resize();
+                    var t = (performance.now() - start) / 1000;
+                    gl.bindVertexArray(vao);
+                    gl.activeTexture(gl.TEXTURE0);
+                    var readTex = null;
+                    if (bufferProgram && targets) {
+                        var src = targets[frame % 2];
+                        var dst = targets[(frame + 1) % 2];
+                        gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+                        gl.viewport(0, 0, w, h);
+                        gl.bindTexture(gl.TEXTURE_2D, src.tex);
+                        setCommonUniforms(bufferProgram, t);
+                        gl.drawArrays(gl.TRIANGLES, 0, 3);
+                        readTex = dst.tex;
+                    }
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                    gl.viewport(0, 0, w, h);
+                    gl.bindTexture(gl.TEXTURE_2D, readTex);
+                    setCommonUniforms(imageProgram, t);
+                    gl.drawArrays(gl.TRIANGLES, 0, 3);
+                    frame++;
+                    raf = requestAnimationFrame(draw);
+                }
+                raf = requestAnimationFrame(draw);
+                window.__shaderInstances = window.__shaderInstances || [];
+                window.__shaderInstances.push({
+                    stop: function () {
+                        cancelAnimationFrame(raf);
+                        var lose = gl.getExtension('WEBGL_lose_context');
+                        if (lose) lose.loseContext();
+                    }
+                });
+            }
+            window.initShaderEmbeds = function (root) {
+                (root || document).querySelectorAll('.shader-embed:not([data-shader-mounted])').forEach(mount);
+            };
+            window.destroyShaderEmbeds = function () {
+                (window.__shaderInstances || []).forEach(function (inst) { try { inst.stop(); } catch (e) { } });
+                window.__shaderInstances = [];
+            };
+        })();
+
+initShaderEmbeds(document);</script>
+<script>
+renderMathInElement(document.body, { delimiters: [{ left: "$$", right: "$$", display: true }, { left: "$", right: "$", display: false }], throwOnError: false });
+(function () {
+  const header = document.querySelector("header");
+  const getScroll = () => window.scrollY || document.body.scrollTop || document.documentElement.scrollTop || 0;
+  let lastY = getScroll();
+  function onScroll() {
+    const y = getScroll();
+    if (y > lastY && y > 0) header.classList.add("nav-hidden");
+    else if (y < lastY) header.classList.remove("nav-hidden");
+    lastY = y;
+  }
+  window.addEventListener("scroll", onScroll, { passive: true });
+  document.body.addEventListener("scroll", onScroll, { passive: true });
+})();
+</script>
+<script src="../posts.js"></script>
+<script>
+renderReadNext('#read-next', '../');
+</script>
+</body>
+</html>

@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blog Editor</title>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/microlighter@2.1.0/dist/microlighter.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <!-- Single source of truth for all article styling, shared with posts/*.html and the exported documents. -->
+    <link rel="stylesheet" href="posts/post.css">
+    <style id="editor-chrome-style">
+        :root {
+            --background: #f2f2f2;
+            --secondary: #595959;
+            --tertiary: #1e1e1e;
+            --accent: #e4ad55;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            height: 100%;
+            font-family: 'Schibsted', sans-serif;
+            overflow: hidden;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+        }
+        button {
+            appearance: none;
+            font-family: inherit;
+            border: none;
+            background: none;
+            cursor: pointer;
+        }
+        .toolbar {
+            flex: 0 0 auto;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            gap: 16px;
+            padding: 14px 25px;
+            background: #ffffff;
+            border-bottom: 4px solid var(--accent);
+            box-shadow: 0 0 20px #00000020;
+            z-index: 1;
+        }
+        .toolbar > span.brand {
+            font-family: 'Aktura', sans-serif;
+            font-size: 22px;
+            margin-right: 10px;
+            align-self: center;
+        }
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .field > label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--secondary);
+        }
+        .field > input {
+            font-family: inherit;
+            font-size: 14px;
+            padding: 7px 10px;
+            border: 1px solid #d5d5d5;
+            border-radius: 5px;
+            min-width: 160px;
+            background: var(--background);
+        }
+        .field > input:focus { outline: 2px solid var(--accent); }
+        .field.grow { flex: 1 1 220px; }
+        .field.title-field { flex: 1 1 260px; }
+        .toolbar-actions {
+            margin-left: auto;
+            display: flex;
+            gap: 10px;
+            align-self: center;
+        }
+        .toolbar-actions button {
+            font-size: 14px;
+            font-weight: 600;
+            padding: 10px 18px;
+            border-radius: 5px;
+            transition: opacity 0.2s, transform 0.15s;
+        }
+        .toolbar-actions button:hover { transform: translateY(-1px); }
+        #help-toggle {
+            background: var(--tertiary);
+            color: #fff;
+        }
+        #export-btn {
+            background: var(--accent);
+            color: #fff;
+        }
+        .help-panel {
+            flex: 0 0 auto;
+            display: none;
+            padding: 16px 25px;
+            background: #fffaf0;
+            border-bottom: 1px solid #e5d5b5;
+            font-size: 13px;
+            line-height: 1.7;
+            color: var(--tertiary);
+        }
+        .help-panel.open { display: block; }
+        .help-panel code {
+            background: #00000010;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-family: 'Fira Code', monospace;
+            font-size: 12px;
+        }
+        .help-panel dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 8px 0 0; }
+        .help-panel dt { font-weight: 700; }
+        .help-panel dd { margin: 0; }
+        .editor-wrap {
+            flex: 1 1 auto;
+            display: flex;
+            min-height: 0;
+        }
+        .pane {
+            flex: 1 1 50%;
+            min-width: 0;
+            height: 100%;
+            overflow-y: auto;
+        }
+        #markdown-input {
+            flex: 1 1 50%;
+            min-width: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            border: none;
+            resize: none;
+            background: var(--tertiary);
+            color: var(--background);
+            font-family: 'Fira Code', monospace;
+            font-size: 13.5px;
+            line-height: 1.7;
+            padding: 30px 5%;
+            outline: none;
+            tab-size: 4;
+        }
+        .preview-pane {
+            background: var(--background);
+            background-image: linear-gradient(45deg, #eeeeee 25%, transparent 25%, transparent 75%, #eeeeee 75%), linear-gradient(-45deg, #eeeeee 25%, transparent 25%, transparent 75%, #eeeeee 75%);
+            background-size: 100px 100px;
+            border-left: 2px solid #00000015;
+        }
+        .preview-pane > main {
+            display: block;
+            width: auto;
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 40px 6% 100px;
+            background: none;
+        }
+        .preview-pane > main > img {
+            width: 100%;
+            max-height: 380px;
+            object-fit: cover;
+            border-radius: 8px;
+            transform: none;
+        }
+        .preview-pane > main > span.title { margin-top: 30px; }
+        /* @font-face, :root and all article content/shell styling now live in posts/post.css (linked above). */
+    </style>
+</head>
+<body data-syntax-theme="monokai-pro">
+    <svg id="tag-icon-defs" style="display: none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 26 1024 1024">
+        <defs>
+            <symbol id="tag-icon" viewBox="0 26 1024 1024">
+                <path d="M74.9714,634.514C27.4286,585.143 0,521.143 0,453.486L0,307.2C0,257.829 1.82857,215.771 10.9714,179.2C18.2857,142.629 32.9143,109.714 58.5143,84.1143C84.1143,58.5143 117.029,43.8857 153.6,36.5714C190.171,27.4286 232.229,25.6 281.6,25.6L427.886,25.6C495.543,25.6 559.543,53.0286 608.914,100.571L969.143,460.8C1003.89,497.371 1024,544.914 1024,594.286C1024,634.514 1011.2,674.743 985.6,707.657C956.343,746.057 903.314,806.4 842.971,868.571C780.8,930.743 720.457,981.943 682.057,1011.2C649.143,1036.8 608.914,1049.6 568.686,1049.6C519.314,1049.6 471.771,1029.49 435.2,994.743L74.9714,634.514ZM281.6,384C323.657,384 358.4,349.257 358.4,307.2C358.4,265.143 323.657,230.4 281.6,230.4C239.543,230.4 204.8,265.143 204.8,307.2C204.8,349.257 239.543,384 281.6,384Z" fill="currentColor" fill-opacity="1"></path>
+            </symbol>
+        </defs>
+    </svg>
+
+    <div class="toolbar">
+        <span class="brand">ansatz</span>
+        <div class="field title-field">
+            <label for="f-title">Title</label>
+            <input id="f-title" type="text" value="How to make pathfinder soup">
+        </div>
+        <div class="field grow">
+            <label for="f-description">Description</label>
+            <input id="f-description" type="text" value="Like the parable of stone soup, pathfinders can help development teams deliver complex and ambiguous projects, one ingredient at a time.">
+        </div>
+        <div class="field">
+            <label for="f-tags">Tags (comma separated)</label>
+            <input id="f-tags" type="text" value="tag1, tag2, tag3">
+        </div>
+        <div class="field grow">
+            <label for="f-hero">Hero image URL</label>
+            <input id="f-hero" type="text" value="https://images.ctfassets.net/3njn2qm7rrbs/2GfU7YWwh6tKRZVlzKtOjF/f12e58341e2fe7c7dd6ba9cf073d8bbf/how-to-make-pathfinder-soup_2x.png?w=2000">
+        </div>
+        <div class="toolbar-actions">
+            <button id="help-toggle" type="button">Syntax help</button>
+            <button id="export-btn" type="button">Export HTML</button>
+        </div>
+    </div>
+
+    <div class="help-panel" id="help-panel">
+        Body text is Markdown. Wrap content that belongs to one post section in <code>::: section [left|right|full] … :::</code> (omit the keyword for a right-aligned card, the default). Inside a right/left section, an optional floating card goes in its own <code>::: card … :::</code> block with <code>key: value</code> lines.
+        <dl>
+            <dt>::: section</dt><dd>starts a two-column section with a right-aligned card (default, matches blog.html's un-classed section)</dd>
+            <dt>::: section left</dt><dd>same, but the card floats on the left</dd>
+            <dt>::: section full</dt><dd>full-width text column, no card — for body copy that shouldn't wrap around anything</dd>
+            <dt>::: card … :::</dt><dd><code>image:</code>, <code>label:</code>, <code>heading:</code> and <code>description:</code> lines (any may be omitted)</dd>
+            <dt>## Heading</dt><dd>a large section heading (<code>span.big</code>), e.g. "Left Column Content"</dd>
+            <dt>```lang ... ```</dt><dd>a syntax-highlighted code block</dd>
+            <dt>![alt](url)</dt><dd>a full-width inline image with no caption</dd>
+            <dt>![alt](url "Caption")</dt><dd>a full-width image with a caption only</dd>
+            <dt>![alt](url "Title|Caption")</dt><dd>a full-width image with a bold title followed by a caption</dd>
+            <dt>::: desmos … :::</dt><dd>an embedded, interactive Desmos graph or geometry construction (not an iframe — uses Desmos' calculator API). <code>url:</code> loads a saved graph/construction by its Desmos share link (<code>desmos.com/calculator/&lt;id&gt;</code> or <code>desmos.com/geometry/&lt;id&gt;</code>, detected automatically) — colors, bounds, sliders, and labels come along automatically, nothing to retype. Optional <code>height:</code> (px, default 400) and <code>width:</code> lines control the embed's pixel size (omit <code>width</code> for full-width); <code>expressions: false</code> hides the expressions list (default shown) — for a geometry construction this also hides the construction toolbar (point/segment/circle/etc.) and the undo/redo buttons, for a clean read-only display. Any other line is an extra LaTeX expression added on top, e.g. <code>y=x^2</code> — useful even without a <code>url:</code></dd>
+            <dt>::: shader … :::</dt><dd>a full-width, real-time WebGL2 visual — Shadertoy-style GLSL ES 3.00. Give it a <code>-- buffer --</code> section (optional) and/or an <code>-- image --</code> section, each with its own <code>mainImage(out vec4 fragColor, in vec2 fragCoord)</code>; both can sample the buffer's previous frame via <code>iChannel0</code>, and <code>iResolution</code>/<code>iTime</code>/<code>iFrame</code> are implicit, same as Shadertoy — don't declare any of them yourself. Optional <code>height:</code> (px, default 400) and <code>width:</code> lines (before either section) control the embed's size (omit <code>width</code> for full-width); optional <code>title:</code> and <code>caption:</code> lines wrap it in a captioned <code>&lt;figure&gt;</code>, styled the same as an image figure's (either may be omitted; give just one for a caption with no bold lead-in, or just the other for a bold title alone)</dd>
+            <dt>$inline$ / $$block$$</dt><dd>LaTeX, rendered with KaTeX. A multi-line <code>$$ … $$</code> block containing <code>&amp;</code> is auto-wrapped in an <code>aligned</code> environment, so <code>&amp;</code> marks the alignment column and <code>\\</code> breaks the line, e.g. <code>a &amp;= b + c \\ &amp;= d</code> (skip the auto-wrap by writing your own <code>\begin{...}</code> environment)</dd>
+            <dt>**bold**, *italic*, `code`, [text](url)</dt><dd>standard inline Markdown</dd>
+        </dl>
+    </div>
+
+    <div class="editor-wrap">
+        <textarea id="markdown-input" spellcheck="false">::: section right
+::: card
+image: https://images.ctfassets.net/3njn2qm7rrbs/4G1rFSnNpB7SLiagppyuPk/1533f0b3c698a10190149c77bd4c375a/planning-in-the-dark_2x.png?w=500
+label: Also in this issue
+heading: Planning in the dark
+description: When planning product development before you have product-market fit, continual iteration and getting comfortable with discomfort can help light the way.
+:::
+
+Lorem, ipsum dolor sit amet consectetur adipisicing elit. Nam porro ratione asperiores labore aliquam ipsam, quod ex quaerat consequuntur dolorem tempora repudiandae autem?
+
+```js
+const answer = 42;
+```
+
+Lorem ipsum dolor sit amet, consectetur adipisicing elit. Veritatis, eos unde, sapiente ea perferendis aspernatur ut facilis culpa nulla, incidunt sunt dolorem iusto quaerat totam modi.
+:::
+
+::: section left
+## Left Column Content
+
+::: card
+image: https://images.ctfassets.net/3njn2qm7rrbs/4G1rFSnNpB7SLiagppyuPk/1533f0b3c698a10190149c77bd4c375a/planning-in-the-dark_2x.png?w=500
+label: Also in this issue
+heading: Planning in the dark
+description: When planning product development before you have product-market fit, continual iteration and getting comfortable with discomfort can help light the way.
+:::
+
+Lorem, ipsum dolor sit amet consectetur adipisicing elit. Nam porro ratione asperiores labore aliquam ipsam, quod ex quaerat consequuntur dolorem tempora repudiandae autem?
+:::
+
+::: section full
+## Full-Width Content
+
+Euler's identity is often cited as an example of deep mathematical beauty: $e^{i\pi} + 1 = 0$.
+
+![](https://images.ctfassets.net/3njn2qm7rrbs/4G1rFSnNpB7SLiagppyuPk/1533f0b3c698a10190149c77bd4c375a/planning-in-the-dark_2x.png?w=1000 "Figure 1.|An example caption describing the image above.")
+
+For a general quadratic equation, the solutions are given by:
+
+$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+$$
+
+::: desmos
+url: https://www.desmos.com/calculator/cscx2zcrlf
+height: 420
+expressions: false
+:::
+:::</textarea>
+        <div class="pane preview-pane">
+            <main id="preview"></main>
+        </div>
+    </div>
+
+    <script>
+        // ---------- article styling lives in posts/post.css: linked in <head> for the live preview, and re-linked by each exported document ----------
+        const TAG_ICON_SVG = document.getElementById('tag-icon-defs').outerHTML;
+
+        // ---------- Desmos embeds (uses Desmos' GraphingCalculator API, not an <iframe>) ----------
+        const DESMOS_API_KEY = 'dcb31709b452b1cf9dc26972add0fda6'; // Desmos' public demo key
+        const DESMOS_RUNTIME_JS = `
+        (function () {
+            var API_KEY = '${DESMOS_API_KEY}';
+            var scriptPromise = null;
+            function loadDesmos() {
+                if (window.Desmos) return Promise.resolve();
+                if (scriptPromise) return scriptPromise;
+                scriptPromise = new Promise(function (resolve, reject) {
+                    var s = document.createElement('script');
+                    s.src = 'https://www.desmos.com/api/v1.12/calculator.js?apiKey=' + API_KEY;
+                    s.onload = resolve;
+                    s.onerror = reject;
+                    document.head.appendChild(s);
+                });
+                return scriptPromise;
+            }
+            function applyExtraEquations(calc, el) {
+                var eqs = [];
+                try { eqs = JSON.parse(el.dataset.equations || '[]'); } catch (e) {}
+                eqs.forEach(function (latex, i) { calc.setExpression({ id: 'extra-' + i, latex: latex }); });
+            }
+            function mount(el) {
+                if (!window.Desmos || el.dataset.desmosMounted) return;
+                el.dataset.desmosMounted = '1';
+                var graphUrl = el.dataset.graphUrl;
+                var isGeometry = !!graphUrl && graphUrl.indexOf('/geometry/') !== -1;
+                var Ctor = isGeometry ? Desmos.Geometry : Desmos.GraphingCalculator;
+                var calc = Ctor(el, {
+                    expressions: el.dataset.expressions === 'true',
+                    keypad: false,
+                    border: false
+                });
+                window.__desmosInstances = window.__desmosInstances || [];
+                window.__desmosInstances.push(calc);
+                if (graphUrl) {
+                    fetch(graphUrl, { headers: { Accept: 'application/json' } })
+                        .then(function (r) { return r.json(); })
+                        .then(function (json) {
+                            if (json && json.state) {
+                                if (isGeometry && el.dataset.expressions !== 'true') {
+                                    json.state.geometryToolbar = { toolbar: 'none' };
+                                }
+                                calc.setState(json.state);
+                            }
+                            applyExtraEquations(calc, el);
+                        })
+                        .catch(function (e) { console.error('Desmos embed: failed to load graph ' + graphUrl, e); });
+                } else {
+                    applyExtraEquations(calc, el);
+                }
+            }
+            window.initDesmosEmbeds = function (root) {
+                var els = (root || document).querySelectorAll('.desmos-embed:not([data-desmos-mounted])');
+                if (!els.length) return;
+                loadDesmos().then(function () { els.forEach(mount); });
+            };
+            window.destroyDesmosEmbeds = function () {
+                (window.__desmosInstances || []).forEach(function (c) { try { c.destroy(); } catch (e) {} });
+                window.__desmosInstances = [];
+            };
+        })();
+        `;
+        eval(DESMOS_RUNTIME_JS);
+
+        // ---------- shader embeds (Shadertoy-style GLSL ES 3.00, run on a real WebGL2 context — not an iframe) ----------
+        const SHADER_RUNTIME_JS = `
+        (function () {
+            function compileShader(gl, type, source) {
+                var shader = gl.createShader(type);
+                gl.shaderSource(shader, source);
+                gl.compileShader(shader);
+                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                    console.error('Shader embed: compile error', gl.getShaderInfoLog(shader));
+                    gl.deleteShader(shader);
+                    return null;
+                }
+                return shader;
+            }
+            function linkProgram(gl, vsSource, fsSource) {
+                var vs = compileShader(gl, gl.VERTEX_SHADER, vsSource);
+                var fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSource);
+                if (!vs || !fs) return null;
+                var program = gl.createProgram();
+                gl.attachShader(program, vs);
+                gl.attachShader(program, fs);
+                gl.linkProgram(program);
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                    console.error('Shader embed: link error', gl.getProgramInfoLog(program));
+                    gl.deleteProgram(program);
+                    return null;
+                }
+                return program;
+            }
+            var VERTEX_SRC = '#version 300 es\\n' +
+                'const vec2 verts[3] = vec2[3](vec2(-1.0,-1.0), vec2(3.0,-1.0), vec2(-1.0,3.0));\\n' +
+                'void main() { gl_Position = vec4(verts[gl_VertexID], 0.0, 1.0); }';
+            function wrapFragment(userSource) {
+                return '#version 300 es\\n' +
+                    'precision highp float;\\n' +
+                    'uniform vec3 iResolution;\\n' +
+                    'uniform float iTime;\\n' +
+                    'uniform int iFrame;\\n' +
+                    'uniform sampler2D iChannel0;\\n' +
+                    'out vec4 outColor;\\n' +
+                    userSource + '\\n' +
+                    'void main() { mainImage(outColor, gl_FragCoord.xy); }';
+            }
+            function makeTarget(gl, w, h, type) {
+                var tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, type === gl.FLOAT ? gl.RGBA32F : gl.RGBA16F, w, h, 0, gl.RGBA, type, null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                var fbo = gl.createFramebuffer();
+                gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.bindTexture(gl.TEXTURE_2D, null);
+                return { tex: tex, fbo: fbo };
+            }
+            function mount(el) {
+                if (el.dataset.shaderMounted) return;
+                el.dataset.shaderMounted = '1';
+                var bufferTag = el.querySelector('script[data-pass="buffer"]');
+                var imageTag = el.querySelector('script[data-pass="image"]');
+                if (!imageTag) return;
+                var canvas = el.querySelector('canvas') || el.appendChild(document.createElement('canvas'));
+                var gl = canvas.getContext('webgl2');
+                if (!gl) { console.warn('Shader embed: WebGL2 unavailable'); return; }
+                var type = gl.getExtension('EXT_color_buffer_float') ? gl.FLOAT : gl.HALF_FLOAT;
+                if (type === gl.HALF_FLOAT && !gl.getExtension('EXT_color_buffer_half_float')) {
+                    console.warn('Shader embed: no floating-point render target support');
+                    return;
+                }
+                var imageProgram = linkProgram(gl, VERTEX_SRC, wrapFragment(imageTag.textContent));
+                var bufferProgram = bufferTag ? linkProgram(gl, VERTEX_SRC, wrapFragment(bufferTag.textContent)) : null;
+                if (!imageProgram || (bufferTag && !bufferProgram)) return;
+                var vao = gl.createVertexArray();
+
+                var targets = null, w = 0, h = 0, frame = 0, start = performance.now(), raf = 0;
+                function resize() {
+                    var rect = canvas.getBoundingClientRect();
+                    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+                    var nw = Math.max(1, Math.round(rect.width * dpr));
+                    var nh = Math.max(1, Math.round(rect.height * dpr));
+                    if (nw === w && nh === h) return;
+                    w = nw; h = nh;
+                    canvas.width = w; canvas.height = h;
+                    if (targets) {
+                        gl.deleteTexture(targets[0].tex); gl.deleteFramebuffer(targets[0].fbo);
+                        gl.deleteTexture(targets[1].tex); gl.deleteFramebuffer(targets[1].fbo);
+                    }
+                    targets = bufferProgram ? [makeTarget(gl, w, h, type), makeTarget(gl, w, h, type)] : null;
+                    frame = 0;
+                }
+                function setCommonUniforms(program, t) {
+                    gl.useProgram(program);
+                    gl.uniform3f(gl.getUniformLocation(program, 'iResolution'), w, h, 1.0);
+                    gl.uniform1f(gl.getUniformLocation(program, 'iTime'), t);
+                    gl.uniform1i(gl.getUniformLocation(program, 'iFrame'), frame);
+                    gl.uniform1i(gl.getUniformLocation(program, 'iChannel0'), 0);
+                }
+                function draw() {
+                    resize();
+                    var t = (performance.now() - start) / 1000;
+                    gl.bindVertexArray(vao);
+                    gl.activeTexture(gl.TEXTURE0);
+                    var readTex = null;
+                    if (bufferProgram && targets) {
+                        var src = targets[frame % 2];
+                        var dst = targets[(frame + 1) % 2];
+                        gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+                        gl.viewport(0, 0, w, h);
+                        gl.bindTexture(gl.TEXTURE_2D, src.tex);
+                        setCommonUniforms(bufferProgram, t);
+                        gl.drawArrays(gl.TRIANGLES, 0, 3);
+                        readTex = dst.tex;
+                    }
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                    gl.viewport(0, 0, w, h);
+                    gl.bindTexture(gl.TEXTURE_2D, readTex);
+                    setCommonUniforms(imageProgram, t);
+                    gl.drawArrays(gl.TRIANGLES, 0, 3);
+                    frame++;
+                    raf = requestAnimationFrame(draw);
+                }
+                raf = requestAnimationFrame(draw);
+                window.__shaderInstances = window.__shaderInstances || [];
+                window.__shaderInstances.push({
+                    stop: function () {
+                        cancelAnimationFrame(raf);
+                        var lose = gl.getExtension('WEBGL_lose_context');
+                        if (lose) lose.loseContext();
+                    }
+                });
+            }
+            window.initShaderEmbeds = function (root) {
+                (root || document).querySelectorAll('.shader-embed:not([data-shader-mounted])').forEach(mount);
+            };
+            window.destroyShaderEmbeds = function () {
+                (window.__shaderInstances || []).forEach(function (inst) { try { inst.stop(); } catch (e) {} });
+                window.__shaderInstances = [];
+            };
+        })();
+        `;
+        eval(SHADER_RUNTIME_JS);
+
+        const HEADER_HTML = `<header>
+        <a href="../blog.html">home</a>
+        <span>ansatz</span>
+        <a href="../index.html">portfolio</a>
+        <a href="../cv.pdf">cv</a>
+    </header>`;
+
+        const FOOTER_HTML = `<footer>
+            <div>
+                <a href="https://linkedin.com/in/liameggleston">
+                    <svg viewBox="0 0 448 512" aria-hidden="true"><path d="M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zm5 170.2l66.5 0 0 213.8-66.5 0 0-213.8zm71.7-67.7a38.5 38.5 0 1 1 -77 0 38.5 38.5 0 1 1 77 0zM317.9 416l0-104c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9l0 105.8-66.4 0 0-213.8 63.7 0 0 29.2 .9 0c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9l0 117.2-66.4 0z"/></svg>
+                    /liameggleston
+                </a>
+                <a href="mailto:liameggs@ucla.edu">
+                    <svg viewBox="39 77 986 922" aria-hidden="true">
+                        <path d="M190.171,992.914C179.2,996.571 168.229,998.4 157.257,998.4C91.4286,998.4 38.4,945.371 38.4,879.543L38.4,872.229C38.4,842.971 47.5429,815.543 65.8286,793.6C107.886,738.743 146.286,680.229 179.2,619.886C188.343,601.6 206.629,588.8 228.571,588.8L512,588.8C541.257,588.8 563.2,566.857 563.2,537.6C563.2,510.171 541.257,486.4 512,486.4L228.571,486.4C206.629,486.4 188.343,473.6 179.2,455.314C146.286,394.971 107.886,336.457 65.8286,283.429C49.3714,259.657 38.4,232.229 38.4,202.971L38.4,195.657C38.4,129.829 91.4286,76.8 157.257,76.8C168.229,76.8 179.2,78.6285 190.171,82.2857C228.571,93.2571 384,140.8 550.4,208.457C634.514,241.371 720.457,279.771 799.086,321.829C875.886,362.057 945.371,407.771 992.914,457.143C1014.86,480.914 1024,510.171 1024,537.6C1024,565.029 1014.86,594.286 992.914,618.057C945.371,667.429 875.886,713.143 799.086,753.371C720.457,795.429 634.514,833.829 550.4,866.743C384,934.4 228.571,981.943 190.171,992.914Z" fill="currentColor" fill-opacity="1"></path>
+                    </svg>
+                    liameggs@ucla.edu
+                </a>
+                <a href="https://liameggleston.com/">
+                    <svg viewBox="4 47 1019 984" aria-hidden="true">
+                    <path d="M530.286,54.8571C521.143,43.8857 504.686,43.8857 493.714,54.8571C458.971,98.7429 429.714,157.257 405.943,226.743C378.514,312.686 362.057,409.6 358.4,510.171C358.4,522.971 369.371,535.771 382.171,535.771C422.4,537.6 466.286,537.6 513.829,537.6C559.543,537.6 601.6,537.6 641.829,535.771C656.457,535.771 667.429,522.971 665.6,510.171C663.771,409.6 647.314,312.686 618.057,226.743C596.114,157.257 565.029,98.7429 530.286,54.8571ZM321.829,54.8571C343.771,47.5428 362.057,71.3143 351.086,91.4286C334.629,124.343 321.829,159.086 309.029,193.829C277.943,288.914 259.657,394.971 256,501.029C256,517.486 243.2,528.457 228.571,526.629C175.543,522.971 131.657,517.486 95.0857,512C65.8286,508.343 43.8857,504.686 23.7714,501.029C10.9714,499.2 3.65714,488.229 3.65714,475.429C16.4571,351.086 62.1714,243.2 140.8,166.4C192,115.2 252.343,78.6285 323.657,54.8571ZM261.486,654.629C259.657,641.829 250.514,630.857 237.714,630.857C175.543,625.371 122.514,619.886 80.4571,614.4C64,612.571 51.2,608.914 36.5714,607.086C20.1143,605.257 5.48571,618.057 7.31429,636.343C25.6,744.229 69.4857,839.314 140.8,910.629C190.171,960 252.343,996.571 321.829,1020.34C343.771,1027.66 362.057,1003.89 351.086,983.771C334.629,950.857 321.829,916.114 309.029,881.371C285.257,810.057 270.629,733.257 261.486,654.629ZM493.714,1020.34C502.857,1033.14 521.143,1033.14 530.286,1020.34C565.029,976.457 596.114,917.943 618.057,848.457C636.343,791.771 650.971,731.429 658.286,667.429C660.114,650.971 647.314,638.171 632.686,638.171C596.114,640 555.886,640 513.829,640C469.943,640 429.714,640 393.143,638.171C376.686,638.171 363.886,650.971 365.714,665.6C374.857,729.6 387.657,791.771 405.943,848.457C429.714,917.943 458.971,976.457 495.543,1020.34ZM714.971,193.829C704,159.086 689.371,124.343 672.914,91.4286C663.771,71.3143 680.229,47.5428 702.171,54.8571C773.486,78.6285 835.657,115.2 885.029,164.571C963.657,243.2 1011.2,351.086 1022.17,475.429C1024,488.229 1014.86,499.2 1002.06,501.029C983.771,504.686 960,508.343 932.571,512C894.171,517.486 850.286,522.971 795.429,526.629C780.8,528.457 769.829,515.657 768,501.029C764.343,394.971 747.886,288.914 714.971,193.829ZM714.971,881.371C704,916.114 689.371,950.857 672.914,983.771C663.771,1003.89 680.229,1027.66 702.171,1020.34C773.486,996.571 835.657,960 885.029,910.629C956.343,839.314 1002.06,744.229 1018.51,634.514C1020.34,618.057 1005.71,605.257 989.257,607.086C976.457,608.914 961.829,610.743 945.371,614.4C903.314,619.886 850.286,625.371 788.114,630.857C775.314,630.857 764.343,641.829 762.514,654.629C755.2,733.257 738.743,810.057 716.8,881.371Z" fill="currentColor" fill-opacity="1"></path>
+                    </svg>
+                    liameggleston.com
+                </a>
+            </div>
+            <div>
+                <span class="title">About</span>
+                <span>Hello! I'm Liam Eggleston, a B.S. Electrical Engineering and M.A. Mathematics candidate at UCLA. People tell me I'm very mathy.</span>
+                <span class="disclaimer">Made with ❤️ sans AI in vanilla JS/CSS/HTML. <br>Site design heavily inspired by <a href="https://increment.com/">increment.com</a></span>
+            </div>
+        </footer>`;
+
+        // ---------- markdown -> DOM ----------
+        function escapeHtml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+        function escapeAttr(s) {
+            return escapeHtml(s).replace(/"/g, '&quot;');
+        }
+        function inline(text) {
+            const mathStore = [];
+            let t = text.replace(/\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g, (m) => {
+                mathStore.push(m);
+                return ' ' + (mathStore.length - 1) + ' ';
+            });
+            t = escapeHtml(t);
+            t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+            t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            t = t.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+            t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+            t = t.replace(/ (\d+) /g, (_, idx) => escapeHtml(mathStore[Number(idx)]));
+            return t;
+        }
+        function renderCode(lang, code) {
+            const cls = lang ? ` class="language-${escapeAttr(lang)}"` : '';
+            return `<pre><code${cls}>${escapeHtml(code)}</code></pre>`;
+        }
+        function buildFigcaption(titleText, captionText) {
+            const titleHtml = titleText ? `<span class="title">${inline(titleText)}</span>` : '';
+            const captionHtml = captionText ? inline(captionText) : '';
+            return (titleHtml || captionHtml) ? `<figcaption>${titleHtml}${captionHtml}</figcaption>` : '';
+        }
+        function renderFigure(alt, url, titleRaw) {
+            let titleText = '', captionText = '';
+            if (titleRaw) {
+                const parts = titleRaw.split('|');
+                if (parts.length > 1) {
+                    titleText = parts[0].trim();
+                    captionText = parts.slice(1).join('|').trim();
+                } else {
+                    captionText = titleRaw.trim();
+                }
+            }
+            const figcaption = buildFigcaption(titleText, captionText);
+            return `<figure><img src="${escapeAttr(url)}" alt="${escapeAttr(alt)}">${figcaption}</figure>`;
+        }
+        function sizeValue(v) {
+            v = String(v).trim();
+            return /^\d+$/.test(v) ? v + 'px' : v;
+        }
+        function renderDesmos(fields, equations) {
+            const height = sizeValue(fields.height || 400);
+            const styleParts = [`height:${escapeAttr(height)}`];
+            if (fields.width) styleParts.push(`width:${escapeAttr(sizeValue(fields.width))}`, 'margin-left:auto', 'margin-right:auto');
+            const exprFlag = /^(false|hide|off|no)$/i.test((fields.expressions || '').trim()) ? 'false' : 'true';
+            const eqJson = escapeAttr(JSON.stringify(equations));
+            const urlAttr = fields.url ? ` data-graph-url="${escapeAttr(fields.url.trim())}"` : '';
+            return `<div class="desmos-embed" style="${styleParts.join(';')}" data-expressions="${exprFlag}" data-equations="${eqJson}"${urlAttr}></div>`;
+        }
+        function renderShader(fields, bufferSrc, imageSrc) {
+            const height = sizeValue(fields.height || 400);
+            const styleParts = [`height:${escapeAttr(height)}`];
+            if (fields.width) styleParts.push(`width:${escapeAttr(sizeValue(fields.width))}`, 'margin-left:auto', 'margin-right:auto');
+            // GLSL sits inside <script> "raw text" elements, so it needs no HTML-escaping — only a defensive guard against an accidental closing tag inside it.
+            // (built via concatenation, never written literally, so it can't prematurely end *this* editor page's own <script> block either)
+            const scriptClose = '<' + '/script>';
+            const guard = (s) => s.replace(/<\/script/gi, '<\\/script');
+            const bufferTag = bufferSrc.trim() ? `<script type="x-shader/x-fragment" data-pass="buffer">\n${guard(bufferSrc)}\n${scriptClose}` : '';
+            const imageTag = `<script type="x-shader/x-fragment" data-pass="image">\n${guard(imageSrc)}\n${scriptClose}`;
+            const embed = `<div class="shader-embed" style="${styleParts.join(';')}"><canvas></canvas>${bufferTag}${imageTag}</div>`;
+            const figcaption = buildFigcaption(fields.title, fields.caption);
+            return figcaption ? `<figure>${embed}${figcaption}</figure>` : embed;
+        }
+        function renderCard(fields) {
+            const img = fields.image ? `<img src="${escapeAttr(fields.image)}" alt="">` : '';
+            const label = fields.label ? `<span class="label">${inline(fields.label)}</span>` : '';
+            const heading = fields.heading ? `<span class="text">${inline(fields.heading)}</span>` : '';
+            const desc = fields.description ? `<span class="description">${inline(fields.description)}</span>` : '';
+            return `<article>${img}${label}${heading}${desc}</article>`;
+        }
+        function renderNodes(nodes) {
+            return nodes.map(n => {
+                if (n.type === 'section') {
+                    const cls = n.class ? ` class="${escapeAttr(n.class)}"` : '';
+                    return `<section${cls}>${renderNodes(n.children)}</section>`;
+                }
+                if (n.type === 'card') return renderCard(n.fields);
+                if (n.type === 'html') return n.html;
+                return '';
+            }).join('\n');
+        }
+        function parseBody(src) {
+            const lines = src.replace(/\r\n/g, '\n').split('\n');
+            const topNodes = [];
+            let currentSection = null;
+            const target = () => currentSection ? currentSection.children : topNodes;
+            const closeSection = () => {
+                if (currentSection) {
+                    topNodes.push({ type: 'section', class: currentSection.class, children: currentSection.children });
+                    currentSection = null;
+                }
+            };
+
+            let i = 0;
+            while (i < lines.length) {
+                const line = lines[i];
+
+                if (/^\s*$/.test(line)) { i++; continue; }
+
+                let m = line.match(/^:::\s*section\s*(right|left|full)?\s*$/i);
+                if (m) {
+                    closeSection();
+                    currentSection = { class: m[1] ? m[1].toLowerCase() : '', children: [] };
+                    i++; continue;
+                }
+
+                m = line.match(/^:::\s*card\s*$/i);
+                if (m) {
+                    const fields = {};
+                    i++;
+                    while (i < lines.length && !/^:::\s*$/.test(lines[i])) {
+                        const fm = lines[i].match(/^(image|label|heading|description):\s*(.*)$/i);
+                        if (fm) fields[fm[1].toLowerCase()] = fm[2].trim();
+                        i++;
+                    }
+                    i++; // consume closing :::
+                    target().push({ type: 'card', fields });
+                    continue;
+                }
+
+                m = line.match(/^:::\s*desmos\s*$/i);
+                if (m) {
+                    const fields = {};
+                    const equations = [];
+                    i++;
+                    while (i < lines.length && !/^:::\s*$/.test(lines[i])) {
+                        const fm = lines[i].match(/^(height|width|expressions|url):\s*(.*)$/i);
+                        if (fm) fields[fm[1].toLowerCase()] = fm[2].trim();
+                        else if (lines[i].trim() !== '') equations.push(lines[i].trim());
+                        i++;
+                    }
+                    i++; // consume closing :::
+                    target().push({ type: 'html', html: renderDesmos(fields, equations) });
+                    continue;
+                }
+
+                m = line.match(/^:::\s*shader\s*$/i);
+                if (m) {
+                    const fields = {};
+                    const bufferLines = [];
+                    const imageLines = [];
+                    let pass = '';
+                    i++;
+                    while (i < lines.length && !/^:::\s*$/.test(lines[i])) {
+                        const sec = lines[i].match(/^--\s*(buffer|image)\s*--\s*$/i);
+                        if (sec) { pass = sec[1].toLowerCase(); i++; continue; }
+                        const fm = !pass && lines[i].match(/^(height|width|title|caption):\s*(.*)$/i);
+                        if (fm) { fields[fm[1].toLowerCase()] = fm[2].trim(); i++; continue; }
+                        if (pass === 'buffer') bufferLines.push(lines[i]);
+                        else if (pass === 'image') imageLines.push(lines[i]);
+                        i++;
+                    }
+                    i++; // consume closing :::
+                    target().push({ type: 'html', html: renderShader(fields, bufferLines.join('\n'), imageLines.join('\n')) });
+                    continue;
+                }
+
+                if (/^:::\s*$/.test(line)) { closeSection(); i++; continue; }
+
+                m = line.match(/^```(\S*)\s*$/);
+                if (m) {
+                    const lang = m[1] || '';
+                    const codeLines = [];
+                    i++;
+                    while (i < lines.length && !/^```\s*$/.test(lines[i])) { codeLines.push(lines[i]); i++; }
+                    i++;
+                    target().push({ type: 'html', html: renderCode(lang, codeLines.join('\n')) });
+                    continue;
+                }
+
+                if (/^\$\$\s*$/.test(line)) {
+                    const mathLines = [];
+                    i++;
+                    while (i < lines.length && !/^\$\$\s*$/.test(lines[i])) { mathLines.push(lines[i]); i++; }
+                    i++;
+                    let mathBody = mathLines.join('\n');
+                    if (mathBody.includes('&') && !mathBody.includes('\\begin{')) {
+                        mathBody = `\\begin{aligned}\n${mathBody}\n\\end{aligned}`;
+                    }
+                    target().push({ type: 'html', html: `<p>$$${escapeHtml(mathBody)}$$</p>` });
+                    continue;
+                }
+
+                m = line.match(/^##\s+(.*)$/);
+                if (m) { target().push({ type: 'html', html: `<span class="big">${inline(m[1])}</span>` }); i++; continue; }
+
+                m = line.match(/^!\[([^\]]*)\]\(\s*(\S+?)(?:\s+"([^"]*)")?\s*\)\s*$/);
+                if (m) { target().push({ type: 'html', html: renderFigure(m[1], m[2], m[3]) }); i++; continue; }
+
+                const paraLines = [line];
+                i++;
+                while (i < lines.length && lines[i].trim() !== '' && !/^(:::|```|##\s|!\[|\$\$\s*$)/.test(lines[i])) {
+                    paraLines.push(lines[i]); i++;
+                }
+                target().push({ type: 'html', html: `<p>${inline(paraLines.join(' '))}</p>` });
+            }
+            closeSection();
+            return topNodes;
+        }
+        function renderHero(front) {
+            let html = '';
+            if (front.hero) html += `<img src="${escapeAttr(front.hero)}" alt="">`;
+            if (front.title) html += `<span class="title">${inline(front.title)}</span>`;
+            if (front.tags.length) {
+                html += `<div class="tags">${front.tags.map(t => `<a><svg><use href="#tag-icon"></use></svg>${inline(t)}</a>`).join('')}</div>`;
+            }
+            if (front.description) html += `<span class="description">${inline(front.description)}</span>`;
+            html += `<hr>`;
+            return html;
+        }
+        function getFrontMatter() {
+            return {
+                title: fTitle.value.trim(),
+                description: fDescription.value.trim(),
+                tags: fTags.value.split(',').map(s => s.trim()).filter(Boolean),
+                hero: fHero.value.trim(),
+            };
+        }
+
+        // ---------- wiring ----------
+        const markdownInput = document.getElementById('markdown-input');
+        const previewMain = document.getElementById('preview');
+        const previewPane = document.querySelector('.preview-pane');
+        const fTitle = document.getElementById('f-title');
+        const fDescription = document.getElementById('f-description');
+        const fTags = document.getElementById('f-tags');
+        const fHero = document.getElementById('f-hero');
+        const helpToggle = document.getElementById('help-toggle');
+        const helpPanel = document.getElementById('help-panel');
+        const exportBtn = document.getElementById('export-btn');
+
+        function renderPreview() {
+            if (window.destroyDesmosEmbeds) window.destroyDesmosEmbeds();
+            if (window.destroyShaderEmbeds) window.destroyShaderEmbeds();
+            previewMain.innerHTML = renderHero(getFrontMatter()) + renderNodes(parseBody(markdownInput.value));
+            document.dispatchEvent(new Event('syntax-highlight'));
+            if (window.initDesmosEmbeds) window.initDesmosEmbeds(previewMain);
+            if (window.initShaderEmbeds) window.initShaderEmbeds(previewMain);
+            if (window.renderMathInElement) {
+                renderMathInElement(previewMain, {
+                    delimiters: [
+                        { left: '$$', right: '$$', display: true },
+                        { left: '$', right: '$', display: false }
+                    ],
+                    throwOnError: false
+                });
+            }
+        }
+
+        let renderTimer;
+        markdownInput.addEventListener('input', () => {
+            clearTimeout(renderTimer);
+            renderTimer = setTimeout(renderPreview, 150);
+        });
+        [fTitle, fDescription, fTags, fHero].forEach(el => el.addEventListener('input', renderPreview));
+
+        helpToggle.addEventListener('click', () => helpPanel.classList.toggle('open'));
+
+        // scroll-aligned panes (proportional sync, both directions)
+        let syncing = false;
+        function ratio(el) {
+            const max = el.scrollHeight - el.clientHeight;
+            return max <= 0 ? 0 : el.scrollTop / max;
+        }
+        function applyRatio(el, r) {
+            const max = el.scrollHeight - el.clientHeight;
+            el.scrollTop = max * r;
+        }
+        markdownInput.addEventListener('scroll', () => {
+            if (syncing) return;
+            syncing = true;
+            applyRatio(previewPane, ratio(markdownInput));
+            requestAnimationFrame(() => syncing = false);
+        });
+        previewPane.addEventListener('scroll', () => {
+            if (syncing) return;
+            syncing = true;
+            applyRatio(markdownInput, ratio(previewPane));
+            requestAnimationFrame(() => syncing = false);
+        });
+
+        // ---------- export ----------
+        function buildExportDocument() {
+            const front = getFrontMatter();
+            if (!front.title) front.title = 'Untitled Post';
+            const mainInner = renderHero(front) + renderNodes(parseBody(markdownInput.value));
+            const closeScript = '<' + '/script>';
+            return [
+                '<!DOCTYPE html>',
+                '<html lang="en">',
+                '<head>',
+                '<meta charset="UTF-8">',
+                '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+                `<title>${escapeHtml(front.title)}</title>`,
+                '<script type="module" src="https://cdn.jsdelivr.net/npm/microlighter@2.1.0/dist/microlighter.min.js">' + closeScript,
+                '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">',
+                '<link rel="stylesheet" href="post.css">',
+                '</head>',
+                '<body data-syntax-theme="monokai-pro">',
+                TAG_ICON_SVG,
+                HEADER_HTML,
+                `<main>\n${mainInner}\n</main>`,
+                FOOTER_HTML,
+                '<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js">' + closeScript,
+                '<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js">' + closeScript,
+                '<script>' + DESMOS_RUNTIME_JS + '\ninitDesmosEmbeds(document);' + closeScript,
+                '<script>' + SHADER_RUNTIME_JS + '\ninitShaderEmbeds(document);' + closeScript,
+                '<script>',
+                'renderMathInElement(document.body, { delimiters: [{ left: "$$", right: "$$", display: true }, { left: "$", right: "$", display: false }], throwOnError: false });',
+                '(function () {',
+                '  const header = document.querySelector("header");',
+                '  const getScroll = () => window.scrollY || document.body.scrollTop || document.documentElement.scrollTop || 0;',
+                '  let lastY = getScroll();',
+                '  function onScroll() {',
+                '    const y = getScroll();',
+                '    if (y > lastY && y > 0) header.classList.add("nav-hidden");',
+                '    else if (y < lastY) header.classList.remove("nav-hidden");',
+                '    lastY = y;',
+                '  }',
+                '  window.addEventListener("scroll", onScroll, { passive: true });',
+                '  document.body.addEventListener("scroll", onScroll, { passive: true });',
+                '})();',
+                closeScript,
+                '</body>',
+                '</html>'
+            ].join('\n');
+        }
+
+        exportBtn.addEventListener('click', () => {
+            const html = buildExportDocument();
+            const blob = new Blob([html], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const slug = (fTitle.value.trim() || 'blog-post').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-+|-+$)/g, '') || 'blog-post';
+            a.href = url;
+            a.download = slug + '.html';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        });
+
+        renderPreview();
+        window.addEventListener('load', renderPreview);
+    </script>
+</body>
+</html>
