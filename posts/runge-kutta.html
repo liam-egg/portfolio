@@ -301,19 +301,17 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
             <p>so the first derivative is known. The higher derivatives can also be obtained by repeatedly
                 differentiating $f(t,y)$ using the chain rule.</p>
             <p>RK4 effectively constructs an approximation whose Taylor expansion agrees with this true expansion
-                through the $\Delta t^4$ term.</p>
-            <p>In other words,</p>
+                through the $\Delta t^4$ term. In other words,</p>
             <p>$$y_{\mathrm{RK4}}(t+\Delta t)
                 =
                 y_{\mathrm{exact}}(t+\Delta t)
                 +\mathcal O(\Delta t^5).$$</p>
-            <p>The error made during a <strong>single step</strong> is therefore proportional to $\Delta t^5$. After
-                taking many steps over a fixed interval, this becomes a global error of $\mathcal O(\Delta t^4)$.</p>
-            <p>This is where the "4" in RK4 comes from. For comparison, Euler's method has global error</p>
+            <p>The error made during a single step is therefore proportional to $\Delta t^5$. After
+                taking many steps over a fixed interval, this becomes a global error of $\mathcal O(\Delta t^4)$. This is where the "4" in RK4 comes from. For comparison, Euler's method has global error</p>
             <p>$$\mathcal O(\Delta t).$$</p>
             <p>This means that if we cut our timestep in half, the error from Euler decreases roughly by a factor of
-                $2$, while the error from RK4 decreases roughly by a factor of $2^4=16$.</p>
-            <p>We can therefore get substantially more accuracy without making $\Delta t$ nearly as small as we would
+                $2$, while the error from RK4 decreases roughly by a factor of $2^4=16$.
+                We can therefore get substantially more accuracy without making $\Delta t$ nearly as small as we would
                 need with Euler's method. You can see RK4 in action and compare it to Euler's method for the same
                 $\Delta t$ using the graph below.</p>
             <div class="desmos-embed" style="height:520px" data-expressions="false" data-equations="[]"
@@ -337,35 +335,35 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
             <p>$$\frac{dy}{dt}=y.$$</p>
             <p>In Python, we could write:</p>
             <pre><code class="language-python">def f(t, y):
-                    return y</code></pre>
+    return y</code></pre>
             <p>We can then implement one RK4 timestep directly from the equations above:</p>
             <pre><code class="language-python">def rk4_step(f, t, y, dt):
-                    k1 = f(t, y)
+    k1 = f(t, y)
 
-                    k2 = f(
-                    t + dt/2,
-                    y + dt*k1/2
-                    )
+    k2 = f(
+    t + dt/2,
+    y + dt*k1/2
+    )
 
-                    k3 = f(
-                    t + dt/2,
-                    y + dt*k2/2
-                    )
+    k3 = f(
+    t + dt/2,
+    y + dt*k2/2
+    )
 
-                    k4 = f(
-                    t + dt,
-                    y + dt*k3
-                    )
+    k4 = f(
+    t + dt,
+    y + dt*k3
+    )
 
-                    return y + dt*(k1 + 2*k2 + 2*k3 + k4)/6</code></pre>
+    return y + dt*(k1 + 2*k2 + 2*k3 + k4)/6</code></pre>
             <p>We can then repeatedly call this function to move forward through time:</p>
             <pre><code class="language-python">t = 0
-                    y = 1
-                    dt = 0.01
+y = 1
+dt = 0.01
 
-                    for i in range(1000):
-                    y = rk4_step(f, t, y, dt)
-                    t += dt</code></pre>
+for i in range(1000):
+    y = rk4_step(f, t, y, dt)
+    t += dt</code></pre>
             <p>At every iteration, the program takes the current state, calculates the four slopes, combines them, and
                 produces the next state.</p>
             <p>The important thing to notice is that RK4 itself does not care what physical system we are modeling. All
