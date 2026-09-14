@@ -67,12 +67,6 @@ u(t)=K_pe(t)
 +K_i\int_0^t e(\tau)\,d\tau
 +K_d\frac{de}{dt}
 }$$</p>
-<p>Each term is doing something different:</p>
-<p>$$\underbrace{K_pe}_{\text{Proportional}}
-+
-\underbrace{K_i\int e\,dt}_{\text{Integral}}
-+
-\underbrace{K_d\dot e}_{\text{Derivative}}$$</p>
 <p>You can play around with the three coefficients to find the best balancing regime. A lot of the time, constants are determined by this trial-and-error process.</p>
 <div class="desmos-embed" style="height:420px" data-expressions="false" data-equations="[]" data-graph-url="https://www.desmos.com/calculator/euni9ag0ju"></div>
 <p>It's hard to determine exactly what the "best" regime is, though. A common yardstick is <strong>ITAE</strong> (integral of time-weighted absolute error), which changes the way error is calculated by weighting errors more if they have persisted for longer. As a result, a response that overshoots briefly is scored much more kindly than one that never quite settles (like a steady-state error). Rather than tune one controller at a time and see how it scores, we can score every combination of $K_p$ and $K_d$ at once and look at the whole landscape.</p>
@@ -221,13 +215,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord)
 }
         </script>
     </div>
-    <figcaption><span class="title">Figure 1</span>$K_p$ runs left to right and $K_d$ runs bottom to top, both on a log scale, with brightness tracking the ITAE cost of that pixel's own step response — greener is better tuned. The dark ember region is outright instability, shaded by how long the loop held together before it ran away. $K_i$ sweeps slowly on its own axis: watch the stable region shrink as it climbs, which is integral action trading away phase margin for the steady-state error it just erased.</figcaption>
+    <figcaption><span class="title">Figure 1</span>$K_p$ runs left to right and $K_d$ runs bottom to top, both on a log scale, with brightness tracking the ITAE cost of that pixel's own step response. Darker regions are unstable instability, shaded by how long the loop held together before it ran away.</figcaption>
 </figure>
-<p>The proportional term responds to the <strong>current</strong> error, the integral term to the <strong>accumulated</strong> error, and the derivative term to the <strong>rate of change</strong> of the error. This gives us a controller that considers the present, the past, and the direction in which the system is moving (the future?!).</p>
+<p>The proportional term responds to the current error, the integral term to the accumulated error, and the derivative term to the rate of change of the error. This gives us a controller that considers the present, the past, and the direction in which the system is moving (the future?!).</p>
 <span class="big">Implementing PID on a Computer</span>
 <p>Of course, a computer cannot calculate a continuous integral or derivative directly. We have to approximate them using discrete time steps.</p>
-<p>Suppose our controller runs every $\Delta t$ seconds, taking its height measurement and calculating the desired lift.</p>
-<p>At each step, we measure the current error $e_k=x_d-x_k.$ We can approximate the integral using a running sum (very much like a Riemann sum, though we only need to add the area of the last rectangle at each iteration):</p>
+<p>Suppose our controller runs every $\Delta t$ seconds, taking its height measurement and calculating the desired lift.
+    At each step, we measure the current error $e_k=x_d-x_k.$ We can approximate the integral using a running sum (very much like a Riemann sum, though we only need to add the area of the last rectangle at each iteration):</p>
 <p>$$I_k=I_{k-1}+e_k\Delta t.$$</p>
 <p>We approximate the derivative using a finite difference</p>
 <p>$$D_k=\frac{e_k-e_{k-1}}{\Delta t}$$</p>
