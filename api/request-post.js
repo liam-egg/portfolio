@@ -12,6 +12,15 @@
 const TO_EMAIL = 'liameggs+blog@ucla.edu';
 const MAX_LEN = 2000;
 
+function escapeHtml(str) {
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 module.exports = async function handler(req, res) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -42,14 +51,39 @@ module.exports = async function handler(req, res) {
     }
 
     try {
+        const trimmedTopic = topic.trim();
+        const trimmedEmail = email && email.trim() ? email.trim() : null;
+        const safeTopic = escapeHtml(trimmedTopic).replace(/\n/g, '<br>');
+        const safeEmail = trimmedEmail ? escapeHtml(trimmedEmail) : null;
+
         const payload = {
-            from: 'ansatz blog requests <onboarding@resend.dev>',
+            from: 'onboarding@resend.dev',
             to: TO_EMAIL,
             subject: 'New blog post request',
-            text: `Someone requested a post via the blog:\n\n${topic.trim()}\n\n` +
-                (email ? `They'd like a reply at: ${email.trim()}` : '(no reply email given)')
+            text: `Someone requested a post via the blog:\n\n${trimmedTopic}\n\n` +
+                (trimmedEmail ? `They'd like a reply at: ${trimmedEmail}` : '(no reply email given)'),
+            html: `
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background-color: #f6f6f7;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #ffffff; border-radius: 8px; border: 1px solid #e5e5e5;">
+    <tr>
+      <td style="background-color: #111111; padding: 16px 24px; border-radius: 8px 8px 0 0;">
+        <span style="color: #ffffff; font-size: 16px; font-weight: 600;">New blog post request</span>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding: 24px;">
+        <p style="margin: 0 0 8px 0; color: #666666; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Topic</p>
+        <p style="margin: 0 0 20px 0; color: #111111; font-size: 15px; line-height: 1.5;">${safeTopic}</p>
+        <p style="margin: 0 0 8px 0; color: #666666; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Reply to</p>
+        <p style="margin: 0; color: #111111; font-size: 15px;">${safeEmail
+                    ? `<a href="mailto:${safeEmail}" style="color: #2563eb; text-decoration: none;">${safeEmail}</a>`
+                    : '<span style="color: #999999;">(no reply email given)</span>'}</p>
+      </td>
+    </tr>
+  </table>
+</div>`.trim()
         };
-        if (email && email.trim()) payload.reply_to = email.trim();
+        if (trimmedEmail) payload.reply_to = trimmedEmail;
 
         const resendRes = await fetch('https://api.resend.com/emails', {
             method: 'POST',
