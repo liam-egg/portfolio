@@ -9,7 +9,7 @@
 //
 // The destination address is hardcoded below since it isn't a secret.
 
-const TO_EMAIL = 'liameggs+blog@ucla.edu';
+const TO_EMAIL = 'liameggs@g.ucla.edu';
 const MAX_LEN = 2000;
 
 function escapeHtml(str) {
