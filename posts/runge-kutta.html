@@ -486,9 +486,48 @@ for i in range(1000):
                 try { eqs = JSON.parse(el.dataset.equations || '[]'); } catch (e) { }
                 eqs.forEach(function (latex, i) { calc.setExpression({ id: 'extra-' + i, latex: latex }); });
             }
+            // On narrow screens, shape each graph's box to its saved viewport so the graph
+            // fills the width instead of shrinking into a strip between empty bands.
+            var narrow = window.matchMedia('(max-width: 700px)');
+            var desmosEntries = [];
+            function fitDesmosHeight(el, viewport) {
+                var design = parseFloat(el.dataset.designHeight);
+                if (!narrow.matches) { el.style.height = design + 'px'; return; }
+                var aspect = viewport ? (viewport.xmax - viewport.xmin) / (viewport.ymax - viewport.ymin) : 4 / 3;
+                el.style.height = Math.round(Math.min(design, Math.max(240, el.clientWidth / aspect))) + 'px';
+            }
+            function fitDesmosBounds(entry) {
+                var v = entry.viewport;
+                if (!v || typeof entry.calc.setMathBounds !== 'function') return;
+                // pad the saved viewport a little so labels drawn right at its edge aren't clipped
+                var cx = (v.xmin + v.xmax) / 2, cy = (v.ymin + v.ymax) / 2;
+                var dx = (v.xmax - v.xmin) * 1.08, dy = (v.ymax - v.ymin) * 1.08;
+                if (entry.square) {
+                    // grow the short side so the whole viewport stays visible with square axes
+                    var box = entry.el.clientWidth / entry.el.clientHeight;
+                    if (dx / dy > box) dy = dx / box; else dx = dy * box;
+                }
+                entry.calc.setMathBounds({ left: cx - dx / 2, right: cx + dx / 2, bottom: cy - dy / 2, top: cy + dy / 2 });
+                entry.fitted = true;
+            }
+            var lastWidth = window.innerWidth, resizeTimer = 0;
+            window.addEventListener('resize', function () {
+                if (window.innerWidth === lastWidth) return; // mobile URL bar showing/hiding
+                lastWidth = window.innerWidth;
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(function () {
+                    desmosEntries.forEach(function (entry) {
+                        fitDesmosHeight(entry.el, entry.viewport);
+                        if (entry.calc.resize) entry.calc.resize();
+                        if (narrow.matches || entry.fitted) fitDesmosBounds(entry);
+                    });
+                }, 150);
+            });
             function mount(el) {
                 if (!window.Desmos || el.dataset.desmosMounted) return;
                 el.dataset.desmosMounted = '1';
+                el.dataset.designHeight = parseFloat(el.style.height) || el.offsetHeight;
+                fitDesmosHeight(el, null);
                 var graphUrl = el.dataset.graphUrl;
                 var isGeometry = !!graphUrl && graphUrl.indexOf('/geometry/') !== -1;
                 var Ctor = isGeometry ? Desmos.Geometry : Desmos.GraphingCalculator;
@@ -507,7 +546,13 @@ for i in range(1000):
                                 if (isGeometry && el.dataset.expressions !== 'true') {
                                     json.state.geometryToolbar = { toolbar: 'none' };
                                 }
+                                var graph = json.state.graph || {};
+                                var entry = { el: el, calc: calc, viewport: graph.viewport, square: graph.squareAxes !== false };
+                                fitDesmosHeight(el, entry.viewport);
+                                if (calc.resize) calc.resize();
                                 calc.setState(json.state);
+                                if (narrow.matches) fitDesmosBounds(entry);
+                                desmosEntries.push(entry);
                             }
                             applyExtraEquations(calc, el);
                         })
@@ -524,6 +569,7 @@ for i in range(1000):
             window.destroyDesmosEmbeds = function () {
                 (window.__desmosInstances || []).forEach(function (c) { try { c.destroy(); } catch (e) { } });
                 window.__desmosInstances = [];
+                desmosEntries = [];
             };
         })();
 

@@ -134,6 +134,15 @@
             text-align: center;
         }
 
+        @media (max-width: 700px) {
+            main > .shader-embed {
+                width: auto;
+                height: 320px !important;
+                margin: 0 -16px;
+                transform: none;
+            }
+            main > div.filters input[type="search"] { min-width: 0; }
+        }
     </style>
 </head>
 <body data-syntax-theme="monokai-pro">

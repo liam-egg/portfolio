@@ -309,7 +309,7 @@ main > section > * { min-width: 0; }
 main > nav {
     padding: 30px 0 0; /* <main> already contributes the 100px bottom padding */
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(350px, 100%), 1fr));
     column-gap: 30px;
 }
 main > nav > a {
@@ -458,3 +458,74 @@ footer > div a svg {
     transition: fill 0.2s;
 }
 footer > div a:hover { color: #989898; }
+
+/* --- phones: tighter gutters, single-column layouts, embeds sized for a narrow screen --- */
+@media (max-width: 700px) {
+    header {
+        width: calc(100% - 32px);
+        height: 64px;
+        padding: 0 16px;
+        gap: 14px;
+    }
+    header > span { font-size: 26px; }
+    header > a { font-size: 15px; }
+    main {
+        width: calc(100% - 32px);
+        padding: 64px 16px 70px;
+    }
+    footer {
+        width: calc(100% - 32px);
+        padding: 50px 16px;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 30px;
+    }
+    footer > div > span.disclaimer { margin-top: 30px; }
+    footer > div a { max-width: 100%; overflow-wrap: anywhere; }
+
+    main > img {
+        width: calc(100% + 32px);
+        margin-left: -16px;
+        transform: none; /* a transform leaves the layout box overhanging the right edge */
+        border-radius: 0;
+    }
+    main > span.title {
+        font-size: 34px;
+        margin-top: 40px;
+    }
+    main > span.description { font-size: 18px; }
+    main > div.tags {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    hr { margin: 40px 0; }
+
+    main > section,
+    main > section.left { grid-template-columns: minmax(0, 1fr); }
+    main > section > article,
+    main > section.left > article {
+        grid-column: 1;
+        grid-row: auto;
+        margin: 0 0 30px;
+    }
+    main > section:not(:first-of-type) { margin-top: 40px; }
+    main > section > p {
+        font-size: 19px;
+        line-height: 28px;
+    }
+    main span.big { font-size: 28px; }
+    main > section > figure > img { max-width: 100% !important; }
+
+    /* embeds run edge to edge; shaders get a fixed landscape frame (the Desmos script sizes graphs itself) */
+    .desmos-embed,
+    .shader-embed {
+        width: auto;
+        margin-left: -16px;
+        margin-right: -16px;
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+    }
+    .shader-embed { height: 75vw !important; }
+
+    main > nav > a > article > span.text { font-size: 24px; }
+}
