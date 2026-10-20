@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#05060a">
+    <meta name="theme-color" content="#0b0614">
     <title>Mandelbulb VR</title>
     <meta name="description" content="A raymarched, time-mutating Mandelbulb fractal you can step inside with WebXR.">
     <style>
         :root {
-            --bg: #05060a;
-            --fg: #e8ecf4;
-            --muted: #8a93a6;
-            --accent: #7cc4ff;
-            --panel: rgba(10, 12, 20, 0.72);
+            --bg: #0b0614;
+            --fg: #f1eaf6;
+            --muted: #a194b0;
+            --accent: #ffb38a;
+            --panel: rgba(16, 10, 26, 0.72);
             --border: rgba(255, 255, 255, 0.12);
         }
         html, body {
@@ -55,9 +55,7 @@
     <script type="importmap">
     {
         "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
-        }
+            "three": "https:            "three/addons/": "https:        }
     }
     </script>
 </head>
@@ -70,7 +68,7 @@
         <kbd>←</kbd>/<kbd>→</kbd> slow · stop · rewind / fast-forward<br>
         Left-drag scrub time &nbsp; Right-drag (or Shift-drag) look<br>
         <kbd>Space</kbd> pause &nbsp; <kbd>R</kbd> reset &nbsp; <kbd>H</kbd> hide help<br>
-        VR: right stick ↔ time, left stick move, <kbd>A</kbd> pause, <kbd>B</kbd> reset
+        VR: right stick ↔ time, left stick move, <kbd>A</kbd> pause, <kbd>B</kbd> reset<br>
     </div>
 </div>
 
@@ -79,69 +77,62 @@ import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
-/* ==========================================================================
-   ARCHITECTURE
-   --------------------------------------------------------------------------
-   Every input device writes into one shared `input` object each frame:
-
-       XR gamepads ─┐
-       keyboard ────┼──►  input { moveX, moveZ, moveY, timeAxis, scrub }
-       mouse/touch ─┘                  │
-                                       ▼
-                           applyInput(dt)   (the only place that touches
-                                       │     the rig and the uniforms)
-                     ┌─────────────────┴──────────────────┐
-                     ▼                                    ▼
-          rig.position (locomotion)        uniforms.uTime / uPower / uPhase
-                                           (the fractal's mutation timeline)
-
-   So the right thumbstick and the arrow keys do the same thing: both set
-   `input.timeAxis` in [-1, 1], and applyInput() turns that into a playback
-   rate for the fractal's own clock (`fractalTime`), separate from wall time.
-   ========================================================================== */
-
-// ---------------------------------------------------------------- renderer
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
-// Raymarching cost is per pixel, so trimming the eye-buffer resolution and
-// enabling fixed foveation are the two biggest performance wins on Quest.
 renderer.xr.setFramebufferScaleFactor(0.8);
 renderer.xr.setFoveation(1.0);
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x05060a);
 
-// ---------------------------------------------------------------- camera rig
-// The rig is what we move. In XR the headset drives `camera` relative to
-// the rig, so locomotion never fights head tracking.
 const rig = new THREE.Group();
 scene.add(rig);
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 100);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 200);
 camera.position.set(0, 1.6, 0);
 rig.add(camera);
 
-// ---------------------------------------------------------------- fractal shader
 const FRACTAL_CENTER = new THREE.Vector3(0, 1.5, -3.0);
-const FRACTAL_SCALE = 1.2;   // world metres per fractal unit
-const BOUND_RADIUS = 1.5;    // fractal-space bounding sphere
-const MAX_STEPS_CAP = 128;   // compile-time loop cap; uSteps picks the real count
+const FRACTAL_SCALE = 1.2;   const BOUND_RADIUS = 1.25;   const MAX_STEPS_CAP = 96;    const MAX_SHADOW_CAP = 48;
+
+const SUN_DIR = new THREE.Vector3(0.1, 0.8, 0.6).normalize();
+const BAC_DIR = new THREE.Vector3(-SUN_DIR.x, -1.0, -SUN_DIR.z); const UP_DIR = new THREE.Vector3(0, 1, 0);
 
 const uniforms = {
-    uTime:     { value: 0 },  // fractal clock (scrubbable)
-    uPower:    { value: 8 },
-    uPhase:    { value: 0 },
-    uSteps:    { value: 72 },  // adaptive quality changes this
+    uTime:     { value: 0 },          uPhase:    { value: 0 },          uSteps:    { value: 48 },         uShadow:   { value: 16 },
     uIter:     { value: 7 },
-    uPixel:    { value: 0.0015 }, // hit tolerance per unit distance (cone width)
-    uInvModel: { value: new THREE.Matrix4() },
+    uPixel:    { value: 0.0008 },     uInvModel: { value: new THREE.Matrix4() },
+    uCenter:   { value: FRACTAL_CENTER.clone() },
+    uSunL:     { value: new THREE.Vector3() },     uBacL:     { value: new THREE.Vector3() },
+    uUpL:      { value: new THREE.Vector3() },
 };
 
-const vertexShader = /* glsl */`
+const commonGLSL = `
+    uniform vec3 uCenter;
+    uniform float uTime;
+
+    const vec3 SUN_DIR_W = vec3(${SUN_DIR.toArray().map(v => v.toFixed(4)).join(',')});
+    const vec3 SUN_COL   = vec3(1.70, 1.10, 1.05);
+    const vec3 SKY_COL   = vec3(0.95, 0.55, 1.60);
+    const vec3 BG_TINT   = vec3(0.95, 0.42, 1.40);
+    const vec3 HALO_COL  = vec3(1.00, 0.55, 0.35);
+
+        vec3 sky(vec3 rd, vec3 ro) {
+        vec3 bg = exp(rd.y - 2.0) * BG_TINT;
+        float halo = clamp(dot(normalize(uCenter - ro), rd), 0.0, 1.0);
+        return bg + HALO_COL * pow(halo, 17.0);
+    }
+
+        vec3 post(vec3 col) {
+        col = pow(clamp(col, 0.0, 1.0), vec3(0.45));
+        col = col * 0.6 + 0.4 * col * col * (3.0 - 2.0 * col);           col = mix(col, vec3(dot(col, vec3(0.33))), -0.5);                 return col;
+    }
+`;
+
+const vertexShader = `
     varying vec3 vWorld;
     void main() {
         vec4 w = modelMatrix * vec4(position, 1.0);
@@ -150,116 +141,133 @@ const vertexShader = /* glsl */`
     }
 `;
 
-const fragmentShader = /* glsl */`
+const skyFragment = `
+    ${commonGLSL}
+    varying vec3 vWorld;
+    void main() {
+        vec3 rd = normalize(vWorld - cameraPosition);
+        gl_FragColor = vec4(post(sky(rd, cameraPosition)), 1.0);
+    }
+`;
+
+const fractalFragment = `
     precision highp float;
-    #define MAX_STEPS_CAP ${MAX_STEPS_CAP}
+    ${commonGLSL}
     #define BOUND ${BOUND_RADIUS.toFixed(3)}
 
-    uniform float uTime, uPower, uPhase, uPixel;
-    uniform int uSteps, uIter;
+    uniform float uPhase, uPixel;
+    uniform int uSteps, uShadow, uIter;
     uniform mat4 uInvModel;
+    uniform vec3 uSunL, uBacL, uUpL;
     varying vec3 vWorld;
 
-    // Mandelbulb distance estimator; also returns an orbit trap for colour.
-    float map(vec3 p, out float trap) {
+            vec2 mb(vec3 p) {
+        p = p.xzy;
         vec3 z = p;
-        float dr = 1.0;
-        float r = 0.0;
-        trap = 1e10;
-        for (int i = 0; i < 12; i++) {
+        float dr = 1.0, r = 0.0, t0 = 1.0;
+        for (int i = 0; i < 8; i++) {
             if (i >= uIter) break;
-            r = max(length(z), 1e-6);
+            r = length(z);
             if (r > 2.0) break;
-            float theta = acos(clamp(z.z / r, -1.0, 1.0)) * uPower + uPhase;
-            float phi   = atan(z.y, z.x) * uPower;
-            float rp1   = pow(r, uPower - 1.0);
-            dr = rp1 * uPower * dr + 1.0;
-            float st = sin(theta);
-            z = rp1 * r * vec3(st * cos(phi), st * sin(phi), cos(theta)) + p;
-            trap = min(trap, dot(z, z));
+            float theta = atan(z.y, z.x) * 8.0;
+            float phi = (asin(clamp(z.z / r, -1.0, 1.0)) + uPhase) * 8.0;
+            float r2 = r * r, r4 = r2 * r2, r8 = r4 * r4;               dr = 8.0 * (r8 / r) * dr + 1.0;
+            z = r8 * vec3(cos(theta) * cos(phi), sin(theta) * cos(phi), sin(phi)) + p;
+            t0 = min(t0, r8);
         }
-        return 0.5 * log(r) * r / dr;
+        return vec2(0.5 * log(r) * r / dr, t0);
     }
 
-    float mapD(vec3 p) { float t; return map(p, t); }
+    float softshadow(vec3 ro, vec3 rd, float k) {
+        float res = 1.0, t = 0.01;
+        for (int i = 0; i < ${MAX_SHADOW_CAP}; i++) {
+            if (i >= uShadow) break;
+            vec3 p = ro + rd * t;
+            if (dot(p, p) > BOUND * BOUND) break;
+            float h = mb(p).x;
+            if (h < 0.001) return 0.02;
+            res = min(res, k * h / t);
+            t += clamp(h, 0.01, 2.0);
+        }
+        return res;
+    }
 
-    // Tetrahedral normal: 4 evaluations instead of 6.
-    vec3 calcNormal(vec3 p, float e) {
+        vec3 nor(vec3 p, float e) {
         const vec2 k = vec2(1.0, -1.0);
-        return normalize(k.xyy * mapD(p + k.xyy * e) +
-                         k.yyx * mapD(p + k.yyx * e) +
-                         k.yxy * mapD(p + k.yxy * e) +
-                         k.xxx * mapD(p + k.xxx * e));
-    }
-
-    vec3 palette(float t) {
-        return 0.5 + 0.5 * cos(6.28318 * (t + vec3(0.00, 0.15, 0.30)));
+        return normalize(k.xyy * mb(p + k.xyy * e).x + k.yyx * mb(p + k.yyx * e).x +
+                         k.yxy * mb(p + k.yxy * e).x + k.xxx * mb(p + k.xxx * e).x);
     }
 
     void main() {
-        // Per-eye ray: three.js sets cameraPosition for each XR view, so this
-        // is correct stereo for free. Work in fractal-local space.
+                vec3 rdW = normalize(vWorld - cameraPosition);
         vec3 ro = (uInvModel * vec4(cameraPosition, 1.0)).xyz;
         vec3 rd = normalize((uInvModel * vec4(vWorld, 1.0)).xyz - ro);
 
-        // Clip the march to the bounding sphere.
-        float b = dot(ro, rd);
-        float c = dot(ro, ro) - BOUND * BOUND;
-        float h = b * b - c;
+                float b = dot(ro, rd);
+        float h = b * b - (dot(ro, ro) - BOUND * BOUND);
         if (h < 0.0) discard;
         h = sqrt(h);
         float t = max(-b - h, 0.0);
         float tFar = -b + h;
 
-        float minD = 1e10;
-        float trap = 0.0;
-        bool hit = false;
-        int steps = 0;
-        for (int i = 0; i < MAX_STEPS_CAP; i++) {
+                                float os = 0.0, pd = 100.0, maxErr = 1e3;
+        float resT = -1.0, resTrap = 0.0;
+        for (int i = 0; i < ${MAX_STEPS_CAP}; i++) {
             if (i >= uSteps) break;
-            vec3 p = ro + rd * t;
-            float d = map(p, trap);
-            minD = min(minD, d);
-            float eps = uPixel * max(t, 0.05);
-            if (d < eps) { hit = true; break; }
-            t += d;
-            steps = i;
-            if (t > tFar) break;
+            vec2 c = mb(ro + rd * t);
+            float d = c.x, stp;
+            if (d > os) {
+                if (t + d > tFar) { resT = -1.0; break; }                   os = 0.4 * d * d / pd;
+                stp = d + os;
+                pd = d;
+            } else {
+                stp = -os; os = 0.0; pd = 100.0; d = 1.0;
+            }
+            float err = d / max(t, 0.01);
+            if (err < maxErr) { maxErr = err; resT = t; resTrap = c.y; }
+            if (err < uPixel) break;
+            t += stp;
         }
+        if (resT < 0.0) discard;   
+        vec3 p = ro + rd * resT;
+        vec3 n = nor(p, max(0.0005, uPixel * resT));
+        float shadow = uShadow > 0 ? softshadow(p, uSunL, 10.0) : 1.0;
 
-        if (!hit) {
-            // Cheap glow from the nearest approach; no extra map() calls.
-            float g = exp(-minD * 14.0) * 0.35;
-            if (g < 0.01) discard;
-            gl_FragColor = vec4(palette(uTime * 0.02 + 0.6) * g, g);
-            return;
-        }
+        float dif = max(0.0, dot(n, uSunL));
+        float skyL = 0.6 + 0.4 * max(0.0, dot(n, uUpL));
+        float bac = max(0.3 + 0.7 * dot(uBacL, n), 0.0);
+        float spe = pow(clamp(dot(uSunL, reflect(rd, n)), 0.0, 1.0), 10.0);
 
-        vec3 pos = ro + rd * t;
-        vec3 n = calcNormal(pos, uPixel * max(t, 0.05) * 0.5);
-        vec3 L = normalize(vec3(0.6, 0.8, 0.4));
+        vec3 lin = 4.5 * SUN_COL * dif * shadow;
+        lin += 0.8 * bac * SUN_COL;
+        lin += 0.6 * skyL * SKY_COL * shadow;
+        lin += 3.0 * spe * shadow;
 
-        float dif = clamp(dot(n, L), 0.0, 1.0);
-        float bac = clamp(dot(n, -L), 0.0, 1.0) * 0.25;
-        float ao  = pow(1.0 - float(steps) / float(uSteps), 1.4);  // step-count AO
-        float rim = pow(1.0 - clamp(dot(n, -rd), 0.0, 1.0), 3.0);
+        float tr = pow(clamp(resTrap, 0.0, 1.0), 0.55);
+        vec3 tc0 = 0.5 + 0.5 * sin(4.4 + 3.6 * tr + vec3(0.0, 1.3, 2.3) + uTime * 0.03);
+        vec3 col = lin * vec3(0.95, 0.75, 0.8) * 0.2 * tc0;
+        col = mix(col, sky(rdW, cameraPosition), 1.0 - exp(-0.001 * resT * resT));
 
-        vec3 base = palette(sqrt(trap) * 0.55 + uTime * 0.02);
-        vec3 col = base * (0.12 + 0.9 * dif + bac) * ao;
-        col += rim * 0.35 * palette(uTime * 0.02 + 0.5) * ao;
-
-        col = pow(col, vec3(1.0 / 2.2));
-        gl_FragColor = vec4(col, 1.0);
+        gl_FragColor = vec4(post(col), 1.0);
     }
 `;
+
+const skyDome = new THREE.Mesh(
+    new THREE.SphereGeometry(100, 32, 16),
+    new THREE.ShaderMaterial({
+        uniforms, vertexShader, fragmentShader: skyFragment,
+        side: THREE.BackSide, depthWrite: false,
+    })
+);
+skyDome.renderOrder = -2;
+skyDome.frustumCulled = false;
+scene.add(skyDome);
 
 const fractal = new THREE.Mesh(
     new THREE.SphereGeometry(BOUND_RADIUS, 48, 24),
     new THREE.ShaderMaterial({
-        uniforms, vertexShader, fragmentShader,
-        side: THREE.BackSide,  // still draws when the viewer is inside the bulb
-        transparent: true,     // for the glow halo
-        depthWrite: false,
+        uniforms, vertexShader, fragmentShader: fractalFragment,
+        side: THREE.BackSide,          depthWrite: false,
     })
 );
 fractal.position.copy(FRACTAL_CENTER);
@@ -268,18 +276,13 @@ fractal.renderOrder = -1;
 fractal.frustumCulled = false;
 scene.add(fractal);
 
-// ---------------------------------------------------------------- shared input state
 const input = {
-    moveX: 0, moveZ: 0, moveY: 0, // locomotion, -1..1
-    timeAxis: 0,                  // -1..1  (right stick X / arrow keys)
-    scrub: 0,                     // direct time offset this frame (mouse drag)
-    paused: false,
+    moveX: 0, moveZ: 0, moveY: 0,     timeAxis: 0,                      scrub: 0,                         paused: false,
 };
 
 const DEADZONE = 0.15;
 const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
 
-// ---------------------------------------------------------------- XR controllers
 const controllerModels = new XRControllerModelFactory();
 const gamepads = { left: null, right: null };
 const prevButtons = { a: false, b: false };
@@ -301,32 +304,26 @@ for (let i = 0; i < 2; i++) {
     });
 }
 
-// xr-standard mapping: thumbstick on axes[2]/[3], with older runtimes on [0]/[1].
 function stick(gp) {
     if (!gp) return [0, 0];
     const o = gp.axes.length >= 4 ? 2 : 0;
     return [dz(gp.axes[o] || 0), dz(gp.axes[o + 1] || 0)];
 }
 
-// Called each frame while presenting: maps gamepads onto `input`.
 function pollXRInput() {
     const [lx, ly] = stick(gamepads.left);
     const [rx] = stick(gamepads.right);
 
     input.moveX = lx;
-    input.moveZ = ly;       // stick forward is negative Y, same as -Z forward
-    input.moveY = 0;
-    input.timeAxis = rx;    // ◄── RIGHT THUMBSTICK X  →  time playback rate
-
-    // Right controller face buttons: A = pause, B = reset (edge-triggered).
-    const btn = gamepads.right?.buttons || [];
+    input.moveZ = ly;           input.moveY = 0;
+    input.timeAxis = rx;    
+        const btn = gamepads.right?.buttons || [];
     const a = !!btn[4]?.pressed, b = !!btn[5]?.pressed;
     if (a && !prevButtons.a) input.paused = !input.paused;
     if (b && !prevButtons.b) resetTime();
     prevButtons.a = a; prevButtons.b = b;
 }
 
-// ---------------------------------------------------------------- desktop input
 const keys = new Set();
 let yaw = 0, pitch = 0;
 
@@ -356,61 +353,49 @@ el.addEventListener('pointermove', e => {
         yaw -= dx * 0.004;
         pitch = THREE.MathUtils.clamp(pitch - dy * 0.004, -1.5, 1.5);
     } else {
-        input.scrub += dx * 0.03;   // ◄── MOUSE DRAG  →  direct time offset
-    }
+        input.scrub += dx * 0.03;       }
 });
 const endDrag = () => { drag = null; };
 el.addEventListener('pointerup', endDrag);
 el.addEventListener('pointercancel', endDrag);
 
-// Maps held keys onto `input`, mirroring the gamepad layout.
 function pollDesktopInput() {
     const k = c => (keys.has(c) ? 1 : 0);
     input.moveX = k('KeyD') - k('KeyA');
     input.moveZ = k('KeyS') - k('KeyW');
     input.moveY = k('KeyE') - k('KeyQ');
-    input.timeAxis = k('ArrowRight') - k('ArrowLeft'); // ◄── ARROWS  →  same as right stick
-}
+    input.timeAxis = k('ArrowRight') - k('ArrowLeft'); }
 
-// ---------------------------------------------------------------- time model
-// Wall time is used only for dt. The fractal has its own clock, advanced at
-// a playback rate set by timeAxis:
-//   axis +1   → 8x fast-forward
-//   axis  0   → 1x normal
-//   axis -0.5 → 0x stopped
-//   axis -1   → -1x rewind
 let fractalTime = 0;
 let rate = 1;
 
 const rateFromAxis = a => {
     const r = a >= 0 ? 1 + a * 7 : 1 + a * 2;
-    return Math.abs(r) < 0.12 ? 0 : r;  // detent so "stop" is easy to hit
-};
+    return Math.abs(r) < 0.12 ? 0 : r;  };
 
 function resetTime() { fractalTime = 0; rate = 1; input.paused = false; }
 
-// ---------------------------------------------------------------- binding: input → rig + uniforms
-const MOVE_SPEED = 1.5; // m/s
-const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+const MOVE_SPEED = 1.5; const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+const invRot = new THREE.Quaternion();
 
 function applyInput(dt) {
-    // 1. Time: ease toward the target rate so stick movement feels smooth.
-    const target = input.paused ? 0 : rateFromAxis(input.timeAxis);
+        const target = input.paused ? 0 : rateFromAxis(input.timeAxis);
     rate += (target - rate) * Math.min(1, dt * 6);
     fractalTime += rate * dt + input.scrub;
     input.scrub = 0;
 
-    // 2. Uniforms: the fractal's shape is a pure function of fractalTime,
-    //    so scrubbing backwards plays the mutation in reverse exactly.
-    uniforms.uTime.value = fractalTime;
-    uniforms.uPower.value = 7.0 + 3.0 * Math.sin(fractalTime * 0.13);  // power 4..10
-    uniforms.uPhase.value = 0.6 * Math.sin(fractalTime * 0.21);
-    fractal.rotation.set(-Math.PI / 2, 0, fractalTime * 0.05); // pole up, spin about it
+            uniforms.uTime.value = fractalTime;
+    uniforms.uPhase.value = fractalTime * 0.1;
+    fractal.rotation.y = fractalTime * 0.2;
     fractal.updateMatrixWorld();
     uniforms.uInvModel.value.copy(fractal.matrixWorld).invert();
 
-    // 3. Locomotion: move the rig along the camera's heading, flattened to XZ.
-    camera.getWorldDirection(fwd);
+            invRot.copy(fractal.quaternion).invert();
+    uniforms.uSunL.value.copy(SUN_DIR).applyQuaternion(invRot);
+    uniforms.uBacL.value.copy(BAC_DIR).applyQuaternion(invRot);
+    uniforms.uUpL.value.copy(UP_DIR).applyQuaternion(invRot);
+
+        camera.getWorldDirection(fwd);
     fwd.y = 0;
     if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
     fwd.normalize();
@@ -421,46 +406,63 @@ function applyInput(dt) {
     rig.position.addScaledVector(up, input.moveY * step);
 }
 
-// ---------------------------------------------------------------- adaptive quality
-// Frame time is vsync-capped, so: drop steps quickly when we miss the
-// target and creep back up slowly while we hold it.
-const quality = { ema: 1 / 72, target: 1 / 72, lastRaise: 0 };
+const LEVELS = [
+    [32, 0, 6],
+    [40, 0, 7],
+    [48, 0, 7],
+    [48, 12, 7],
+    [56, 20, 7],
+    [64, 32, 7],
+    [80, 48, 7],
+];
+const quality = { ema: 1 / 60, target: 1 / 60, level: 5, max: 6, lastChange: 0 };
+
+function setLevel(l) {
+    quality.level = THREE.MathUtils.clamp(l, 0, quality.max);
+    const [steps, shadow, iter] = LEVELS[quality.level];
+    uniforms.uSteps.value = steps;
+    uniforms.uShadow.value = shadow;
+    uniforms.uIter.value = iter;
+}
 
 function adaptQuality(dt, now) {
     quality.ema += (dt - quality.ema) * 0.1;
-    const s = uniforms.uSteps;
-    if (quality.ema > quality.target * 1.15 && s.value > 40) {
-        s.value = Math.max(40, s.value - 6);
+    if (quality.ema > quality.target * 1.15 && quality.level > 0) {
+        setLevel(quality.level - 1);
         quality.ema = quality.target;
-        quality.lastRaise = now;
-    } else if (quality.ema < quality.target * 1.05 && now - quality.lastRaise > 3000) {
-        s.value = Math.min(renderer.xr.isPresenting ? 88 : MAX_STEPS_CAP, s.value + 2);
-        quality.lastRaise = now;
+        quality.lastChange = now;
+    } else if (quality.ema < quality.target * 1.05 && now - quality.lastChange > 4000) {
+        setLevel(quality.level + 1);
+        quality.lastChange = now;
     }
-    uniforms.uIter.value = s.value < 56 ? 6 : 7;
 }
+
+function desktopPixel() {
+    const px = window.innerHeight * renderer.getPixelRatio();
+    return 0.5 * 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / px;
+}
+uniforms.uPixel.value = desktopPixel();
+setLevel(quality.level);
 
 renderer.xr.addEventListener('sessionstart', () => {
     const session = renderer.xr.getSession();
-    const hz = session.frameRate || 72;
-    quality.target = 1 / hz;
+    quality.target = 1 / (session.frameRate || 72);
     quality.ema = quality.target;
-    uniforms.uSteps.value = 64;
-    uniforms.uPixel.value = 0.002;
+    quality.max = 4;
+    setLevel(3);
+    uniforms.uPixel.value = 0.0008;
     document.getElementById('hud').style.display = 'none';
 });
 renderer.xr.addEventListener('sessionend', () => {
     camera.position.set(0, 1.6, 0);
     quality.target = 1 / 60;
-    uniforms.uSteps.value = 72;
-    uniforms.uPixel.value = 0.0015;
+    quality.max = 6;
+    setLevel(5);
+    uniforms.uPixel.value = desktopPixel();
     gamepads.left = gamepads.right = null;
     document.getElementById('hud').style.display = '';
 });
 
-// ---------------------------------------------------------------- VR wrist panel
-// A small canvas-texture readout on the right controller, so the time rate
-// is visible while scrubbing in the headset.
 const vrPanel = (() => {
     const canvas = document.createElement('canvas');
     canvas.width = 256; canvas.height = 96;
@@ -482,13 +484,13 @@ const vrPanel = (() => {
             if (key === last) return;
             last = key;
             ctx.clearRect(0, 0, 256, 96);
-            ctx.fillStyle = 'rgba(10,12,20,0.8)';
+            ctx.fillStyle = 'rgba(16,10,26,0.8)';
             ctx.beginPath(); ctx.roundRect(0, 0, 256, 96, 18); ctx.fill();
-            ctx.fillStyle = '#7cc4ff';
+            ctx.fillStyle = '#ffb38a';
             ctx.font = 'bold 40px monospace';
             ctx.textAlign = 'center';
             ctx.fillText(rateText, 128, 46);
-            ctx.fillStyle = '#8a93a6';
+            ctx.fillStyle = '#a194b0';
             ctx.font = '24px monospace';
             ctx.fillText(timeText, 128, 80);
             tex.needsUpdate = true;
@@ -496,7 +498,6 @@ const vrPanel = (() => {
     };
 })();
 
-// ---------------------------------------------------------------- main loop
 const statsEl = document.getElementById('stats');
 let lastTime = performance.now();
 let statsTimer = 0;
@@ -521,14 +522,15 @@ renderer.setAnimationLoop(now => {
     applyInput(dt);
     adaptQuality(dt, now);
 
-    const timeText = `t ${fractalTime.toFixed(1)}  p ${uniforms.uPower.value.toFixed(2)}`;
+    const timeText = `t ${fractalTime.toFixed(1)}`;
     if (renderer.xr.isPresenting) {
         vrPanel.update(rateLabel(), timeText);
     } else if ((statsTimer += dt) > 0.25) {
         statsTimer = 0;
         statsEl.textContent =
             `${rateLabel()}   ${timeText}\n` +
-            `${(1 / quality.ema).toFixed(0)} fps   steps ${uniforms.uSteps.value}   iter ${uniforms.uIter.value}`;
+            `${(1 / quality.ema).toFixed(0)} fps   quality ${quality.level}/${quality.max}` +
+            `   steps ${uniforms.uSteps.value}   shadow ${uniforms.uShadow.value}`;
     }
 
     renderer.render(scene, camera);
@@ -538,6 +540,7 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    if (!renderer.xr.isPresenting) uniforms.uPixel.value = desktopPixel();
 });
 </script>
 </body>
