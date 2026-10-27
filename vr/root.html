@@ -367,13 +367,13 @@ function parseROOT(text) {
 
 // ─── Data visual (port of gpu_inst_script.cs, drawn with the compiled Data shader) ──
 const gen = bundle.scene.bindings.generator;
-const dataGeometry = new THREE.InstancedBufferGeometry().copy(PRIMITIVES[gen?.mesh ?? 'Cube']());
+const dataPrimitive = PRIMITIVES[gen?.mesh ?? 'Cube']();
 const dataMaterial = gen?.material ? material(gen.material) : null;
 const transformAttr = Object.keys(bundle.shaders[bundle.materials[gen?.material]?.shader]?.instanceAttributes ?? {})
     .find(a => /transform/i.test(a)) ?? 'a_Transforms';
 const colorAttr = Object.keys(bundle.shaders[bundle.materials[gen?.material]?.shader]?.instanceAttributes ?? {})
     .find(a => /colou?r/i.test(a)) ?? 'a_Colors';
-const dataMesh = new THREE.Mesh(dataGeometry, dataMaterial ?? new THREE.MeshBasicMaterial());
+const dataMesh = new THREE.Mesh(new THREE.InstancedBufferGeometry(), dataMaterial ?? new THREE.MeshBasicMaterial());
 dataMesh.frustumCulled = false;
 dataMesh.visible = false;
 scene.add(dataMesh);
@@ -432,17 +432,24 @@ function uploadPoints() {
     });
     state.transforms = xf;
     state.colors = colors;
-    dataGeometry.setAttribute(transformAttr, new THREE.InstancedBufferAttribute(new Float32Array(n * 16), 16));
-    dataGeometry.setAttribute(colorAttr, new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4));
-    dataGeometry.instanceCount = n;
+    // A fresh geometry every time: three caches an instanced geometry's max instance count on
+    // first draw, so reusing one would silently drop instances when a bigger dataset loads.
+    const geometry = new THREE.InstancedBufferGeometry().copy(dataPrimitive);
+    geometry.setAttribute(transformAttr, new THREE.InstancedBufferAttribute(new Float32Array(n * 16), 16));
+    geometry.setAttribute(colorAttr, new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4));
+    geometry.instanceCount = n;
+    dataMesh.geometry.dispose();
+    dataMesh.geometry = geometry;
     dataMesh.visible = n > 0;
     state.hover = -1;
     state.sortedFrom = null;
     hoverLabel.mesh.visible = false;
 }
 
-// The bars are translucent but write depth, so they have to be drawn back to front:
-// in fixed instance order, a bar drawn after a nearer one fails the depth test and vanishes.
+// The bars are translucent but write depth, so they're drawn back to front (re-sorted as the
+// camera moves) — otherwise a bar drawn after a nearer one fails the depth test and vanishes.
+// Sort key is the distance to the nearest point of each box, which orders a short bar in front
+// of a tall neighbour correctly where centre distances would not.
 const _eye = new THREE.Vector3();
 function sortInstances(force = false) {
     const n = state.points.length;
@@ -451,13 +458,17 @@ function sortInstances(force = false) {
     if (!force && state.sortedFrom && state.sortedFrom.distanceToSquared(_eye) < 1e-4) return;
     state.sortedFrom = (state.sortedFrom ?? new THREE.Vector3()).copy(_eye);
     const xf = state.transforms, dist = new Float32Array(n), order = new Uint32Array(n);
+    const gap = (c, h, e) => Math.max(0, Math.abs(e - c) - h);
     for (let i = 0; i < n; i++) {
-        const dx = xf[i * 16 + 12] - _eye.x, dy = xf[i * 16 + 13] - _eye.y, dz = xf[i * 16 + 14] - _eye.z;
+        const o = i * 16;
+        const dx = gap(xf[o + 12], xf[o] / 2, _eye.x);
+        const dy = gap(xf[o + 13], Math.abs(xf[o + 5]) / 2, _eye.y);
+        const dz = gap(xf[o + 14], xf[o + 10] / 2, _eye.z);
         dist[i] = dx * dx + dy * dy + dz * dz;
         order[i] = i;
     }
     order.sort((a, b) => dist[b] - dist[a]);
-    const tAttr = dataGeometry.getAttribute(transformAttr), cAttr = dataGeometry.getAttribute(colorAttr);
+    const tAttr = dataMesh.geometry.getAttribute(transformAttr), cAttr = dataMesh.geometry.getAttribute(colorAttr);
     for (let s = 0; s < n; s++) {
         const i = order[s];
         tAttr.array.set(xf.subarray(i * 16, i * 16 + 16), s * 16);
