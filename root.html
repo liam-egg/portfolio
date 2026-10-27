@@ -234,6 +234,8 @@ const placed = (obj, m) => { obj.matrixAutoUpdate = false; obj.matrix.fromArray(
 for (const m of bundle.scene.meshes) {
     const mesh = placed(new THREE.Mesh(PRIMITIVES[m.mesh](), material(m.material)), m.matrix);
     mesh.name = m.name;
+    // Push scene surfaces back slightly in depth so bins resting on the floor never z-fight with it.
+    Object.assign(mesh.material, { polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 4 });
     scene.add(mesh);
 }
 
@@ -428,13 +430,41 @@ function uploadPoints() {
         xf.set([scale[0], 0, 0, 0, 0, scale[1], 0, 0, 0, 0, scale[2], 0, pos[0], pos[1], -pos[2], 1], i * 16);
         colors.set([y, y / d.max, 0.5, 0.85], i * 4);
     });
-    state.colors = colors.slice();
-    dataGeometry.setAttribute(transformAttr, new THREE.InstancedBufferAttribute(xf, 16));
-    dataGeometry.setAttribute(colorAttr, new THREE.InstancedBufferAttribute(colors, 4));
+    state.transforms = xf;
+    state.colors = colors;
+    dataGeometry.setAttribute(transformAttr, new THREE.InstancedBufferAttribute(new Float32Array(n * 16), 16));
+    dataGeometry.setAttribute(colorAttr, new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4));
     dataGeometry.instanceCount = n;
     dataMesh.visible = n > 0;
     state.hover = -1;
+    state.sortedFrom = null;
     hoverLabel.mesh.visible = false;
+}
+
+// The bars are translucent but write depth, so they have to be drawn back to front:
+// in fixed instance order, a bar drawn after a nearer one fails the depth test and vanishes.
+const _eye = new THREE.Vector3();
+function sortInstances(force = false) {
+    const n = state.points.length;
+    if (!n) return;
+    camera.getWorldPosition(_eye);
+    if (!force && state.sortedFrom && state.sortedFrom.distanceToSquared(_eye) < 1e-4) return;
+    state.sortedFrom = (state.sortedFrom ?? new THREE.Vector3()).copy(_eye);
+    const xf = state.transforms, dist = new Float32Array(n), order = new Uint32Array(n);
+    for (let i = 0; i < n; i++) {
+        const dx = xf[i * 16 + 12] - _eye.x, dy = xf[i * 16 + 13] - _eye.y, dz = xf[i * 16 + 14] - _eye.z;
+        dist[i] = dx * dx + dy * dy + dz * dz;
+        order[i] = i;
+    }
+    order.sort((a, b) => dist[b] - dist[a]);
+    const tAttr = dataGeometry.getAttribute(transformAttr), cAttr = dataGeometry.getAttribute(colorAttr);
+    for (let s = 0; s < n; s++) {
+        const i = order[s];
+        tAttr.array.set(xf.subarray(i * 16, i * 16 + 16), s * 16);
+        if (i === state.hover) cAttr.array.set([state.colors[i * 4], state.colors[i * 4 + 1], 1, 1], s * 4);
+        else cAttr.array.set(state.colors.subarray(i * 4, i * 4 + 4), s * 4);
+    }
+    tAttr.needsUpdate = cAttr.needsUpdate = true;
 }
 
 // Axis labels (port of axis_handler.cs)
@@ -571,11 +601,9 @@ function nearestBin(ray) {
 }
 function setHover(i) {
     if (i === state.hover) return;
-    const attr = dataGeometry.getAttribute(colorAttr);
-    if (state.hover >= 0) attr.array.set(state.colors.subarray(state.hover * 4, state.hover * 4 + 4), state.hover * 4);
     state.hover = i;
+    sortInstances(true);                                // re-uploads colours with the highlight
     if (i >= 0) {
-        attr.array.set([state.colors[i * 4], state.colors[i * 4 + 1], 1, 1], i * 4);
         const d = state.data, [x, y, z] = state.points[i];
         const value = d.values[i];
         const err = d.errs[i];
@@ -583,7 +611,6 @@ function setHover(i) {
         hoverLabel.mesh.position.copy(fromUnity(x, Math.max(0, y) + 0.3, z));
         hoverLabel.mesh.visible = true;
     } else hoverLabel.mesh.visible = false;
-    attr.needsUpdate = true;
 }
 
 // ─── Input ──────────────────────────────────────────────────────────────────
@@ -799,6 +826,7 @@ renderer.setAnimationLoop(now => {
     }
     applyMovement(dt);
     applyZoom();
+    sortInstances();
     hoverLabel.mesh.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion()));
 
     const d = state.data;
