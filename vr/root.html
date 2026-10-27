@@ -314,6 +314,21 @@ for (const t of bundle.scene.texts) {
     scene.add(label.mesh);
 }
 
+// The scene parks the value-axis (bar height) labels out past the back wall, where they only
+// read from behind the plot. Stand them along the front-left vertical edge instead, at the
+// heights their values map to, turned toward the viewer every frame.
+const valueAxisLabels = [];
+(bundle.scene.bindings.axisLabels?.numbers[2] ?? []).forEach((id, j, ids) => {
+    const label = labels.get(id);
+    if (!label) return;
+    label.def = { ...label.def, align: { h: 4, v: 512 }, size: [0, 0], pivot: [0.5, 0.5] };
+    label.text = null;
+    label.set(label.def.text);                          // re-lay out: right edge on the axis
+    label.mesh.matrixAutoUpdate = true;
+    label.mesh.position.copy(fromUnity(-GRID_WIDTH / 2 - 0.15, j * VERTICAL_SCALE / (ids.length - 1), -GRID_WIDTH / 2));
+    valueAxisLabels.push(label.mesh);
+});
+
 // ─── ROOT VR server payload (port of ROOT_pipe_client.cs) ──────────────────
 function parseROOT(text) {
     const L = text.split(/\r?\n/);
@@ -839,6 +854,8 @@ renderer.setAnimationLoop(now => {
     applyZoom();
     sortInstances();
     hoverLabel.mesh.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion()));
+    camera.getWorldPosition(_camPos);
+    for (const m of valueAxisLabels) m.rotation.y = Math.atan2(_camPos.x - m.position.x, _camPos.z - m.position.z);
 
     const d = state.data;
     const wText = state.wAxis.length ? `W = ${fmtW(state.wAxis[state.wIndex])}  (${state.wIndex + 1}/${state.wAxis.length})` : '';
