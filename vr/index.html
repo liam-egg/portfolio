@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0a0a0a">
+<title>VR — Liam Eggleston</title>
+<meta name="description" content="WebXR visuals you can open in the browser or step inside with a headset.">
+<style>
+    @font-face {
+        font-family: 'Aktura';
+        src: url('/src/Aktura.woff2') format('woff2');
+    }
+    @font-face {
+        font-family: 'Fira Code';
+        src: url('/src/FiraCode-VariableFont_wght.ttf') format('truetype');
+    }
+    * { box-sizing: border-box; }
+    html, body {
+        margin: 0;
+        min-height: 100%;
+        background: #0a0a0a;
+        color: #f2f2f2;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 64px 16px;
+    }
+    header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 40px;
+    }
+    a.logo {
+        font-family: 'Aktura', sans-serif;
+        font-size: 28px;
+        color: #f2f2f2;
+        text-decoration: none;
+    }
+    header span {
+        font-family: 'Fira Code', ui-monospace, monospace;
+        color: #a1a1a1;
+        font-size: 14px;
+    }
+    h1 {
+        margin: 0 0 8px;
+        font-size: 40px;
+        letter-spacing: -1px;
+    }
+    .lede {
+        margin: 0 0 32px;
+        color: #a1a1a1;
+        font-size: 16px;
+        line-height: 1.5;
+    }
+    ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 12px;
+    }
+    li a {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px 16px;
+        padding: 18px 20px;
+        border: 1px solid #262626;
+        border-radius: 12px;
+        background: #111;
+        color: inherit;
+        text-decoration: none;
+        transition: border-color 0.15s, background 0.15s;
+    }
+    li a:hover, li a:focus-visible {
+        border-color: #e4ad55;
+        background: #151310;
+        outline: none;
+    }
+    li h2 {
+        margin: 0;
+        font-size: 18px;
+    }
+    li .path {
+        font-family: 'Fira Code', ui-monospace, monospace;
+        font-size: 13px;
+        color: #e4ad55;
+        align-self: center;
+    }
+    li p {
+        grid-column: 1 / -1;
+        margin: 0;
+        color: #a1a1a1;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+    .note {
+        margin-top: 32px;
+        color: #8a8a8a;
+        font-size: 13px;
+        line-height: 1.5;
+    }
+    .back {
+        display: inline-block;
+        margin-top: 24px;
+        color: #e4ad55;
+        text-decoration: none;
+        font-weight: 600;
+    }
+    .back:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<main>
+    <header>
+        <a class="logo" href="/">liam eggleston</a>
+        <span>~/vr</span>
+    </header>
+    <h1>VR visuals</h1>
+    <p class="lede">Interactive scenes that run in the browser. On a WebXR headset, open one and press <em>Enter VR</em> to step inside.</p>
+    <ul id="visuals"></ul>
+    <p class="note">Desktop controls: WASD to move, drag to look. Each page lists its own controls.</p>
+    <a class="back" href="/">Back home</a>
+</main>
+<script>
+    // Add an entry here when a new visual lands in /vr.
+    const VISUALS = [
+        {
+            href: 'mandelbulb.html',
+            title: 'Mandelbulb',
+            description: 'A raymarched, time-mutating Mandelbulb fractal. Scrub, rewind and fast-forward its evolution from inside it.',
+        },
+        {
+            href: 'root.html',
+            title: 'ROOT VR',
+            description: "UCLA's ROOT VR plotting client, its Unity shaders compiled to WebGL. Walk around 2D histograms, scatter graphs and 4D VRGraph3D plots, or drop in your own ROOT data.",
+        },
+    ];
+    document.getElementById('visuals').replaceChildren(...VISUALS.map(v => {
+        const li = document.createElement('li');
+        const a = document.createElement('a');
+        a.href = v.href;
+        const h2 = document.createElement('h2');
+        h2.textContent = v.title;
+        const path = document.createElement('span');
+        path.className = 'path';
+        path.textContent = `/vr/${v.href} →`;
+        const p = document.createElement('p');
+        p.textContent = v.description;
+        a.append(h2, path, p);
+        li.append(a);
+        return li;
+    }));
+</script>
+<!-- Vercel Web Analytics -->
+<script defer src="https://cdn.vercel-insights.com/v1/script.js"></script>
+</body>
+</html>
