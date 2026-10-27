@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#050a14">
+    <title>ROOT VR</title>
+    <meta name="description" content="UCLA's ROOT VR plotting client — its Unity shaders compiled to WebGL so ROOT histograms and graphs can be explored in the browser or a WebXR headset.">
+    <style>
+        :root {
+            --bg: #050a14;
+            --fg: #e8eef6;
+            --muted: #8a9ab0;
+            --accent: #8ccfff;
+            --panel: rgba(8, 14, 26, 0.72);
+            --border: rgba(255, 255, 255, 0.12);
+        }
+        html, body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--fg);
+            font-family: ui-monospace, "Fira Code", Menlo, Consolas, monospace;
+        }
+        canvas { display: block; touch-action: none; }
+        .box {
+            position: fixed;
+            box-sizing: border-box;
+            max-width: calc(100vw - 32px);
+            padding: 12px 14px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            font-size: 12px;
+            line-height: 1.55;
+            backdrop-filter: blur(6px);
+        }
+        #hud { top: 16px; left: 16px; user-select: none; pointer-events: none; }
+        #hud h1 { margin: 0 0 6px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; }
+        #hud .stats { color: var(--accent); margin-bottom: 6px; white-space: pre; }
+        #hud .keys { color: var(--muted); }
+        #hud kbd {
+            color: var(--fg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0 4px;
+            font-family: inherit;
+        }
+        #hud.hidden .keys { display: none; }
+        #controls { bottom: 16px; left: 16px; display: grid; gap: 8px; min-width: 260px; }
+        #controls label { color: var(--muted); }
+        #controls select, #controls button, #controls input[type=range] { font: inherit; color: var(--fg); }
+        #controls select, #controls button {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 4px 8px;
+            cursor: pointer;
+        }
+        #controls select option { background: var(--bg); }
+        #controls button:hover, #controls select:hover { border-color: var(--accent); }
+        #controls button:disabled { opacity: 0.5; cursor: default; }
+        #controls .row { display: flex; gap: 8px; align-items: center; }
+        #controls .row > select { flex: 1; min-width: 0; }
+        #controls input[type=range] { flex: 1; accent-color: var(--accent); }
+        #w-row[hidden] { display: none; }
+        #w-label { color: var(--accent); min-width: 7ch; text-align: right; }
+        #error { color: #ff9c8a; white-space: pre-wrap; }
+        #error:empty { display: none; }
+        #drop {
+            position: fixed;
+            inset: 0;
+            display: none;
+            place-items: center;
+            background: rgba(5, 10, 20, 0.8);
+            border: 2px dashed var(--accent);
+            font-size: 14px;
+            color: var(--accent);
+            pointer-events: none;
+        }
+        body.dragging #drop { display: grid; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+<div id="hud" class="box">
+    <h1 id="title">ROOT VR · WebXR</h1>
+    <div class="stats" id="stats">loading…</div>
+    <div class="keys">
+        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move &nbsp; <kbd>Q</kbd>/<kbd>E</kbd> down/up &nbsp; <kbd>Shift</kbd> fast<br>
+        Drag to look &nbsp; hover a bin for its errors<br>
+        <kbd>←</kbd>/<kbd>→</kbd> step w &nbsp; <kbd>Space</kbd> play w &nbsp; <kbd>N</kbd> next dataset<br>
+        <kbd>R</kbd> reset view &nbsp; <kbd>H</kbd> hide help<br>
+        VR: left stick move, right stick ↕ height · ↔ step w,<br>
+        right trigger ray hover, <kbd>A</kbd> play w, <kbd>B</kbd> next dataset<br>
+        Drop a <code>/get_data</code> dump from a ROOT VR server to plot it<br>
+        <span id="credit">ROOT VR by UCLA "VR for Science"</span>
+    </div>
+</div>
+
+<div id="controls" class="box">
+    <div class="row">
+        <select id="dataset" aria-label="Dataset"></select>
+        <button id="open">Open…</button>
+        <input id="file" type="file" accept=".txt,text/plain" hidden>
+    </div>
+    <div class="row" id="w-row" hidden>
+        <label for="w-slider">w</label>
+        <input id="w-slider" type="range" min="0" max="0" step="1" value="0">
+        <span id="w-label"></span>
+        <button id="w-play">▶</button>
+    </div>
+    <div id="error"></div>
+</div>
+<div id="drop">Drop a ROOT VR data dump</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+
+// ─── Bundle ─────────────────────────────────────────────────────────────────
+// root-vr/<project>.json is produced by `node tools/compile-root-vr.mjs <unity-project>`.
+const params = new URLSearchParams(location.search);
+const project = (params.get('project') || 'ROOT_VR-3DGraph').replace(/[^\w.-]/g, '');
+const bundle = await fetch(`root-vr/${project}.json`).then(r => {
+    if (!r.ok) throw new Error(`root-vr/${project}.json: HTTP ${r.status}`);
+    return r.json();
+}).catch(e => { document.getElementById('stats').textContent = `Could not load bundle\n${e.message}`; throw e; });
+
+const LINEAR = bundle.colorSpace === 'linear';
+const GEN = bundle.scene.bindings.generator?.constants ?? {};
+const GRID_WIDTH = GEN.GRID_WIDTH ?? 10;
+const VERTICAL_SCALE = GEN.VERTICAL_SCALE ?? 5;
+const SMALL_NUMBER = GEN.SMALL_NUMBER ?? 0.0001;
+const POINT_SIZE = GEN.graph_point_size ?? 0.05;
+document.getElementById('title').textContent = `${bundle.project.replace(/[-_]/g, ' ')} · WebXR`;
+if (bundle.version) document.getElementById('credit').textContent += ` · v${bundle.version}`;
+
+// ─── Renderer / rig ─────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const cam = bundle.scene.bindings.camera ?? { position: [0, 5, 17.5], forward: [0, 0, -1], fov: 60, background: null };
+const scene = new THREE.Scene();
+scene.background = cam.background
+    ? new THREE.Color().setRGB(...cam.background.slice(0, 3), THREE.SRGBColorSpace)
+    : new THREE.Color(0x050a14);
+
+const rig = new THREE.Group();
+scene.add(rig);
+const camera = new THREE.PerspectiveCamera(cam.fov, window.innerWidth / window.innerHeight, 0.05, 500);
+rig.add(camera);
+
+let yaw = 0, pitch = 0;
+function resetView() {
+    rig.position.set(0, 0, 0);
+    camera.position.fromArray(cam.position);
+    // Start from the scene camera's position, aimed at the middle of the plot volume.
+    const f = new THREE.Vector3(0, VERTICAL_SCALE / 2, 0).sub(camera.position).normalize();
+    yaw = Math.atan2(-f.x, -f.z);
+    pitch = Math.asin(THREE.MathUtils.clamp(f.y, -1, 1));
+}
+resetView();
+
+// Unity (left-handed) <-> three (right-handed): mirror z.
+const fromUnity = (x, y, z) => new THREE.Vector3(x, y, -z);
+
+// ─── Compiled materials ─────────────────────────────────────────────────────
+const SIDE = { back: THREE.FrontSide, front: THREE.BackSide, off: THREE.DoubleSide };
+function toUniform(type, v) {
+    if (type === 'float') return v;
+    const c = new THREE.Color(v[0], v[1], v[2]);
+    if (type === 'color' && LINEAR) c.convertSRGBToLinear();     // Unity linearises Color properties
+    return new THREE.Vector4(c.r, c.g, c.b, v[3]);
+}
+function shaderMaterial(shaderName, values = {}) {
+    const s = bundle.shaders[shaderName];
+    const uniforms = {};
+    for (const [name, prop] of Object.entries(s.properties)) {
+        if (prop.value === null) continue;
+        uniforms[name] = { value: toUniform(prop.type, values[name] ?? prop.value) };
+    }
+    return new THREE.ShaderMaterial({
+        name: shaderName,
+        glslVersion: THREE.GLSL3,
+        vertexShader: s.vertexShader,
+        fragmentShader: s.fragmentShader,
+        uniforms,
+        defines: LINEAR ? { UNITY_LINEAR: '' } : {},
+        side: SIDE[s.state.cull] ?? THREE.FrontSide,
+        transparent: !!s.state.blend || s.state.queue === 'Transparent',
+        depthWrite: s.state.zwrite,
+    });
+}
+const materials = {};
+function material(name) {
+    if (!name) return new THREE.MeshBasicMaterial({ color: 0xffffff });
+    if (materials[name]) return materials[name];
+    const m = bundle.materials[name];
+    if (m?.shader) return (materials[name] = shaderMaterial(m.shader, m.values));
+    const c = m?.color ?? [1, 1, 1, 1];
+    return (materials[name] = new THREE.MeshBasicMaterial({
+        color: new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace),
+        transparent: c[3] < 1, opacity: c[3], depthWrite: c[3] >= 1,
+    }));
+}
+
+// ─── Scene: meshes, line renderers, 3D text ─────────────────────────────────
+// Unity built-in primitives, in three's frame (mirroring z leaves them unchanged).
+const PRIMITIVES = {
+    Plane: () => new THREE.PlaneGeometry(10, 10).rotateX(-Math.PI / 2),
+    Cube: () => new THREE.BoxGeometry(1, 1, 1),
+    Quad: () => new THREE.PlaneGeometry(1, 1),
+    Sphere: () => new THREE.SphereGeometry(0.5, 32, 16),
+    Cylinder: () => new THREE.CylinderGeometry(0.5, 0.5, 2, 32),
+    Capsule: () => new THREE.CapsuleGeometry(0.5, 1, 8, 16),
+};
+const placed = (obj, m) => { obj.matrixAutoUpdate = false; obj.matrix.fromArray(m); return obj; };
+
+for (const m of bundle.scene.meshes) {
+    const mesh = placed(new THREE.Mesh(PRIMITIVES[m.mesh](), material(m.material)), m.matrix);
+    mesh.name = m.name;
+    scene.add(mesh);
+}
+
+const lineMat = new Map();
+for (const l of bundle.scene.lines) {
+    const M = new THREE.Matrix4().fromArray(l.matrix);
+    const pts = l.positions.map(p => { const v = new THREE.Vector3(...p); return l.worldSpace ? v : v.applyMatrix4(M); });
+    if (l.loop && pts.length > 2) pts.push(pts[0]);
+    const key = l.color.join();
+    if (!lineMat.has(key)) lineMat.set(key, new THREE.MeshBasicMaterial({
+        color: new THREE.Color().setRGB(l.color[0], l.color[1], l.color[2], THREE.SRGBColorSpace),
+    }));
+    for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i], b = pts[i + 1], len = a.distanceTo(b);
+        if (len < 1e-6) continue;
+        const seg = new THREE.Mesh(new THREE.CylinderGeometry(l.width / 2, l.width / 2, len, 8, 1, true), lineMat.get(key));
+        seg.position.copy(a).add(b).multiplyScalar(0.5);
+        seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+        scene.add(seg);
+    }
+}
+
+// TextMeshPro: font size is in tenths of a world unit; the text sits inside its RectTransform box.
+const PX_PER_EM = 96;
+const H_ALIGN = { 1: 0, 2: 0.5, 4: 1, 8: 0, 16: 0, 32: 0.5 };
+const V_ALIGN = { 256: 0, 512: 0.5, 1024: 1, 2048: 0.5, 4096: 0.5, 8192: 0 };
+function textTexture(text, color, bold = false) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const font = `${bold ? '600 ' : ''}${PX_PER_EM}px ui-sans-serif, system-ui, "Segoe UI", sans-serif`;
+    const lines = String(text).split('\n');
+    ctx.font = font;
+    const w = Math.max(1, ...lines.map(s => ctx.measureText(s).width));
+    canvas.width = Math.ceil(w + PX_PER_EM * 0.2);
+    canvas.height = Math.ceil(lines.length * PX_PER_EM * 1.2);
+    ctx.font = font;
+    ctx.fillStyle = `rgba(${color.slice(0, 3).map(c => Math.round(c * 255)).join(',')},${color[3]})`;
+    ctx.textBaseline = 'middle';
+    lines.forEach((s, i) => ctx.fillText(s, PX_PER_EM * 0.1, (i + 0.5) * PX_PER_EM * 1.2));
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    return { tex, aspectW: canvas.width / PX_PER_EM, aspectH: canvas.height / PX_PER_EM };
+}
+class Label {
+    constructor(def) {
+        this.def = def;
+        this.mesh = placed(new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({
+            transparent: true, depthWrite: false, side: THREE.DoubleSide,
+        })), def.matrix);
+        this.mesh.renderOrder = 2;
+        this.set(def.text);
+    }
+    set(text) {
+        if (text === this.text) return;
+        this.text = text;
+        const { def, mesh } = this;
+        const em = def.fontSize * 0.1;
+        const { tex, aspectW, aspectH } = textTexture(text, def.color);
+        const w = aspectW * em, h = aspectH * em;
+        const [bw, bh] = def.size, [px, py] = def.pivot;
+        const ha = H_ALIGN[def.align.h & 63] ?? 0.5, va = V_ALIGN[def.align.v] ?? 0.5;
+        const x = -px * bw + ha * (bw - w) + w / 2;
+        const y = (1 - py) * bh - va * (bh - h) - h / 2;
+        mesh.geometry.dispose();
+        mesh.geometry = new THREE.PlaneGeometry(w, h).translate(x, y, 0);
+        mesh.material.map?.dispose();
+        mesh.material.map = tex;
+        mesh.material.needsUpdate = true;
+    }
+}
+const labels = new Map();
+for (const t of bundle.scene.texts) {
+    const label = new Label(t);
+    labels.set(t.id, label);
+    scene.add(label.mesh);
+}
+
+// ─── ROOT VR server payload (port of ROOT_pipe_client.cs) ──────────────────
+function parseROOT(text) {
+    const L = text.split(/\r?\n/);
+    let i = 0;
+    const line = () => { if (i >= L.length) throw new Error('unexpected end of data'); return L[i++]; };
+    const f = () => { const v = parseFloat(line()); if (Number.isNaN(v)) throw new Error(`line ${i}: expected a number`); return v; };
+    const d = { type: line().trim(), values: [], errs: [], max: -Infinity };
+    d.titleX = line(); d.titleY = line();
+    switch (d.type) {
+        case 'TH1':
+            d.nx = f(); d.xmin = f(); d.xmax = f();
+            d.ny = -1; d.ymin = -0.25; d.ymax = 0.25;   // thin enough to be 1D, thick enough to be seen
+            for (let k = 0; k < d.nx; k++) { const v = f(); d.values.push(v); d.max = Math.max(d.max, v); }
+            break;
+        case 'TH2': {
+            d.nx = f(); d.xmin = f(); d.xmax = f(); d.ny = f();
+            const a = f(), b = f();                      // VRHist.cxx writes ymin then ymax
+            d.ymin = Math.min(a, b); d.ymax = Math.max(a, b);
+            for (let k = 0; k < d.nx * d.ny; k++) {
+                const v = f();
+                const m = line().match(/^err:([^l]+)l([^u]+)u/);
+                d.errs.push(m ? [parseFloat(m[1]), parseFloat(m[2])] : [0, 0]);
+                d.values.push(v); d.max = Math.max(d.max, v);
+            }
+            break;
+        }
+        case 'TGraph':
+            d.nx = f(); d.xmin = f(); d.xmax = f(); d.ymin = f(); d.ymax = f();
+            for (let k = 0; k < d.nx; k++) {
+                const x = f(), y = f(), z = f();
+                d.values.push(x, z, y);                  // horiz, vert, other horiz
+                d.max = Math.max(d.max, z);
+            }
+            break;
+        case 'TGraph3':
+            d.titleZ = line();
+            d.nx = f(); d.xmin = f(); d.xmax = f(); d.ymin = f(); d.ymax = f();
+            d.zmin = f(); d.zmax = f(); d.wmin = f(); d.wmax = f();
+            d.max = d.zmax;
+            for (let k = 0; k < d.nx; k++) {
+                const x = f(), y = f(), z = f(), w = f();
+                d.values.push(x, z, y, w);
+            }
+            break;
+        default:
+            throw new Error(`Unknown ROOT VR object type "${d.type}" (expected TH1, TH2, TGraph or TGraph3)`);
+    }
+    if (!(d.max > 0)) d.max = 1;
+    return d;
+}
+
+// ─── Data visual (port of gpu_inst_script.cs, drawn with the compiled Data shader) ──
+const gen = bundle.scene.bindings.generator;
+const dataGeometry = new THREE.InstancedBufferGeometry().copy(PRIMITIVES[gen?.mesh ?? 'Cube']());
+const dataMaterial = gen?.material ? material(gen.material) : null;
+const transformAttr = Object.keys(bundle.shaders[bundle.materials[gen?.material]?.shader]?.instanceAttributes ?? {})
+    .find(a => /transform/i.test(a)) ?? 'a_Transforms';
+const colorAttr = Object.keys(bundle.shaders[bundle.materials[gen?.material]?.shader]?.instanceAttributes ?? {})
+    .find(a => /colou?r/i.test(a)) ?? 'a_Colors';
+const dataMesh = new THREE.Mesh(dataGeometry, dataMaterial ?? new THREE.MeshBasicMaterial());
+dataMesh.frustumCulled = false;
+dataMesh.visible = false;
+scene.add(dataMesh);
+
+const state = { data: null, points: [], colors: null, wAxis: [], wIndex: 0, hover: -1, playing: null };
+
+// Uncertainty readout that floats above the hovered bin
+const hoverLabel = new Label({
+    id: 'hover', text: '', fontSize: 3, color: [1, 1, 1, 1], align: { h: 2, v: 1024 }, size: [0, 0], pivot: [0.5, 0], matrix: new THREE.Matrix4().toArray(),
+});
+hoverLabel.mesh.matrixAutoUpdate = true;
+hoverLabel.mesh.visible = false;
+scene.add(hoverLabel.mesh);
+
+function graphPoint(d, k) {
+    const G = GRID_WIDTH;
+    return [
+        (d.values[k] - d.xmin) / (d.xmax - d.xmin) * G - G / 2,
+        d.values[k + 1] / d.max * VERTICAL_SCALE,
+        (d.values[k + 2] - d.ymin) / (d.ymax - d.ymin) * G - G / 2,
+    ];
+}
+function buildPoints() {
+    const d = state.data, G = GRID_WIDTH, pts = [];
+    switch (d.type) {
+        case 'TH1':
+            for (let i = 0; i < d.nx; i++) pts.push([-G / 2 + (i + 0.5) * G / d.nx, d.values[i] / d.max * VERTICAL_SCALE, 0]);
+            break;
+        case 'TH2':
+            for (let i = 0; i < d.nx; i++) for (let j = 0; j < d.ny; j++)
+                pts.push([-G / 2 + (i + 0.5) * G / d.nx, d.values[i * d.ny + j] / d.max * VERTICAL_SCALE, -G / 2 + (j + 0.5) * G / d.ny]);
+            break;
+        case 'TGraph':
+            for (let k = 0; k < d.nx * 3; k += 3) pts.push(graphPoint(d, k));
+            break;
+        case 'TGraph3': {
+            const w = state.wAxis[state.wIndex];
+            for (let k = 0; k < d.nx * 4; k += 4) if (d.values[k + 3] === w) pts.push(graphPoint(d, k));
+            break;
+        }
+    }
+    state.points = pts;
+}
+function uploadPoints() {
+    const d = state.data, n = state.points.length;
+    const G = GRID_WIDTH;
+    const xf = new Float32Array(n * 16), colors = new Float32Array(n * 4);
+    state.points.forEach(([x, y, z], i) => {
+        let pos, scale;
+        if (d.type === 'TH1') { scale = [G / d.nx, Math.abs(y), SMALL_NUMBER]; pos = [x, y / 2, z]; }
+        else if (d.type === 'TH2') { scale = [G / d.nx, Math.abs(y), G / d.ny]; pos = [x, y / 2, z]; }
+        else { scale = [POINT_SIZE, POINT_SIZE, POINT_SIZE]; pos = [x, y, z]; }
+        // Matrix4x4.TRS(pos, identity, scale), converted to three's frame
+        xf.set([scale[0], 0, 0, 0, 0, scale[1], 0, 0, 0, 0, scale[2], 0, pos[0], pos[1], -pos[2], 1], i * 16);
+        colors.set([y, y / d.max, 0.5, 0.85], i * 4);
+    });
+    state.colors = colors.slice();
+    dataGeometry.setAttribute(transformAttr, new THREE.InstancedBufferAttribute(xf, 16));
+    dataGeometry.setAttribute(colorAttr, new THREE.InstancedBufferAttribute(colors, 4));
+    dataGeometry.instanceCount = n;
+    dataMesh.visible = n > 0;
+    state.hover = -1;
+    hoverLabel.mesh.visible = false;
+}
+
+// Axis labels (port of axis_handler.cs)
+function roundToOrderMinus2(range, value) {
+    const n = Math.floor(Math.log10(range || 1));
+    const step = Math.pow(10, n - 2);
+    return (Math.round(value / step) * step).toFixed(Math.max(0, -(n - 2)));
+}
+function updateAxisLabels() {
+    const b = bundle.scene.bindings.axisLabels, d = state.data;
+    if (!b) return;
+    const axes = [[d.xmin, d.xmax], [d.ymin, d.ymax], [0, d.max]];
+    b.numbers.forEach((ids, a) => {
+        const [lo, hi] = axes[a] ?? [0, 1];
+        const range = Math.abs(hi - lo);
+        ids.forEach((id, j) => labels.get(id)?.set(roundToOrderMinus2(range, j * range / (ids.length - 1) + lo)));
+    });
+    [d.titleX, d.titleY].forEach((t, a) => labels.get(b.units[a])?.set(t || ' '));
+}
+
+// Summary statistics (port of populate_statistics, over the plotted points)
+function statistics() {
+    const p = state.points, n = p.length || 1;
+    const mx = p.reduce((s, q) => s + q[0], 0) / n, my = p.reduce((s, q) => s + q[2], 0) / n;
+    const sx = Math.sqrt(p.reduce((s, q) => s + (q[0] - mx) ** 2, 0) / n);
+    const sy = Math.sqrt(p.reduce((s, q) => s + (q[2] - my) ** 2, 0) / n);
+    return { mx, my, sx, sy };
+}
+
+// ─── Datasets ───────────────────────────────────────────────────────────────
+const datasetSel = document.getElementById('dataset');
+const errorEl = document.getElementById('error');
+const wRow = document.getElementById('w-row');
+const wSlider = document.getElementById('w-slider');
+const wLabel = document.getElementById('w-label');
+const wPlay = document.getElementById('w-play');
+const datasets = bundle.examples.map(e => ({ name: e.name, text: e.data }));
+
+function refreshDatasetList(selected) {
+    datasetSel.replaceChildren(...datasets.map((d, i) => new Option(d.name, i, false, i === selected)));
+}
+function loadDataset(index) {
+    const ds = datasets[index];
+    try {
+        stopPlay();
+        state.data = parseROOT(ds.text);
+        state.wAxis = state.data.type === 'TGraph3'
+            ? [...new Set(Array.from({ length: state.data.nx }, (_, k) => state.data.values[k * 4 + 3]))]
+            : [];
+        state.wIndex = 0;
+        wRow.hidden = state.data.type !== 'TGraph3';
+        wSlider.max = Math.max(0, state.wAxis.length - 1);
+        wSlider.value = 0;
+        buildPoints();
+        uploadPoints();
+        updateAxisLabels();
+        updateWLabel();
+        errorEl.textContent = '';
+        state.datasetIndex = index;
+        datasetSel.value = index;
+    } catch (e) {
+        errorEl.textContent = `${ds.name}: ${e.message}`;
+    }
+}
+function addDataset(name, text) {
+    datasets.push({ name, text });
+    refreshDatasetList(datasets.length - 1);
+    loadDataset(datasets.length - 1);
+}
+function setW(index) {
+    if (!state.wAxis.length) return;
+    state.wIndex = THREE.MathUtils.clamp(index, 0, state.wAxis.length - 1);
+    wSlider.value = state.wIndex;
+    buildPoints();
+    uploadPoints();
+    updateWLabel();
+}
+const fmtW = w => +w.toPrecision(6);
+function updateWLabel() { wLabel.textContent = state.wAxis.length ? `W = ${fmtW(state.wAxis[state.wIndex])}` : ''; }
+function stopPlay() { clearInterval(state.playing); state.playing = null; wPlay.disabled = false; }
+function play() {
+    if (state.playing || !state.wAxis.length) return;
+    let i = 0;
+    wPlay.disabled = true;
+    setW(0);
+    state.playing = setInterval(() => { if (++i >= state.wAxis.length) stopPlay(); else setW(i); }, 100);
+}
+const nextDataset = () => loadDataset((state.datasetIndex + 1) % datasets.length);
+
+datasetSel.addEventListener('change', () => loadDataset(+datasetSel.value));
+wSlider.addEventListener('input', () => setW(+wSlider.value));
+wPlay.addEventListener('click', play);
+const fileInput = document.getElementById('file');
+document.getElementById('open').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', async () => {
+    for (const f of fileInput.files) addDataset(f.name, await f.text());
+    fileInput.value = '';
+});
+window.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging'); });
+window.addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging'); });
+window.addEventListener('drop', async e => {
+    e.preventDefault();
+    document.body.classList.remove('dragging');
+    for (const f of e.dataTransfer.files) addDataset(f.name, await f.text());
+});
+
+const firstExample = THREE.MathUtils.clamp(parseInt(params.get('example'), 10) || 0, 0, datasets.length - 1);
+refreshDatasetList(firstExample);
+loadDataset(firstExample);
+const dataUrl = params.get('data');
+if (dataUrl) {
+    fetch(dataUrl).then(r => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then(t => addDataset(dataUrl.split('/').pop() || 'data', t))
+        .catch(e => { errorEl.textContent = `Could not fetch ${dataUrl}: ${e.message}`; });
+}
+
+// ─── Hover (port of nearestPoint / Update in gpu_inst_script.cs) ────────────
+const _box = new THREE.Box3(), _hit = new THREE.Vector3();
+function nearestBin(ray) {
+    const d = state.data;
+    if (!d || (d.type !== 'TH1' && d.type !== 'TH2')) return -1;
+    let best = -1, bestDist = Infinity;
+    const G = GRID_WIDTH;
+    state.points.forEach(([x, y, z], i) => {
+        const hx = (G / 2) / d.nx, hz = d.type === 'TH2' ? (G / 2) / d.ny : 0.25;
+        _box.min.copy(fromUnity(x - hx, Math.min(0, y), z + hz));
+        _box.max.copy(fromUnity(x + hx, Math.max(0, y), z - hz));
+        if (ray.intersectBox(_box, _hit)) {
+            const dist = _hit.distanceTo(ray.origin);
+            if (dist < bestDist) { bestDist = dist; best = i; }
+        }
+    });
+    return best;
+}
+function setHover(i) {
+    if (i === state.hover) return;
+    const attr = dataGeometry.getAttribute(colorAttr);
+    if (state.hover >= 0) attr.array.set(state.colors.subarray(state.hover * 4, state.hover * 4 + 4), state.hover * 4);
+    state.hover = i;
+    if (i >= 0) {
+        attr.array.set([state.colors[i * 4], state.colors[i * 4 + 1], 1, 1], i * 4);
+        const d = state.data, [x, y, z] = state.points[i];
+        const value = d.values[i];
+        const err = d.errs[i];
+        hoverLabel.set(err ? `${+value.toPrecision(6)}\n+${+err[1].toPrecision(4)} / −${+err[0].toPrecision(4)}` : `${+value.toPrecision(6)}`);
+        hoverLabel.mesh.position.copy(fromUnity(x, Math.max(0, y) + 0.3, z));
+        hoverLabel.mesh.visible = true;
+    } else hoverLabel.mesh.visible = false;
+    attr.needsUpdate = true;
+}
+
+// ─── Input ──────────────────────────────────────────────────────────────────
+const DEADZONE = 0.15;
+const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
+const input = { moveX: 0, moveZ: 0, moveY: 0, fast: false };
+
+const controllerModels = new XRControllerModelFactory();
+const gamepads = { left: null, right: null };
+const prevButtons = { a: false, b: false };
+let rightRay = null;
+let wStickArmed = true;
+
+for (let i = 0; i < 2; i++) {
+    const grip = renderer.xr.getControllerGrip(i);
+    grip.add(controllerModels.createControllerModel(grip));
+    rig.add(grip);
+    const ray = renderer.xr.getController(i);
+    const beam = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
+        new THREE.LineBasicMaterial({ color: 0x8ccfff, transparent: true, opacity: 0.6 }),
+    );
+    beam.scale.z = 30;
+    beam.visible = false;
+    ray.add(beam);
+    rig.add(ray);
+
+    grip.addEventListener('connected', e => {
+        const hand = e.data.handedness;
+        gamepads[hand] = e.data.gamepad || null;
+        if (hand === 'right') { grip.add(vrPanel.mesh); rightRay = ray; beam.visible = true; }
+    });
+    grip.addEventListener('disconnected', e => {
+        const hand = e.data.handedness;
+        gamepads[hand] = null;
+        if (hand === 'right') { grip.remove(vrPanel.mesh); rightRay = null; beam.visible = false; }
+    });
+}
+
+function stick(gp) {
+    if (!gp) return [0, 0];
+    const o = gp.axes.length >= 4 ? 2 : 0;
+    return [dz(gp.axes[o] || 0), dz(gp.axes[o + 1] || 0)];
+}
+
+const _ray = new THREE.Ray(), _m = new THREE.Matrix4();
+function pollXRInput() {
+    const [lx, ly] = stick(gamepads.left);
+    const [rx, ry] = stick(gamepads.right);
+    input.moveX = lx;
+    input.moveZ = ly;
+    input.moveY = -ry;                                  // vertical_motion.cs: raise/lower the rig
+    input.fast = false;
+
+    if (Math.abs(rx) > 0.6) { if (wStickArmed) { setW(state.wIndex + Math.sign(rx)); wStickArmed = false; } }
+    else wStickArmed = true;
+
+    const btn = gamepads.right?.buttons || [];
+    const a = !!btn[4]?.pressed, b = !!btn[5]?.pressed;
+    if (a && !prevButtons.a) play();
+    if (b && !prevButtons.b) nextDataset();
+    prevButtons.a = a; prevButtons.b = b;
+
+    if (rightRay) {
+        _m.identity().extractRotation(rightRay.matrixWorld);
+        _ray.origin.setFromMatrixPosition(rightRay.matrixWorld);
+        _ray.direction.set(0, 0, -1).applyMatrix4(_m);
+        setHover(nearestBin(_ray));
+    }
+}
+
+const keys = new Set();
+window.addEventListener('keydown', e => {
+    if (e.target.closest?.('select, input, button') && e.code !== 'Escape') return;
+    if (e.repeat) return;
+    keys.add(e.code);
+    if (e.code === 'Space') { play(); e.preventDefault(); }
+    if (e.code === 'ArrowRight') { setW(state.wIndex + 1); e.preventDefault(); }
+    if (e.code === 'ArrowLeft') { setW(state.wIndex - 1); e.preventDefault(); }
+    if (e.code === 'KeyN') nextDataset();
+    if (e.code === 'KeyR') resetView();
+    if (e.code === 'KeyH') document.getElementById('hud').classList.toggle('hidden');
+});
+window.addEventListener('keyup', e => keys.delete(e.code));
+window.addEventListener('blur', () => keys.clear());
+
+let drag = null;
+const pointer = new THREE.Vector2(), raycaster = new THREE.Raycaster();
+let pointerInside = false;
+const el = renderer.domElement;
+el.addEventListener('contextmenu', e => e.preventDefault());
+el.addEventListener('pointerdown', e => {
+    drag = { x: e.clientX, y: e.clientY };
+    el.setPointerCapture(e.pointerId);
+});
+el.addEventListener('pointermove', e => {
+    pointer.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    pointerInside = true;
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.x = e.clientX; drag.y = e.clientY;
+    yaw -= dx * 0.004;
+    pitch = THREE.MathUtils.clamp(pitch - dy * 0.004, -1.5, 1.5);
+});
+el.addEventListener('pointerleave', () => { pointerInside = false; });
+const endDrag = () => { drag = null; };
+el.addEventListener('pointerup', endDrag);
+el.addEventListener('pointercancel', endDrag);
+
+function pollDesktopInput() {
+    const k = c => (keys.has(c) ? 1 : 0);
+    input.moveX = k('KeyD') - k('KeyA');
+    input.moveZ = k('KeyS') - k('KeyW');
+    input.moveY = k('KeyE') - k('KeyQ');
+    input.fast = keys.has('ShiftLeft') || keys.has('ShiftRight');
+    if (pointerInside && !drag) {
+        raycaster.setFromCamera(pointer, camera);
+        setHover(nearestBin(raycaster.ray));
+    }
+}
+
+const MOVE_SPEED = 4;
+const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+function applyMovement(dt) {
+    camera.getWorldDirection(fwd);
+    fwd.y = 0;
+    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+    fwd.normalize();
+    right.crossVectors(fwd, up);
+    const step = MOVE_SPEED * (input.fast ? 3 : 1) * dt;
+    const target = renderer.xr.isPresenting ? rig.position : camera.position;
+    target.addScaledVector(right, input.moveX * step);
+    target.addScaledVector(fwd, -input.moveZ * step);
+    target.addScaledVector(up, input.moveY * step);
+}
+
+// Grid zoom scripts (x_zoom / vert_zoom / z_zoom): layer opacity follows the camera.
+const _camPos = new THREE.Vector3();
+function applyZoom() {
+    camera.getWorldPosition(_camPos);
+    const unity = { x: _camPos.x, y: _camPos.y, z: -_camPos.z };
+    for (const z of bundle.scene.bindings.zoom) {
+        const mat = material(z.material);
+        for (const l of z.layers) {
+            if (mat.uniforms?.[l.uniform]) mat.uniforms[l.uniform].value = Math.max(0, l.max + z.sign * unity[z.axis]);
+        }
+    }
+}
+
+renderer.xr.addEventListener('sessionstart', () => {
+    // Stand where the scene's camera was placed, at floor level.
+    rig.position.set(camera.position.x, Math.max(0, camera.position.y - 1.6), camera.position.z);
+    camera.position.set(0, 0, 0);
+    document.getElementById('hud').style.display = 'none';
+    document.getElementById('controls').style.display = 'none';
+});
+renderer.xr.addEventListener('sessionend', () => {
+    resetView();
+    gamepads.left = gamepads.right = null;
+    document.getElementById('hud').style.display = '';
+    document.getElementById('controls').style.display = '';
+});
+
+// Wrist panel on the right controller
+const vrPanel = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320; canvas.height = 96;
+    const ctx = canvas.getContext('2d');
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.125, 0.0375),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false })
+    );
+    mesh.position.set(0, 0.06, -0.02);
+    mesh.rotation.x = -Math.PI / 4;
+    mesh.renderOrder = 10;
+    let last = '';
+    return {
+        mesh,
+        update(top, bottom) {
+            const key = top + bottom;
+            if (key === last) return;
+            last = key;
+            ctx.clearRect(0, 0, 320, 96);
+            ctx.fillStyle = 'rgba(8,14,26,0.8)';
+            ctx.beginPath(); ctx.roundRect(0, 0, 320, 96, 18); ctx.fill();
+            ctx.fillStyle = '#8ccfff';
+            ctx.font = 'bold 34px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(top, 160, 44);
+            ctx.fillStyle = '#8a9ab0';
+            ctx.font = '22px monospace';
+            ctx.fillText(bottom, 160, 78);
+            tex.needsUpdate = true;
+        },
+    };
+})();
+
+// ─── Loop ───────────────────────────────────────────────────────────────────
+const statsEl = document.getElementById('stats');
+let lastTime = performance.now(), statsTimer = 0, fps = 60;
+
+renderer.setAnimationLoop(now => {
+    const dt = Math.min((now - lastTime) / 1000, 0.1);
+    lastTime = now;
+    fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05;
+
+    if (renderer.xr.isPresenting) pollXRInput();
+    else {
+        pollDesktopInput();
+        camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    }
+    applyMovement(dt);
+    applyZoom();
+    hoverLabel.mesh.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion()));
+
+    const d = state.data;
+    const wText = state.wAxis.length ? `W = ${fmtW(state.wAxis[state.wIndex])}  (${state.wIndex + 1}/${state.wAxis.length})` : '';
+    if (renderer.xr.isPresenting) {
+        vrPanel.update(d ? `${d.type} · ${state.points.length}` : '—', wText || datasets[state.datasetIndex]?.name || '');
+    } else if ((statsTimer += dt) > 0.25 && d) {
+        statsTimer = 0;
+        const s = statistics();
+        statsEl.textContent =
+            `${d.type}  ${datasets[state.datasetIndex].name}\n` +
+            (d.type.startsWith('TH')
+                ? `bins x ${d.nx}   bins y ${d.type === 'TH2' ? d.ny : 'N/A'}\n`
+                : `${d.nx} points   ${state.points.length} drawn\n`) +
+            `μx ${s.mx.toFixed(2)}  μy ${s.my.toFixed(2)}  σx ${s.sx.toFixed(2)}  σy ${s.sy.toFixed(2)}\n` +
+            (wText ? `${wText}\n` : '') +
+            `${fps.toFixed(0)} fps`;
+    }
+
+    renderer.render(scene, camera);
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
