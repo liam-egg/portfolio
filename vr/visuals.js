@@ -1,0 +1,71 @@
+const SITE_VISUALS = [
+    {
+        slug: 'mandelbulb',
+        url: 'vr/mandelbulb.html',
+        title: 'Mandelbulb',
+        description: 'A raymarched, time-mutating Mandelbulb fractal. Scrub, rewind and fast-forward its evolution from inside it.',
+        tags: ['fractal', 'raymarching']
+    },
+    {
+        slug: 'root',
+        url: 'vr/root.html',
+        title: 'ROOT VR',
+        description: "UCLA's ROOT VR plotting client, its Unity shaders compiled to WebGL. Walk around 2D histograms, scatter graphs and 4D VRGraph3D plots, zoom in on Earth through 3,000 real stars, or drop in your own ROOT data.",
+        tags: ['physics', 'data visualization']
+    },
+];
+
+function siteVisualUrl(path, rootPrefix) {
+    return /^https?:\/\//.test(path) ? path : rootPrefix + path;
+}
+
+/* vr/index.html's directory of every visual, as portfolio-style window cards (styles in vr/vr.css) */
+function renderVisualList(containerSelector, rootPrefix) {
+    const container = document.querySelector(containerSelector);
+    if (!container) return;
+
+    SITE_VISUALS.forEach(visual => {
+        const a = document.createElement('a');
+        a.href = siteVisualUrl(visual.url, rootPrefix);
+
+        const article = document.createElement('article');
+        article.className = 'window';
+
+        const header = document.createElement('header');
+        const dots = document.createElement('div');
+        dots.className = 'dots';
+        for (let i = 0; i < 3; i++) dots.appendChild(document.createElement('span'));
+        header.appendChild(dots);
+        const slug = document.createElement('span');
+        slug.textContent = visual.slug;
+        header.appendChild(slug);
+        const path = document.createElement('span');
+        path.className = 'path';
+        path.textContent = '/' + visual.url;
+        header.appendChild(path);
+        article.appendChild(header);
+
+        const section = document.createElement('section');
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = visual.title;
+        section.appendChild(name);
+
+        const description = document.createElement('p');
+        description.textContent = visual.description;
+        section.appendChild(description);
+
+        const tagRow = document.createElement('div');
+        tagRow.className = 'pills';
+        visual.tags.forEach(tag => {
+            const span = document.createElement('span');
+            span.textContent = tag;
+            tagRow.appendChild(span);
+        });
+        section.appendChild(tagRow);
+
+        article.appendChild(section);
+        a.appendChild(article);
+        container.appendChild(a);
+    });
+}

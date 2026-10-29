@@ -6,51 +6,18 @@
     <meta name="theme-color" content="#050a14">
     <title>Mandelbulb VR</title>
     <meta name="description" content="A raymarched, time-mutating Mandelbulb fractal you can step inside with WebXR.">
+    <link rel="stylesheet" href="/vr/vr.css">
     <style>
-        :root {
-            --bg: #050a14;
-            --fg: #e8eef6;
-            --muted: #8a9ab0;
-            --accent: #8ccfff;
-            --panel: rgba(8, 14, 26, 0.72);
-            --border: rgba(255, 255, 255, 0.12);
-        }
         html, body {
             margin: 0;
             height: 100%;
             overflow: hidden;
-            background: var(--bg);
-            color: var(--fg);
-            font-family: ui-monospace, "Fira Code", Menlo, Consolas, monospace;
+            background: #050a14;
+            color: white;
+            font-family: 'Geist', sans-serif;
         }
         canvas { display: block; touch-action: none; }
-        #hud {
-            position: fixed;
-            top: 16px;
-            left: 16px;
-            max-width: calc(100vw - 32px);
-            box-sizing: border-box;
-            padding: 12px 14px;
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            font-size: 12px;
-            line-height: 1.55;
-            backdrop-filter: blur(6px);
-            user-select: none;
-            pointer-events: none;
-        }
-        #hud h1 { margin: 0 0 6px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; }
-        #hud .stats { color: var(--accent); margin-bottom: 6px; white-space: pre; }
-        #hud .keys { color: var(--muted); }
-        #hud kbd {
-            color: var(--fg);
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            padding: 0 4px;
-            font-family: inherit;
-        }
-        #hud.hidden .keys { display: none; }
+        #hud { top: 16px; left: 16px; width: 380px; user-select: none; pointer-events: none; }
     </style>
     <script type="importmap">
     {
@@ -62,17 +29,35 @@
     </script>
 </head>
 <body>
-<div id="hud">
-    <h1>MANDELBULB · WebXR</h1>
-    <div class="stats" id="stats">loading…</div>
-    <div class="keys">
-        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move &nbsp; <kbd>Q</kbd>/<kbd>E</kbd> down/up<br>
-        <kbd>←</kbd>/<kbd>→</kbd> slow · stop · rewind / fast-forward<br>
-        Left-drag scrub time &nbsp; Right-drag (or Shift-drag) look<br>
-        <kbd>Space</kbd> pause &nbsp; <kbd>R</kbd> reset &nbsp; <kbd>H</kbd> hide help<br>
-        VR: right stick ↔ time, left stick move, <kbd>A</kbd> pause, <kbd>B</kbd> reset<br>
-        Fractal adapted from evilryu's ShaderToy Mandelbulb (CC BY-NC-SA 3.0)
-    </div>
+<div id="hud" class="window hud">
+    <header>
+        <div class="dots"><span></span><span></span><span></span></div>
+        <span>mandelbulb</span>
+        <a href="/vr/"><span>cd </span>..</a>
+    </header>
+    <section>
+        <span class="name">Mandelbulb</span>
+        <div class="stats" id="stats">loading…</div>
+        <div class="keys">
+            <span class="command">controls <span>--desktop</span></span>
+            <dl>
+                <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>move</dd>
+                <dt><kbd>Q</kbd><kbd>E</kbd></dt><dd>down / up</dd>
+                <dt><kbd>←</kbd><kbd>→</kbd></dt><dd>slow, stop, rewind / fast-forward</dd>
+                <dt><kbd>left-drag</kbd></dt><dd>scrub time</dd>
+                <dt><kbd>right-drag</kbd></dt><dd>look (or Shift-drag)</dd>
+                <dt><kbd>Space</kbd><kbd>R</kbd></dt><dd>pause · reset</dd>
+                <dt><kbd>H</kbd></dt><dd>hide help</dd>
+            </dl>
+            <span class="command">controls <span>--vr</span></span>
+            <dl>
+                <dt><kbd>L stick</kbd></dt><dd>move</dd>
+                <dt><kbd>R stick ↔</kbd></dt><dd>time</dd>
+                <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>pause · reset</dd>
+            </dl>
+            <span class="note">Fractal adapted from evilryu's ShaderToy Mandelbulb (CC BY-NC-SA 3.0)</span>
+        </div>
+    </section>
 </div>
 
 <script type="module">

@@ -1,0 +1,200 @@
+/* Shared look for /vr — mirrors index.html's portfolio styling (fonts, header bar,
+   window-style cards, Fira Code pills, terminal accents). Paths are root-absolute so
+   they resolve from any depth under /vr. */
+
+@font-face {
+    font-family: 'Geist';
+    src: url('/src/Geist[wght].ttf') format('truetype-variations');
+    font-weight: 100 900;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'Fira Code';
+    src: url('/src/FiraCode-VariableFont_wght.ttf') format('truetype');
+    font-weight: 300 700;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'Aktura';
+    src: url('/src/Aktura.woff2') format('woff2');
+}
+
+:root {
+    --border: #1f1f1f;
+    --secondary: #a1a1a1;
+    --first: #0a0a0a;
+    --second: #1a1a1a;
+    --lightBorder: #ffffff30;
+    --gold: #FFB74D;
+    --teal: #4DB6AC;
+}
+
+@keyframes blink {
+    0% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* ─── Window: the portfolio's project-card chrome ─────────────────────────── */
+.window {
+    border: 1px solid var(--border);
+    background: #121212;
+    border-radius: 10px;
+    overflow: hidden;
+
+    display: grid;
+    grid-template: 40px auto / 100%;
+}
+.window > header {
+    background: var(--first);
+    color: var(--secondary);
+    padding: 0 15px;
+
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.window > header > .dots {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.window > header > .dots > span {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    transition: transform 0.25s ease;
+}
+.window > header > .dots > span:nth-child(1) { background: #e24b4a; }
+.window > header > .dots > span:nth-child(2) { background: #ef9f27; }
+.window > header > .dots > span:nth-child(3) { background: #639922; }
+.window > section {
+    position: relative;
+    padding: 15px;
+    border-top: var(--border) 1px solid;
+
+    display: flex;
+    flex-direction: column;
+}
+.window > section > .name {
+    font-weight: 500;
+    font-size: 18px;
+    color: white;
+}
+.window > section > p {
+    margin: 5px 0 0;
+    color: var(--secondary);
+}
+
+/* Blog-style tag / key pills */
+.pills {
+    margin-top: 12px;
+
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.pills > span, kbd {
+    padding: 3px 7px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--first);
+    color: var(--secondary);
+    font-size: 14px;
+    font-family: 'Fira Code', monospace;
+}
+
+/* ─── HUD on the visual pages ─────────────────────────────────────────────── */
+.hud {
+    position: fixed;
+    z-index: 1;
+    max-width: calc(100vw - 32px);
+    box-sizing: border-box;
+    background: #121212e0;
+    backdrop-filter: blur(15px);
+    box-shadow: 0 18px 44px -24px #000;
+    font-family: 'Geist', sans-serif;
+    color: white;
+}
+.hud > header { background: #0a0a0ae0; font-family: 'Fira Code', monospace; font-size: 14px; }
+.hud > header > a {
+    margin-left: auto;
+    color: white;
+    opacity: 0.8;
+    text-decoration: none;
+    pointer-events: auto;
+    transition: opacity 0.2s;
+}
+.hud > header > a > span { color: var(--secondary); }
+.hud > header > a:hover { opacity: 1; text-shadow: 0 0 10px #ffffffa0; }
+.hud > section { gap: 10px; }
+.hud .stats {
+    color: var(--gold);
+    font-family: 'Fira Code', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre;
+}
+/* Controls read like the CV terminal: a command line, then key → action rows */
+.hud .command {
+    color: white;
+    font-family: 'Fira Code', monospace;
+    font-size: 13px;
+}
+.hud .command::before { content: '$ '; color: var(--secondary); }
+.hud .command > span { color: var(--teal); font-style: italic; }
+.hud dl {
+    margin: 0;
+    font-size: 14px;
+
+    display: grid;
+    grid-template-columns: 7.5rem 1fr;   /* fixed so the desktop and VR lists line up */
+    gap: 6px 14px;
+    align-items: center;
+}
+.hud dt {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.hud dd { margin: 0; color: var(--secondary); }
+.hud kbd { padding: 1px 6px; font-size: 12px; color: white; }
+.hud .note { color: var(--secondary); font-size: 13px; }
+.hud .note code { font-family: 'Fira Code', monospace; color: white; }
+.hud.hidden .keys { display: none; }
+.hud .keys {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Portfolio buttons (white pill) and inputs for HUD controls */
+.hud button {
+    all: unset;
+    cursor: pointer;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: white;
+    color: black;
+    font-size: 14px;
+    font-family: 'Geist', sans-serif;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.hud button:hover { transform: translateY(-2px); box-shadow: 0 8px 22px -10px #ffffff70; }
+.hud button:active { transform: translateY(0); }
+.hud button:disabled { opacity: 0.5; cursor: default; transform: none; box-shadow: none; }
+.hud button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.hud select {
+    appearance: none;
+    padding: 5px 28px 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--first) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a1a1a1' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 10px center;
+    color: white;
+    font-size: 13px;
+    font-family: 'Fira Code', monospace;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+.hud select:hover, .hud select:focus-visible { border-color: var(--secondary); outline: none; }
+.hud select option { background: var(--first); }
+.hud input[type=range] { accent-color: white; }

@@ -11,7 +11,8 @@
  *   - the scene: mesh renderers using those materials, line renderers, 3D TextMeshPro labels
  *     (world matrices converted from Unity's left-handed space to three.js' right-handed space)
  *   - script bindings: data generator constants, axis label handler, grid zoom scripts
- *   - example datasets in the ROOT VR server's /get_data text format (from --data, or built-in demos)
+ *   - example datasets in the ROOT VR server's /get_data text format (from --data, or built-in demos
+ *     plus any examples/*.txt next to the output bundle)
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -668,9 +669,19 @@ const scene = compileScene(sceneFile, materialsByGuid, scripts);
 console.log(`  scene    ${scene.file}: ${scene.meshes.length} meshes, ${scene.lines.length} lines, ${scene.texts.length} labels`);
 if (!scene.bindings.generator) warn('no data generator (data_mesh_GPUI) MonoBehaviour found in scene');
 
+// Datasets checked in beside the bundle (examples/*.txt, e.g. from tools/sample-bsc5p.mjs) join the
+// built-in demos, named after their file.
+const examplesDir = path.join(path.dirname(outFile), 'examples');
+const fileExamples = fs.existsSync(examplesDir)
+    ? fs.readdirSync(examplesDir).filter(f => f.endsWith('.txt')).sort().map(f => ({
+        name: f.replace(/\.txt$/, '').replace(/[-_]/g, ' '),
+        data: fs.readFileSync(path.join(examplesDir, f), 'utf8'),
+    }))
+    : [];
+fileExamples.forEach(e => console.log(`  example  ${e.name}`));
 const examples = flags.data.length
     ? flags.data.map(f => ({ name: path.basename(f).replace(/\.\w+$/, ''), data: fs.readFileSync(f, 'utf8') }))
-    : [{ name: 'VRGraph3D · DOCS example', data: demoGraph3D() }, { name: 'VRHist2F · Gaussian', data: demoHist2() }];
+    : [{ name: 'VRGraph3D · DOCS example', data: demoGraph3D() }, { name: 'VRHist2F · Gaussian', data: demoHist2() }, ...fileExamples];
 
 const readme = (() => { try { return fs.readFileSync(path.join(root, 'README.md'), 'utf8'); } catch { return ''; } })();
 const bundle = {

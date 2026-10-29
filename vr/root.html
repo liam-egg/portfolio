@@ -6,77 +6,38 @@
     <meta name="theme-color" content="#050a14">
     <title>ROOT VR</title>
     <meta name="description" content="UCLA's ROOT VR plotting client — its Unity shaders compiled to WebGL so ROOT histograms and graphs can be explored in the browser or a WebXR headset.">
+    <link rel="stylesheet" href="/vr/vr.css">
     <style>
-        :root {
-            --bg: #050a14;
-            --fg: #e8eef6;
-            --muted: #8a9ab0;
-            --accent: #8ccfff;
-            --panel: rgba(8, 14, 26, 0.72);
-            --border: rgba(255, 255, 255, 0.12);
-        }
         html, body {
             margin: 0;
             height: 100%;
             overflow: hidden;
-            background: var(--bg);
-            color: var(--fg);
-            font-family: ui-monospace, "Fira Code", Menlo, Consolas, monospace;
+            background: #121212;
+            color: white;
+            font-family: 'Geist', sans-serif;
         }
         canvas { display: block; touch-action: none; }
-        .box {
-            position: fixed;
-            box-sizing: border-box;
-            max-width: calc(100vw - 32px);
-            padding: 12px 14px;
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            font-size: 12px;
-            line-height: 1.55;
-            backdrop-filter: blur(6px);
-        }
-        #hud { top: 16px; left: 16px; user-select: none; pointer-events: none; }
-        #hud h1 { margin: 0 0 6px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; }
-        #hud .stats { color: var(--accent); margin-bottom: 6px; white-space: pre; }
-        #hud .keys { color: var(--muted); }
-        #hud kbd {
-            color: var(--fg);
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            padding: 0 4px;
-            font-family: inherit;
-        }
-        #hud.hidden .keys { display: none; }
-        #controls { bottom: 16px; left: 16px; display: grid; gap: 8px; min-width: 260px; }
-        #controls label { color: var(--muted); }
-        #controls select, #controls button, #controls input[type=range] { font: inherit; color: var(--fg); }
-        #controls select, #controls button {
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 4px 8px;
-            cursor: pointer;
-        }
-        #controls select option { background: var(--bg); }
-        #controls button:hover, #controls select:hover { border-color: var(--accent); }
-        #controls button:disabled { opacity: 0.5; cursor: default; }
+        #hud { top: 16px; left: 16px; width: 400px; user-select: none; pointer-events: none; }
+        #controls { bottom: 16px; left: 16px; width: 400px; }
         #controls .row { display: flex; gap: 8px; align-items: center; }
         #controls .row > select { flex: 1; min-width: 0; }
-        #controls input[type=range] { flex: 1; accent-color: var(--accent); }
+        #controls input[type=range] { flex: 1; }
+        #controls label { color: var(--secondary); font-family: 'Fira Code', monospace; font-size: 13px; }
         #w-row[hidden] { display: none; }
-        #w-label { color: var(--accent); min-width: 7ch; text-align: right; }
-        #error { color: #ff9c8a; white-space: pre-wrap; }
+        #w-label { color: var(--gold); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 9ch; text-align: right; }
+        #error { color: #ef5350; font-family: 'Fira Code', monospace; font-size: 13px; white-space: pre-wrap; }
         #error:empty { display: none; }
         #drop {
             position: fixed;
             inset: 0;
+            z-index: 2;
             display: none;
             place-items: center;
-            background: rgba(5, 10, 20, 0.8);
-            border: 2px dashed var(--accent);
-            font-size: 14px;
-            color: var(--accent);
+            background: #000000c0;
+            border: 2px dashed var(--secondary);
+            font-family: 'Fira Code', monospace;
+            font-size: 16px;
+            color: white;
             pointer-events: none;
         }
         body.dragging #drop { display: grid; }
@@ -91,34 +52,57 @@
     </script>
 </head>
 <body>
-<div id="hud" class="box">
-    <h1 id="title">ROOT VR · WebXR</h1>
-    <div class="stats" id="stats">loading…</div>
-    <div class="keys">
-        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move &nbsp; <kbd>Q</kbd>/<kbd>E</kbd> down/up &nbsp; <kbd>Shift</kbd> fast<br>
-        Drag to look &nbsp; hover a bin for its errors<br>
-        <kbd>←</kbd>/<kbd>→</kbd> step w &nbsp; <kbd>Space</kbd> play w &nbsp; <kbd>N</kbd> next dataset<br>
-        <kbd>R</kbd> reset view &nbsp; <kbd>H</kbd> hide help<br>
-        VR: left stick move, right stick ↕ height · ↔ step w,<br>
-        right trigger ray hover, <kbd>A</kbd> play w, <kbd>B</kbd> next dataset<br>
-        Drop a <code>/get_data</code> dump from a ROOT VR server to plot it<br>
-        <span id="credit">ROOT VR by UCLA "VR for Science"</span>
-    </div>
+<div id="hud" class="window hud">
+    <header>
+        <div class="dots"><span></span><span></span><span></span></div>
+        <span>root</span>
+        <a href="/vr/"><span>cd </span>..</a>
+    </header>
+    <section>
+        <span class="name" id="title">ROOT VR</span>
+        <div class="stats" id="stats">loading…</div>
+        <div class="keys">
+            <span class="command">controls <span>--desktop</span></span>
+            <dl>
+                <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>move</dd>
+                <dt><kbd>Q</kbd><kbd>E</kbd><kbd>Shift</kbd></dt><dd>down / up · fast</dd>
+                <dt><kbd>drag</kbd></dt><dd>look · hover a bin or star</dd>
+                <dt><kbd>scroll</kbd><kbd>+</kbd><kbd>−</kbd></dt><dd>zoom a point cloud toward Earth</dd>
+                <dt><kbd>←</kbd><kbd>→</kbd><kbd>Space</kbd></dt><dd>step w · play w</dd>
+                <dt><kbd>N</kbd><kbd>R</kbd><kbd>H</kbd></dt><dd>next dataset · reset view · hide help</dd>
+            </dl>
+            <span class="command">controls <span>--vr</span></span>
+            <dl>
+                <dt><kbd>L stick</kbd></dt><dd>move</dd>
+                <dt><kbd>R stick</kbd></dt><dd>↕ height · ↔ step w</dd>
+                <dt><kbd>R trigger</kbd></dt><dd>ray hover</dd>
+                <dt><kbd>R grip</kbd><kbd>L grip</kbd></dt><dd>zoom toward Earth · back out</dd>
+                <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>play w · next dataset</dd>
+            </dl>
+            <span class="note">Drop a <code>/get_data</code> dump from a ROOT VR server to plot it.<br><span id="credit">ROOT VR by UCLA "VR for Science"</span><br>Star data: Bright Star Catalogue via frostoven/BSC5P-JSON-XYZ (CC BY 4.0)</span>
+        </div>
+    </section>
 </div>
 
-<div id="controls" class="box">
-    <div class="row">
-        <select id="dataset" aria-label="Dataset"></select>
-        <button id="open">Open…</button>
-        <input id="file" type="file" accept=".txt,text/plain" hidden>
-    </div>
-    <div class="row" id="w-row" hidden>
-        <label for="w-slider">w</label>
-        <input id="w-slider" type="range" min="0" max="0" step="1" value="0">
-        <span id="w-label"></span>
-        <button id="w-play">▶</button>
-    </div>
-    <div id="error"></div>
+<div id="controls" class="window hud">
+    <header>
+        <div class="dots"><span></span><span></span><span></span></div>
+        <span>data</span>
+    </header>
+    <section>
+        <div class="row">
+            <select id="dataset" aria-label="Dataset"></select>
+            <button id="open">Open…</button>
+            <input id="file" type="file" accept=".txt,text/plain" hidden>
+        </div>
+        <div class="row" id="w-row" hidden>
+            <label for="w-slider">w</label>
+            <input id="w-slider" type="range" min="0" max="0" step="1" value="0">
+            <span id="w-label"></span>
+            <button id="w-play" aria-label="Play w">▶</button>
+        </div>
+        <div id="error"></div>
+    </section>
 </div>
 <div id="drop">Drop a ROOT VR data dump</div>
 
@@ -142,7 +126,8 @@ const GRID_WIDTH = GEN.GRID_WIDTH ?? 10;
 const VERTICAL_SCALE = GEN.VERTICAL_SCALE ?? 5;
 const SMALL_NUMBER = GEN.SMALL_NUMBER ?? 0.0001;
 const POINT_SIZE = GEN.graph_point_size ?? 0.05;
-document.getElementById('title').textContent = `${bundle.project.replace(/[-_]/g, ' ')} · WebXR`;
+const HALF = GRID_WIDTH / 2;
+document.getElementById('title').textContent = bundle.project.replace(/[-_]/g, ' ');
 if (bundle.version) document.getElementById('credit').textContent += ` · v${bundle.version}`;
 
 // ─── Renderer / rig ─────────────────────────────────────────────────────────
@@ -318,16 +303,50 @@ for (const t of bundle.scene.texts) {
 // read from behind the plot. Stand them along the front-left vertical edge instead, at the
 // heights their values map to, turned toward the viewer every frame.
 const valueAxisLabels = [];
-(bundle.scene.bindings.axisLabels?.numbers[2] ?? []).forEach((id, j, ids) => {
+(bundle.scene.bindings.axisLabels?.numbers[2] ?? []).forEach(id => {
     const label = labels.get(id);
     if (!label) return;
     label.def = { ...label.def, align: { h: 4, v: 512 }, size: [0, 0], pivot: [0.5, 0.5] };
     label.text = null;
     label.set(label.def.text);                          // re-lay out: right edge on the axis
     label.mesh.matrixAutoUpdate = true;
-    label.mesh.position.copy(fromUnity(-GRID_WIDTH / 2 - 0.15, j * VERTICAL_SCALE / (ids.length - 1), -GRID_WIDTH / 2));
     valueAxisLabels.push(label.mesh);
 });
+// Title for the vertical axis (VRGraph3D's z, a point cloud's z), above its top label
+const valueAxisTitle = new Label({
+    id: 'value-title', text: ' ', fontSize: 4, color: labels.get(bundle.scene.bindings.axisLabels?.numbers[2]?.[0])?.def.color ?? [1, 1, 1, 1],
+    align: { h: 4, v: 512 }, size: [0, 0], pivot: [0.5, 0.5], matrix: new THREE.Matrix4().toArray(),
+});
+valueAxisTitle.mesh.matrixAutoUpdate = true;
+valueAxisTitle.mesh.visible = false;
+scene.add(valueAxisTitle.mesh);
+valueAxisLabels.push(valueAxisTitle.mesh);
+
+// Where each tick label sits along its axis (Unity units). Tick values are read off these positions
+// rather than the child index: the scene's label children run opposite to the data, and aren't
+// spaced exactly along the grid.
+const labelAxisPos = new Map();
+{
+    const c = new THREE.Vector3();
+    (bundle.scene.bindings.axisLabels?.numbers ?? []).slice(0, 2).forEach((ids, a) => ids.forEach(id => {
+        const m = labels.get(id)?.mesh;
+        if (!m) return;
+        m.geometry.computeBoundingBox();
+        m.geometry.boundingBox.getCenter(c).applyMatrix4(m.matrix);
+        labelAxisPos.set(id, a === 0 ? c.x : -c.z);
+    }));
+}
+// Value labels stand along the front-left vertical edge, spread over the plot's height.
+function placeValueLabels(height) {
+    const ids = bundle.scene.bindings.axisLabels?.numbers[2] ?? [];
+    ids.forEach((id, j) => {
+        const y = j * height / (ids.length - 1);
+        labels.get(id)?.mesh.position.copy(fromUnity(-HALF - 0.15, y, -HALF));
+        labelAxisPos.set(id, y);
+    });
+    valueAxisTitle.mesh.position.copy(fromUnity(-HALF - 0.15, height + 0.7, -HALF));
+}
+placeValueLabels(VERTICAL_SCALE);
 
 // ─── ROOT VR server payload (port of ROOT_pipe_client.cs) ──────────────────
 function parseROOT(text) {
@@ -373,8 +392,30 @@ function parseROOT(text) {
                 d.values.push(x, z, y, w);
             }
             break;
+        case 'PointCloud': {
+            // Not a ROOT object: an x/y/z cloud filling the frame cube, zoomed about a focus point
+            // (see tools/sample-bsc5p.mjs for the format).
+            d.titleZ = line();
+            d.nx = f();
+            d.xmin = f(); d.xmax = f(); d.ymin = f(); d.ymax = f(); d.zmin = f(); d.zmax = f();
+            d.focus = [f(), f(), f()];
+            d.focusLabel = line().trim();
+            d.stars = [];
+            for (let k = 0; k < d.nx; k++) {
+                const x = f(), y = f(), z = f(), r = f(), g = f(), b = f(), size = f();
+                d.stars.push({ x, y, z, rgb: [r, g, b], size, name: line().trim() });
+            }
+            const [fx, fy, fz] = d.focus;
+            const dist = d.stars.map(p => Math.hypot(p.x - fx, p.y - fy, p.z - fz)).sort((a, b) => a - b);
+            // Zoom 1 fits every point in the cube; the view opens framing the nearest 90%, and can
+            // close in until the cube spans half the distance to the nearest point.
+            d.reach = Math.max(d.xmax - fx, fx - d.xmin, d.ymax - fy, fy - d.ymin, d.zmax - fz, fz - d.zmin) || 1;
+            d.startZoom = Math.max(1, d.reach / (dist[Math.floor(0.9 * (dist.length - 1))] || d.reach));
+            d.maxZoom = d.reach / Math.max(dist.find(v => v > 0) * 0.5 || 0, d.reach * 1e-6);
+            break;
+        }
         default:
-            throw new Error(`Unknown ROOT VR object type "${d.type}" (expected TH1, TH2, TGraph or TGraph3)`);
+            throw new Error(`Unknown ROOT VR object type "${d.type}" (expected TH1, TH2, TGraph, TGraph3 or PointCloud)`);
     }
     if (!(d.max > 0)) d.max = 1;
     return d;
@@ -393,7 +434,7 @@ dataMesh.frustumCulled = false;
 dataMesh.visible = false;
 scene.add(dataMesh);
 
-const state = { data: null, points: [], colors: null, wAxis: [], wIndex: 0, hover: -1, playing: null };
+const state = { data: null, points: [], colors: null, wAxis: [], wIndex: 0, hover: -1, playing: null, zoom: 1 };
 
 // Uncertainty readout that floats above the hovered bin
 const hoverLabel = new Label({
@@ -402,6 +443,26 @@ const hoverLabel = new Label({
 hoverLabel.mesh.matrixAutoUpdate = true;
 hoverLabel.mesh.visible = false;
 scene.add(hoverLabel.mesh);
+
+// A point cloud's focus (Earth, for the star catalogue) sits at the centre of the frame cube.
+const focusMarker = new THREE.Mesh(new THREE.SphereGeometry(0.07, 24, 12), new THREE.MeshBasicMaterial({ color: 0x4fa3ff }));
+focusMarker.position.copy(fromUnity(0, HALF, 0));
+focusMarker.visible = false;
+scene.add(focusMarker);
+const focusLabel = new Label({
+    id: 'focus', text: ' ', fontSize: 2.5, color: [0.31, 0.64, 1, 1], align: { h: 2, v: 1024 }, size: [0, 0], pivot: [0.5, 0], matrix: new THREE.Matrix4().toArray(),
+});
+focusLabel.mesh.matrixAutoUpdate = true;
+focusLabel.mesh.position.copy(fromUnity(0, HALF + 0.1, 0));
+focusLabel.mesh.visible = false;
+scene.add(focusLabel.mesh);
+
+// PointCloud layout: focus at the cube centre, x → x, y → depth, z → up; zoom scales about the focus.
+function cloudPoint(d, p) {
+    const s = HALF * state.zoom / d.reach;
+    return [(p.x - d.focus[0]) * s, HALF + (p.z - d.focus[2]) * s, (p.y - d.focus[1]) * s];
+}
+const inCube = ([x, y, z]) => Math.abs(x) <= HALF && Math.abs(z) <= HALF && y >= 0 && y <= GRID_WIDTH;
 
 function graphPoint(d, k) {
     const G = GRID_WIDTH;
@@ -429,24 +490,46 @@ function buildPoints() {
             for (let k = 0; k < d.nx * 4; k += 4) if (d.values[k + 3] === w) pts.push(graphPoint(d, k));
             break;
         }
+        case 'PointCloud':
+            for (const p of d.stars) pts.push(cloudPoint(d, p));
+            break;
     }
     state.points = pts;
 }
-function uploadPoints() {
+const _rgb = new THREE.Color();
+function computeInstances() {
     const d = state.data, n = state.points.length;
     const G = GRID_WIDTH;
     const xf = new Float32Array(n * 16), colors = new Float32Array(n * 4);
+    const visible = new Uint8Array(n), sizes = new Float32Array(n);
     state.points.forEach(([x, y, z], i) => {
         let pos, scale;
         if (d.type === 'TH1') { scale = [G / d.nx, Math.abs(y), SMALL_NUMBER]; pos = [x, y / 2, z]; }
         else if (d.type === 'TH2') { scale = [G / d.nx, Math.abs(y), G / d.ny]; pos = [x, y / 2, z]; }
+        else if (d.type === 'PointCloud') {
+            // Brighter stars draw bigger; anything zoomed out of the cube collapses to nothing.
+            const star = d.stars[i];
+            sizes[i] = inCube(state.points[i]) ? POINT_SIZE * (1 + 3 * star.size) : 0;
+            scale = [sizes[i], sizes[i], sizes[i]]; pos = [x, y, z];
+        }
         else { scale = [POINT_SIZE, POINT_SIZE, POINT_SIZE]; pos = [x, y, z]; }
+        visible[i] = scale[0] > 0 ? 1 : 0;
         // Matrix4x4.TRS(pos, identity, scale), converted to three's frame
         xf.set([scale[0], 0, 0, 0, 0, scale[1], 0, 0, 0, 0, scale[2], 0, pos[0], pos[1], -pos[2], 1], i * 16);
-        colors.set([y, y / d.max, 0.5, 0.85], i * 4);
+        if (d.type === 'PointCloud') {
+            _rgb.setRGB(...d.stars[i].rgb, THREE.SRGBColorSpace);   // catalogue colours are sRGB
+            colors.set([_rgb.r, _rgb.g, _rgb.b, 0.9], i * 4);
+        } else colors.set([y, y / d.max, 0.5, 0.85], i * 4);
     });
     state.transforms = xf;
     state.colors = colors;
+    state.visible = visible;
+    state.sizes = sizes;
+    state.drawn = visible.reduce((s, v) => s + v, 0);
+}
+function uploadPoints() {
+    computeInstances();
+    const n = state.points.length;
     // A fresh geometry every time: three caches an instanced geometry's max instance count on
     // first draw, so reusing one would silently drop instances when a bigger dataset loads.
     const geometry = new THREE.InstancedBufferGeometry().copy(dataPrimitive);
@@ -499,16 +582,35 @@ function roundToOrderMinus2(range, value) {
     const step = Math.pow(10, n - 2);
     return (Math.round(value / step) * step).toFixed(Math.max(0, -(n - 2)));
 }
+// Per axis: the data range [lo, hi] and the stretch of the plot it spans [w0, w1] (Unity units).
+function axisRanges(d) {
+    if (d.type === 'PointCloud') {
+        const half = d.reach / state.zoom, [fx, fy, fz] = d.focus;
+        return [[fx - half, fx + half, -HALF, HALF], [fy - half, fy + half, -HALF, HALF], [fz - half, fz + half, 0, GRID_WIDTH]];
+    }
+    return [[d.xmin, d.xmax, -HALF, HALF], [d.ymin, d.ymax, -HALF, HALF], [0, d.max, 0, VERTICAL_SCALE]];
+}
 function updateAxisLabels() {
     const b = bundle.scene.bindings.axisLabels, d = state.data;
     if (!b) return;
-    const axes = [[d.xmin, d.xmax], [d.ymin, d.ymax], [0, d.max]];
+    const ranges = axisRanges(d);
+    const cloud = d.type === 'PointCloud';
     b.numbers.forEach((ids, a) => {
-        const [lo, hi] = axes[a] ?? [0, 1];
-        const range = Math.abs(hi - lo);
-        ids.forEach((id, j) => labels.get(id)?.set(roundToOrderMinus2(range, j * range / (ids.length - 1) + lo)));
+        const [lo, hi, w0, w1] = ranges[a] ?? [0, 1, 0, 1];
+        ids.forEach((id, j) => {
+            // Point clouds read each tick off the label's position (their zoomed ranges need true
+            // ticks); ROOT objects keep axis_handler.cs's even spacing by child index.
+            const value = cloud
+                ? lo + (labelAxisPos.get(id) - w0) / (w1 - w0) * (hi - lo)
+                : lo + j * (hi - lo) / (ids.length - 1);
+            labels.get(id)?.set(roundToOrderMinus2(Math.abs(hi - lo), value));
+        });
     });
     [d.titleX, d.titleY].forEach((t, a) => labels.get(b.units[a])?.set(t || ' '));
+    valueAxisTitle.set(d.titleZ || ' ');
+    valueAxisTitle.mesh.visible = !!d.titleZ;
+    state.labelsAt = performance.now();
+    state.labelsDirty = false;
 }
 
 // Summary statistics (port of populate_statistics, over the plotted points)
@@ -544,6 +646,11 @@ function loadDataset(index) {
         wRow.hidden = state.data.type !== 'TGraph3';
         wSlider.max = Math.max(0, state.wAxis.length - 1);
         wSlider.value = 0;
+        const cloud = state.data.type === 'PointCloud';
+        state.zoom = cloud ? state.data.startZoom : 1;
+        placeValueLabels(cloud ? GRID_WIDTH : VERTICAL_SCALE);
+        focusMarker.visible = focusLabel.mesh.visible = cloud && !!state.data.focusLabel;
+        if (cloud) focusLabel.set(state.data.focusLabel || ' ');
         buildPoints();
         uploadPoints();
         updateAxisLabels();
@@ -580,6 +687,21 @@ function play() {
 }
 const nextDataset = () => loadDataset((state.datasetIndex + 1) % datasets.length);
 
+// Zoom a point cloud about its focus: points move apart (or together) around the cube centre,
+// leave the cube as they pass its walls, and the axis labels follow the shrinking range.
+function setPlotZoom(zoom) {
+    const d = state.data;
+    if (d?.type !== 'PointCloud') return;
+    zoom = THREE.MathUtils.clamp(zoom, 1, d.maxZoom);
+    if (Math.abs(zoom / state.zoom - 1) < 1e-4) return;
+    state.zoom = zoom;
+    buildPoints();
+    computeInstances();
+    state.sortedFrom = null;                            // next frame re-sorts and re-uploads
+    state.labelsDirty = true;
+    if (state.hover >= 0) placeHoverLabel(state.hover);
+}
+
 datasetSel.addEventListener('change', () => loadDataset(+datasetSel.value));
 wSlider.addEventListener('input', () => setW(+wSlider.value));
 wPlay.addEventListener('click', play);
@@ -609,8 +731,22 @@ if (dataUrl) {
 
 // ─── Hover (port of nearestPoint / Update in gpu_inst_script.cs) ────────────
 const _box = new THREE.Box3(), _hit = new THREE.Vector3();
+const _star = new THREE.Vector3();
 function nearestBin(ray) {
     const d = state.data;
+    if (d?.type === 'PointCloud') {
+        // Nearest star along the ray whose (slightly padded) size the ray passes through
+        let best = -1, bestT = Infinity;
+        state.points.forEach(([x, y, z], i) => {
+            if (!state.visible[i]) return;
+            const r = Math.max(0.08, state.sizes[i]);
+            _star.set(x, y, -z);
+            if (ray.distanceSqToPoint(_star) > r * r) return;
+            const t = _star.sub(ray.origin).dot(ray.direction);
+            if (t > 0 && t < bestT) { bestT = t; best = i; }
+        });
+        return best;
+    }
     if (!d || (d.type !== 'TH1' && d.type !== 'TH2')) return -1;
     let best = -1, bestDist = Infinity;
     const G = GRID_WIDTH;
@@ -630,19 +766,31 @@ function setHover(i) {
     state.hover = i;
     sortInstances(true);                                // re-uploads colours with the highlight
     if (i >= 0) {
-        const d = state.data, [x, y, z] = state.points[i];
-        const value = d.values[i];
-        const err = d.errs[i];
-        hoverLabel.set(err ? `${+value.toPrecision(6)}\n+${+err[1].toPrecision(4)} / −${+err[0].toPrecision(4)}` : `${+value.toPrecision(6)}`);
-        hoverLabel.mesh.position.copy(fromUnity(x, Math.max(0, y) + 0.3, z));
+        const d = state.data;
+        if (d.type === 'PointCloud') {
+            const s = d.stars[i], pc = Math.hypot(s.x - d.focus[0], s.y - d.focus[1], s.z - d.focus[2]);
+            hoverLabel.set(`${s.name || 'unnamed'}\n${fmtDistance(pc)} pc · ${fmtDistance(pc * 3.26156)} ly`);
+        } else {
+            const value = d.values[i];
+            const err = d.errs[i];
+            hoverLabel.set(err ? `${+value.toPrecision(6)}\n+${+err[1].toPrecision(4)} / −${+err[0].toPrecision(4)}` : `${+value.toPrecision(6)}`);
+        }
+        placeHoverLabel(i);
         hoverLabel.mesh.visible = true;
     } else hoverLabel.mesh.visible = false;
 }
+function placeHoverLabel(i) {
+    const [x, y, z] = state.points[i];
+    const lift = state.data.type === 'PointCloud' ? state.sizes[i] / 2 + 0.08 : 0.3;
+    hoverLabel.mesh.position.copy(fromUnity(x, (state.data.type === 'PointCloud' ? y : Math.max(0, y)) + lift, z));
+}
+const fmtDistance = v => (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2));
 
 // ─── Input ──────────────────────────────────────────────────────────────────
 const DEADZONE = 0.15;
 const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
-const input = { moveX: 0, moveZ: 0, moveY: 0, fast: false };
+const input = { moveX: 0, moveZ: 0, moveY: 0, fast: false, zoom: 0 };
+const ZOOM_RATE = 1.6;                                  // e-folds per second at full squeeze: ×5 /s
 
 const controllerModels = new XRControllerModelFactory();
 const gamepads = { left: null, right: null };
@@ -690,6 +838,9 @@ function pollXRInput() {
     input.moveZ = ly;
     input.moveY = -ry;                                  // vertical_motion.cs: raise/lower the rig
     input.fast = false;
+    // Grips zoom a point cloud: squeeze right to close in on the focus, left to pull back.
+    const grip = gp => gp?.buttons?.[1]?.value ?? 0;
+    input.zoom = grip(gamepads.right) - grip(gamepads.left);
 
     if (Math.abs(rx) > 0.6) { if (wStickArmed) { setW(state.wIndex + Math.sign(rx)); wStickArmed = false; } }
     else wStickArmed = true;
@@ -717,7 +868,7 @@ window.addEventListener('keydown', e => {
     if (e.code === 'ArrowRight') { setW(state.wIndex + 1); e.preventDefault(); }
     if (e.code === 'ArrowLeft') { setW(state.wIndex - 1); e.preventDefault(); }
     if (e.code === 'KeyN') nextDataset();
-    if (e.code === 'KeyR') resetView();
+    if (e.code === 'KeyR') { resetView(); if (state.data?.type === 'PointCloud') setPlotZoom(state.data.startZoom); }
     if (e.code === 'KeyH') document.getElementById('hud').classList.toggle('hidden');
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
@@ -742,6 +893,11 @@ el.addEventListener('pointermove', e => {
     pitch = THREE.MathUtils.clamp(pitch - dy * 0.004, -1.5, 1.5);
 });
 el.addEventListener('pointerleave', () => { pointerInside = false; });
+el.addEventListener('wheel', e => {
+    if (state.data?.type !== 'PointCloud') return;
+    e.preventDefault();
+    setPlotZoom(state.zoom * Math.exp(-e.deltaY * 0.0015));
+}, { passive: false });
 const endDrag = () => { drag = null; };
 el.addEventListener('pointerup', endDrag);
 el.addEventListener('pointercancel', endDrag);
@@ -752,6 +908,7 @@ function pollDesktopInput() {
     input.moveZ = k('KeyS') - k('KeyW');
     input.moveY = k('KeyE') - k('KeyQ');
     input.fast = keys.has('ShiftLeft') || keys.has('ShiftRight');
+    input.zoom = k('Equal') + k('NumpadAdd') - k('Minus') - k('NumpadSubtract');
     if (pointerInside && !drag) {
         raycaster.setFromCamera(pointer, camera);
         setHover(nearestBin(raycaster.ray));
@@ -851,27 +1008,37 @@ renderer.setAnimationLoop(now => {
         camera.rotation.set(pitch, yaw, 0, 'YXZ');
     }
     applyMovement(dt);
+    if (input.zoom) setPlotZoom(state.zoom * Math.exp(input.zoom * ZOOM_RATE * dt));
+    if (state.labelsDirty && now - state.labelsAt > 100) updateAxisLabels();   // relabel ~10×/s while zooming
     applyZoom();
     sortInstances();
     hoverLabel.mesh.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion()));
+    focusLabel.mesh.quaternion.copy(hoverLabel.mesh.quaternion);
     camera.getWorldPosition(_camPos);
     for (const m of valueAxisLabels) m.rotation.y = Math.atan2(_camPos.x - m.position.x, _camPos.z - m.position.z);
 
     const d = state.data;
     const wText = state.wAxis.length ? `W = ${fmtW(state.wAxis[state.wIndex])}  (${state.wIndex + 1}/${state.wAxis.length})` : '';
+    const cloud = d?.type === 'PointCloud';
+    const viewText = cloud ? `±${fmtDistance(d.reach / state.zoom)} ${d.titleX.match(/\[(.+)\]/)?.[1] ?? ''}`.trim() : '';
     if (renderer.xr.isPresenting) {
-        vrPanel.update(d ? `${d.type} · ${state.points.length}` : '—', wText || datasets[state.datasetIndex]?.name || '');
+        vrPanel.update(d ? `${d.type} · ${cloud ? state.drawn : state.points.length}` : '—',
+            viewText || wText || datasets[state.datasetIndex]?.name || '');
     } else if ((statsTimer += dt) > 0.25 && d) {
         statsTimer = 0;
-        const s = statistics();
-        statsEl.textContent =
-            `${d.type}  ${datasets[state.datasetIndex].name}\n` +
-            (d.type.startsWith('TH')
+        let body;
+        if (cloud) {
+            body = `${d.nx} points   ${state.drawn} in view\n` +
+                `view ${viewText} about ${d.focusLabel || 'focus'}   zoom ×${state.zoom.toPrecision(3)}\n`;
+        } else {
+            const s = statistics();
+            body = (d.type.startsWith('TH')
                 ? `bins x ${d.nx}   bins y ${d.type === 'TH2' ? d.ny : 'N/A'}\n`
                 : `${d.nx} points   ${state.points.length} drawn\n`) +
-            `μx ${s.mx.toFixed(2)}  μy ${s.my.toFixed(2)}  σx ${s.sx.toFixed(2)}  σy ${s.sy.toFixed(2)}\n` +
-            (wText ? `${wText}\n` : '') +
-            `${fps.toFixed(0)} fps`;
+                `μx ${s.mx.toFixed(2)}  μy ${s.my.toFixed(2)}  σx ${s.sx.toFixed(2)}  σy ${s.sy.toFixed(2)}\n`;
+        }
+        statsEl.textContent = `${d.type}  ${datasets[state.datasetIndex].name}\n` + body +
+            (wText ? `${wText}\n` : '') + `${fps.toFixed(0)} fps`;
     }
 
     renderer.render(scene, camera);
