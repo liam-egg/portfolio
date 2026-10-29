@@ -17,6 +17,24 @@
         ],
         "createdAt": "2026-10-29T20:03:44.005Z",
         "reason": "Gold hover glows mirror index.html's existing hover glows (header links text-shadow #ffffffa0, buttons box-shadow #ffffff70); user asked /vr to mimic the portfolio and lean into its gold accent"
+      },
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "vr/mandelbulb.html"
+        ],
+        "createdAt": "2026-10-29T20:13:17.921Z",
+        "reason": "HUD button hover glow (vr/vr.css) is the gold version of index.html's button glow (box-shadow #ffffff70); user asked the HUD to match vr/index.html"
+      },
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "vr/root.html"
+        ],
+        "createdAt": "2026-10-29T20:13:18.350Z",
+        "reason": "HUD button hover glow (vr/vr.css) is the gold version of index.html's button glow (box-shadow #ffffff70); user asked the HUD to match vr/index.html"
       }
     ]
   }

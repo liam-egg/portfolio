@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#050a14">
+    <meta name="theme-color" content="#000000">
     <title>Mandelbulb VR</title>
     <meta name="description" content="A raymarched, time-mutating Mandelbulb fractal you can step inside with WebXR.">
     <link rel="stylesheet" href="/vr/vr.css">
@@ -12,7 +12,7 @@
             margin: 0;
             height: 100%;
             overflow: hidden;
-            background: #050a14;
+            background: black;
             color: white;
             font-family: 'Geist', sans-serif;
         }
@@ -29,16 +29,16 @@
     </script>
 </head>
 <body>
-<div id="hud" class="window hud">
+<div id="hud" class="hud">
     <header>
-        <div class="dots"><span></span><span></span><span></span></div>
-        <span>mandelbulb</span>
+        <span>/vr/mandelbulb.html</span>
         <a href="/vr/"><span>cd </span>..</a>
     </header>
     <section>
         <span class="name">Mandelbulb</span>
         <div class="stats" id="stats">loading…</div>
         <div class="keys">
+            <div class="rule"></div>
             <span class="command">controls <span>--desktop</span></span>
             <dl>
                 <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>move</dd>
@@ -55,7 +55,6 @@
                 <dt><kbd>R stick ↔</kbd></dt><dd>time</dd>
                 <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>pause · reset</dd>
             </dl>
-            <span class="note">Fractal adapted from evilryu's ShaderToy Mandelbulb (CC BY-NC-SA 3.0)</span>
         </div>
     </section>
 </div>
@@ -66,7 +65,7 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));   // adapted by setLevel()
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
@@ -104,14 +103,11 @@ const commonGLSL = `
 
     const vec3 SUN_DIR_W = vec3(${SUN_DIR.toArray().map(v => v.toFixed(4)).join(',')});
     const vec3 SUN_COL   = vec3(1.50, 1.42, 1.30);
-    const vec3 SKY_COL   = vec3(0.45, 0.80, 1.50);
-    const vec3 BG_TINT   = vec3(0.09, 0.20, 0.46);
-    const vec3 HALO_COL  = vec3(0.25, 0.55, 0.95);
+    const vec3 SKY_COL   = vec3(0.45, 0.80, 1.50);   // fill light on the fractal, not the backdrop
 
-        vec3 sky(vec3 rd, vec3 ro) {
-        vec3 bg = exp(rd.y - 2.0) * BG_TINT;
-        float halo = clamp(dot(normalize(uCenter - ro), rd), 0.0, 1.0);
-        return bg + HALO_COL * pow(halo, 17.0);
+    // Backdrop: plain black (distant surface fades into it too)
+    vec3 sky(vec3 rd, vec3 ro) {
+        return vec3(0.0);
     }
 
         vec3 post(vec3 col) {
@@ -394,23 +390,33 @@ function applyInput(dt) {
     rig.position.addScaledVector(up, input.moveY * step);
 }
 
-const LEVELS = [
-    [32, 0, 6],
-    [40, 0, 7],
-    [48, 0, 7],
-    [48, 12, 7],
-    [56, 20, 7],
-    [64, 32, 7],
-    [80, 48, 7],
+// Quality levels trade march steps and (on desktop) render resolution for frame rate. Shadow
+// steps and fractal iterations stay fixed: dropping them changed the lighting, so close-ups,
+// which fill the screen and slow the frame, came out flat and over-lit.
+const SHADOW_STEPS = 32;
+const ITERATIONS = 7;
+const LEVELS = [            // [march steps, desktop resolution scale]
+    [40, 0.5],
+    [48, 0.6],
+    [56, 0.7],
+    [64, 0.8],
+    [64, 0.9],
+    [72, 1.0],
+    [80, 1.0],
 ];
+const BASE_PIXEL_RATIO = Math.min(window.devicePixelRatio, 1.5);
 const quality = { ema: 1 / 60, target: 1 / 60, level: 5, max: 6, lastChange: 0 };
+uniforms.uShadow.value = SHADOW_STEPS;
+uniforms.uIter.value = ITERATIONS;
 
 function setLevel(l) {
     quality.level = THREE.MathUtils.clamp(l, 0, quality.max);
-    const [steps, shadow, iter] = LEVELS[quality.level];
+    const [steps, scale] = LEVELS[quality.level];
     uniforms.uSteps.value = steps;
-    uniforms.uShadow.value = shadow;
-    uniforms.uIter.value = iter;
+    // The XR framebuffer size is fixed for a session, so resolution only adapts on desktop.
+    if (!renderer.xr.isPresenting && renderer.getPixelRatio() !== BASE_PIXEL_RATIO * scale) {
+        renderer.setPixelRatio(BASE_PIXEL_RATIO * scale);
+    }
 }
 
 function adaptQuality(dt, now) {
@@ -425,8 +431,11 @@ function adaptQuality(dt, now) {
     }
 }
 
+// Surface-hit tolerance for a full-resolution pixel. It deliberately ignores the adaptive
+// resolution scale, so the surface detail and normals (and with them the shading) don't shift
+// when quality changes.
 function desktopPixel() {
-    const px = window.innerHeight * renderer.getPixelRatio();
+    const px = window.innerHeight * BASE_PIXEL_RATIO;
     return 0.5 * 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / px;
 }
 uniforms.uPixel.value = desktopPixel();
@@ -518,7 +527,7 @@ renderer.setAnimationLoop(now => {
         statsEl.textContent =
             `${rateLabel()}   ${timeText}\n` +
             `${(1 / quality.ema).toFixed(0)} fps   quality ${quality.level}/${quality.max}` +
-            `   steps ${uniforms.uSteps.value}   shadow ${uniforms.uShadow.value}`;
+            `   steps ${uniforms.uSteps.value}   res ${Math.round(renderer.getPixelRatio() / BASE_PIXEL_RATIO * 100)}%`;
     }
 
     renderer.render(scene, camera);
