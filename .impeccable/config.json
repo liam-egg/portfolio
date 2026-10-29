@@ -8,6 +8,15 @@
         "value": "geist",
         "createdAt": "2026-10-27T17:56:19.602Z",
         "reason": "Geist is the portfolio's existing body font (index.html @font-face); user asked /vr pages to mimic index.html's style"
+      },
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "vr/index.html"
+        ],
+        "createdAt": "2026-10-29T20:03:44.005Z",
+        "reason": "Gold hover glows mirror index.html's existing hover glows (header links text-shadow #ffffffa0, buttons box-shadow #ffffff70); user asked /vr to mimic the portfolio and lean into its gold accent"
       }
     ]
   }
