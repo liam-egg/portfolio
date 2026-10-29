@@ -1,107 +1,154 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#000000">
-    <title>Mandelbulb VR</title>
-    <meta name="description" content="A raymarched, time-mutating Mandelbulb fractal you can step inside with WebXR.">
-    <link rel="stylesheet" href="/vr/vr.css">
-    <style>
-        html, body {
-            margin: 0;
-            height: 100%;
-            overflow: hidden;
-            background: black;
-            color: white;
-            font-family: 'Geist', sans-serif;
-        }
-        canvas { display: block; touch-action: none; }
-        #hud { top: 16px; left: 16px; width: 380px; user-select: none; pointer-events: none; }
-    </style>
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
-        }
-    }
-    </script>
-</head>
-<body>
-<div id="hud" class="hud">
-    <header>
-        <span>/vr/mandelbulb.html</span>
-        <a href="/vr/"><span>cd </span>..</a>
-    </header>
-    <section>
-        <span class="name">Mandelbulb</span>
-        <div class="stats" id="stats">loading…</div>
-        <div class="keys">
-            <div class="rule"></div>
-            <span class="command">controls <span>--desktop</span></span>
-            <dl>
-                <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>move</dd>
-                <dt><kbd>Q</kbd><kbd>E</kbd></dt><dd>down / up</dd>
-                <dt><kbd>←</kbd><kbd>→</kbd></dt><dd>slow, stop, rewind / fast-forward</dd>
-                <dt><kbd>left-drag</kbd></dt><dd>scrub time</dd>
-                <dt><kbd>right-drag</kbd></dt><dd>look (or Shift-drag)</dd>
-                <dt><kbd>Space</kbd><kbd>R</kbd></dt><dd>pause · reset</dd>
-                <dt><kbd>H</kbd></dt><dd>hide help</dd>
-            </dl>
-            <span class="command">controls <span>--vr</span></span>
-            <dl>
-                <dt><kbd>L stick</kbd></dt><dd>move</dd>
-                <dt><kbd>R stick ↔</kbd></dt><dd>time</dd>
-                <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>pause · reset</dd>
-            </dl>
+    <head>
+        <meta charset="UTF-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, user-scalable=no"
+        />
+        <meta name="theme-color" content="#000000" />
+        <title>Mandelbulb VR</title>
+        <meta
+            name="description"
+            content="A raymarched, time-mutating Mandelbulb fractal you can step inside with WebXR."
+        />
+        <link rel="stylesheet" href="/vr/vr.css" />
+        <style>
+            html,
+            body {
+                margin: 0;
+                height: 100%;
+                overflow: hidden;
+                background: black;
+                color: white;
+                font-family: 'Geist', sans-serif;
+            }
+            canvas {
+                display: block;
+                touch-action: none;
+            }
+            #hud {
+                top: 16px;
+                left: 16px;
+                width: 380px;
+                user-select: none;
+                pointer-events: none;
+            }
+        </style>
+        <script type="importmap">
+            {
+                "imports": {
+                    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+                    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+                }
+            }
+        </script>
+    </head>
+    <body>
+        <div id="hud" class="hud">
+            <header>
+                <span>/vr/mandelbulb.html</span>
+                <a href="/vr/"><span>cd </span>..</a>
+            </header>
+            <section>
+                <span class="name">Mandelbulb</span>
+                <div class="stats" id="stats">loading…</div>
+                <div class="keys">
+                    <div class="rule"></div>
+                    <span class="command">controls <span>--desktop</span></span>
+                    <dl>
+                        <dt>
+                            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+                        </dt>
+                        <dd>move</dd>
+                        <dt><kbd>Q</kbd><kbd>E</kbd></dt>
+                        <dd>down / up</dd>
+                        <dt><kbd>←</kbd><kbd>→</kbd></dt>
+                        <dd>slow, stop, rewind / fast-forward</dd>
+                        <dt><kbd>left-drag</kbd></dt>
+                        <dd>scrub time</dd>
+                        <dt><kbd>right-drag</kbd></dt>
+                        <dd>look (or Shift-drag)</dd>
+                        <dt><kbd>Space</kbd><kbd>R</kbd></dt>
+                        <dd>pause · reset</dd>
+                        <dt><kbd>H</kbd></dt>
+                        <dd>hide help</dd>
+                    </dl>
+                    <span class="command">controls <span>--vr</span></span>
+                    <dl>
+                        <dt><kbd>L stick</kbd></dt>
+                        <dd>move</dd>
+                        <dt><kbd>R stick ↔</kbd></dt>
+                        <dd>time</dd>
+                        <dt><kbd>A</kbd><kbd>B</kbd></dt>
+                        <dd>pause · reset</dd>
+                    </dl>
+                </div>
+            </section>
         </div>
-    </section>
-</div>
 
-<script type="module">
-import * as THREE from 'three';
-import { VRButton } from 'three/addons/webxr/VRButton.js';
-import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+        <script type="module">
+            import * as THREE from 'three';
+            import { VRButton } from 'three/addons/webxr/VRButton.js';
+            import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
-const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));   // adapted by setLevel()
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.xr.enabled = true;
-renderer.xr.setReferenceSpaceType('local-floor');
-renderer.xr.setFramebufferScaleFactor(0.8);
-renderer.xr.setFoveation(1.0);
-document.body.appendChild(renderer.domElement);
-document.body.appendChild(VRButton.createButton(renderer));
+            const renderer = new THREE.WebGLRenderer({
+                antialias: false,
+                powerPreference: 'high-performance',
+            });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // adapted by setLevel()
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true;
+            renderer.xr.setReferenceSpaceType('local-floor');
+            renderer.xr.setFramebufferScaleFactor(0.8);
+            renderer.xr.setFoveation(1.0);
+            document.body.appendChild(renderer.domElement);
+            document.body.appendChild(VRButton.createButton(renderer));
 
-const scene = new THREE.Scene();
+            const scene = new THREE.Scene();
 
-const rig = new THREE.Group();
-scene.add(rig);
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 200);
-camera.position.set(0, 1.6, 0);
-rig.add(camera);
+            const rig = new THREE.Group();
+            scene.add(rig);
+            const camera = new THREE.PerspectiveCamera(
+                70,
+                window.innerWidth / window.innerHeight,
+                0.05,
+                200,
+            );
+            camera.position.set(0, 1.6, 0);
+            rig.add(camera);
 
-const FRACTAL_CENTER = new THREE.Vector3(0, 1.5, -3.0);
-const FRACTAL_SCALE = 1.2;   const BOUND_RADIUS = 1.25;   const MAX_STEPS_CAP = 96;    const MAX_SHADOW_CAP = 48;
+            const FRACTAL_CENTER = new THREE.Vector3(0, 1.5, -3.0);
+            const FRACTAL_SCALE = 1.2;
+            const BOUND_RADIUS = 1.25;
+            const MAX_STEPS_CAP = 96;
+            const MAX_SHADOW_CAP = 48;
 
-const SUN_DIR = new THREE.Vector3(0.1, 0.8, 0.6).normalize();
-const BAC_DIR = new THREE.Vector3(-SUN_DIR.x, -1.0, -SUN_DIR.z); const UP_DIR = new THREE.Vector3(0, 1, 0);
+            const SUN_DIR = new THREE.Vector3(0.1, 0.8, 0.6).normalize();
+            const BAC_DIR = new THREE.Vector3(-SUN_DIR.x, -1.0, -SUN_DIR.z);
+            const UP_DIR = new THREE.Vector3(0, 1, 0);
 
-const uniforms = {
-    uTime:     { value: 0 },          uPhase:    { value: 0 },          uSteps:    { value: 48 },         uShadow:   { value: 16 },
-    uIter:     { value: 7 },
-    uPixel:    { value: 0.0008 },     uInvModel: { value: new THREE.Matrix4() },
-    uCenter:   { value: FRACTAL_CENTER.clone() },
-    uSunL:     { value: new THREE.Vector3() },     uBacL:     { value: new THREE.Vector3() },
-    uUpL:      { value: new THREE.Vector3() },
-};
+            const uniforms = {
+                uTime: { value: 0 },
+                uPhase: { value: 0 },
+                uSteps: { value: 48 },
+                uShadow: { value: 16 },
+                uIter: { value: 7 },
+                uPixel: { value: 0.0008 },
+                uInvModel: { value: new THREE.Matrix4() },
+                uCenter: { value: FRACTAL_CENTER.clone() },
+                uSunL: { value: new THREE.Vector3() },
+                uBacL: { value: new THREE.Vector3() },
+                uUpL: { value: new THREE.Vector3() },
+            };
 
-const commonGLSL = `
+            const commonGLSL = `
     uniform vec3 uCenter;
     uniform float uTime;
 
-    const vec3 SUN_DIR_W = vec3(${SUN_DIR.toArray().map(v => v.toFixed(4)).join(',')});
+    const vec3 SUN_DIR_W = vec3(${SUN_DIR.toArray()
+        .map((v) => v.toFixed(4))
+        .join(',')});
     const vec3 SUN_COL   = vec3(1.50, 1.42, 1.30);
     const vec3 SKY_COL   = vec3(0.45, 0.80, 1.50);   // fill light on the fractal, not the backdrop
 
@@ -116,7 +163,7 @@ const commonGLSL = `
     }
 `;
 
-const vertexShader = `
+            const vertexShader = `
     varying vec3 vWorld;
     void main() {
         vec4 w = modelMatrix * vec4(position, 1.0);
@@ -125,7 +172,7 @@ const vertexShader = `
     }
 `;
 
-const skyFragment = `
+            const skyFragment = `
     ${commonGLSL}
     varying vec3 vWorld;
     void main() {
@@ -134,7 +181,7 @@ const skyFragment = `
     }
 `;
 
-const fractalFragment = `
+            const fractalFragment = `
     precision highp float;
     ${commonGLSL}
     #define BOUND ${BOUND_RADIUS.toFixed(3)}
@@ -236,309 +283,380 @@ const fractalFragment = `
     }
 `;
 
-const skyDome = new THREE.Mesh(
-    new THREE.SphereGeometry(100, 32, 16),
-    new THREE.ShaderMaterial({
-        uniforms, vertexShader, fragmentShader: skyFragment,
-        side: THREE.BackSide, depthWrite: false,
-    })
-);
-skyDome.renderOrder = -2;
-skyDome.frustumCulled = false;
-scene.add(skyDome);
+            const skyDome = new THREE.Mesh(
+                new THREE.SphereGeometry(100, 32, 16),
+                new THREE.ShaderMaterial({
+                    uniforms,
+                    vertexShader,
+                    fragmentShader: skyFragment,
+                    side: THREE.BackSide,
+                    depthWrite: false,
+                }),
+            );
+            skyDome.renderOrder = -2;
+            skyDome.frustumCulled = false;
+            scene.add(skyDome);
 
-const fractal = new THREE.Mesh(
-    new THREE.SphereGeometry(BOUND_RADIUS, 48, 24),
-    new THREE.ShaderMaterial({
-        uniforms, vertexShader, fragmentShader: fractalFragment,
-        side: THREE.BackSide,          depthWrite: false,
-    })
-);
-fractal.position.copy(FRACTAL_CENTER);
-fractal.scale.setScalar(FRACTAL_SCALE);
-fractal.renderOrder = -1;
-fractal.frustumCulled = false;
-scene.add(fractal);
+            const fractal = new THREE.Mesh(
+                new THREE.SphereGeometry(BOUND_RADIUS, 48, 24),
+                new THREE.ShaderMaterial({
+                    uniforms,
+                    vertexShader,
+                    fragmentShader: fractalFragment,
+                    side: THREE.BackSide,
+                    depthWrite: false,
+                }),
+            );
+            fractal.position.copy(FRACTAL_CENTER);
+            fractal.scale.setScalar(FRACTAL_SCALE);
+            fractal.renderOrder = -1;
+            fractal.frustumCulled = false;
+            scene.add(fractal);
 
-const input = {
-    moveX: 0, moveZ: 0, moveY: 0,     timeAxis: 0,                      scrub: 0,                         paused: false,
-};
+            const input = {
+                moveX: 0,
+                moveZ: 0,
+                moveY: 0,
+                timeAxis: 0,
+                scrub: 0,
+                paused: false,
+            };
 
-const DEADZONE = 0.15;
-const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
+            const DEADZONE = 0.15;
+            const dz = (v) =>
+                Math.abs(v) < DEADZONE
+                    ? 0
+                    : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE);
 
-const controllerModels = new XRControllerModelFactory();
-const gamepads = { left: null, right: null };
-const prevButtons = { a: false, b: false };
+            const controllerModels = new XRControllerModelFactory();
+            const gamepads = { left: null, right: null };
+            const prevButtons = { a: false, b: false };
 
-for (let i = 0; i < 2; i++) {
-    const grip = renderer.xr.getControllerGrip(i);
-    grip.add(controllerModels.createControllerModel(grip));
-    rig.add(grip);
+            for (let i = 0; i < 2; i++) {
+                const grip = renderer.xr.getControllerGrip(i);
+                grip.add(controllerModels.createControllerModel(grip));
+                rig.add(grip);
 
-    grip.addEventListener('connected', e => {
-        const hand = e.data.handedness;
-        gamepads[hand] = e.data.gamepad || null;
-        if (hand === 'right') grip.add(vrPanel.mesh);
-    });
-    grip.addEventListener('disconnected', e => {
-        const hand = e.data.handedness;
-        gamepads[hand] = null;
-        if (hand === 'right') grip.remove(vrPanel.mesh);
-    });
-}
+                grip.addEventListener('connected', (e) => {
+                    const hand = e.data.handedness;
+                    gamepads[hand] = e.data.gamepad || null;
+                    if (hand === 'right') grip.add(vrPanel.mesh);
+                });
+                grip.addEventListener('disconnected', (e) => {
+                    const hand = e.data.handedness;
+                    gamepads[hand] = null;
+                    if (hand === 'right') grip.remove(vrPanel.mesh);
+                });
+            }
 
-function stick(gp) {
-    if (!gp) return [0, 0];
-    const o = gp.axes.length >= 4 ? 2 : 0;
-    return [dz(gp.axes[o] || 0), dz(gp.axes[o + 1] || 0)];
-}
+            function stick(gp) {
+                if (!gp) return [0, 0];
+                const o = gp.axes.length >= 4 ? 2 : 0;
+                return [dz(gp.axes[o] || 0), dz(gp.axes[o + 1] || 0)];
+            }
 
-function pollXRInput() {
-    const [lx, ly] = stick(gamepads.left);
-    const [rx] = stick(gamepads.right);
+            function pollXRInput() {
+                const [lx, ly] = stick(gamepads.left);
+                const [rx] = stick(gamepads.right);
 
-    input.moveX = lx;
-    input.moveZ = ly;           input.moveY = 0;
-    input.timeAxis = rx;    
-        const btn = gamepads.right?.buttons || [];
-    const a = !!btn[4]?.pressed, b = !!btn[5]?.pressed;
-    if (a && !prevButtons.a) input.paused = !input.paused;
-    if (b && !prevButtons.b) resetTime();
-    prevButtons.a = a; prevButtons.b = b;
-}
+                input.moveX = lx;
+                input.moveZ = ly;
+                input.moveY = 0;
+                input.timeAxis = rx;
+                const btn = gamepads.right?.buttons || [];
+                const a = !!btn[4]?.pressed,
+                    b = !!btn[5]?.pressed;
+                if (a && !prevButtons.a) input.paused = !input.paused;
+                if (b && !prevButtons.b) resetTime();
+                prevButtons.a = a;
+                prevButtons.b = b;
+            }
 
-const keys = new Set();
-let yaw = 0, pitch = 0;
+            const keys = new Set();
+            let yaw = 0,
+                pitch = 0;
 
-window.addEventListener('keydown', e => {
-    if (e.repeat) return;
-    keys.add(e.code);
-    if (e.code === 'Space') { input.paused = !input.paused; e.preventDefault(); }
-    if (e.code === 'KeyR') resetTime();
-    if (e.code === 'KeyH') document.getElementById('hud').classList.toggle('hidden');
-    if (e.code.startsWith('Arrow')) e.preventDefault();
-});
-window.addEventListener('keyup', e => keys.delete(e.code));
-window.addEventListener('blur', () => keys.clear());
+            window.addEventListener('keydown', (e) => {
+                if (e.repeat) return;
+                keys.add(e.code);
+                if (e.code === 'Space') {
+                    input.paused = !input.paused;
+                    e.preventDefault();
+                }
+                if (e.code === 'KeyR') resetTime();
+                if (e.code === 'KeyH')
+                    document.getElementById('hud').classList.toggle('hidden');
+                if (e.code.startsWith('Arrow')) e.preventDefault();
+            });
+            window.addEventListener('keyup', (e) => keys.delete(e.code));
+            window.addEventListener('blur', () => keys.clear());
 
-let drag = null;
-const el = renderer.domElement;
-el.addEventListener('contextmenu', e => e.preventDefault());
-el.addEventListener('pointerdown', e => {
-    drag = { mode: (e.button === 2 || e.shiftKey) ? 'look' : 'scrub', x: e.clientX, y: e.clientY };
-    el.setPointerCapture(e.pointerId);
-});
-el.addEventListener('pointermove', e => {
-    if (!drag) return;
-    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    drag.x = e.clientX; drag.y = e.clientY;
-    if (drag.mode === 'look') {
-        yaw -= dx * 0.004;
-        pitch = THREE.MathUtils.clamp(pitch - dy * 0.004, -1.5, 1.5);
-    } else {
-        input.scrub += dx * 0.03;       }
-});
-const endDrag = () => { drag = null; };
-el.addEventListener('pointerup', endDrag);
-el.addEventListener('pointercancel', endDrag);
+            let drag = null;
+            const el = renderer.domElement;
+            el.addEventListener('contextmenu', (e) => e.preventDefault());
+            el.addEventListener('pointerdown', (e) => {
+                drag = {
+                    mode: e.button === 2 || e.shiftKey ? 'look' : 'scrub',
+                    x: e.clientX,
+                    y: e.clientY,
+                };
+                el.setPointerCapture(e.pointerId);
+            });
+            el.addEventListener('pointermove', (e) => {
+                if (!drag) return;
+                const dx = e.clientX - drag.x,
+                    dy = e.clientY - drag.y;
+                drag.x = e.clientX;
+                drag.y = e.clientY;
+                if (drag.mode === 'look') {
+                    yaw -= dx * 0.004;
+                    pitch = THREE.MathUtils.clamp(
+                        pitch - dy * 0.004,
+                        -1.5,
+                        1.5,
+                    );
+                } else {
+                    input.scrub += dx * 0.03;
+                }
+            });
+            const endDrag = () => {
+                drag = null;
+            };
+            el.addEventListener('pointerup', endDrag);
+            el.addEventListener('pointercancel', endDrag);
 
-function pollDesktopInput() {
-    const k = c => (keys.has(c) ? 1 : 0);
-    input.moveX = k('KeyD') - k('KeyA');
-    input.moveZ = k('KeyS') - k('KeyW');
-    input.moveY = k('KeyE') - k('KeyQ');
-    input.timeAxis = k('ArrowRight') - k('ArrowLeft'); }
+            function pollDesktopInput() {
+                const k = (c) => (keys.has(c) ? 1 : 0);
+                input.moveX = k('KeyD') - k('KeyA');
+                input.moveZ = k('KeyS') - k('KeyW');
+                input.moveY = k('KeyE') - k('KeyQ');
+                input.timeAxis = k('ArrowRight') - k('ArrowLeft');
+            }
 
-let fractalTime = 0;
-let rate = 1;
+            let fractalTime = 0;
+            let rate = 1;
 
-const rateFromAxis = a => {
-    const r = a >= 0 ? 1 + a * 7 : 1 + a * 2;
-    return Math.abs(r) < 0.12 ? 0 : r;  };
+            const rateFromAxis = (a) => {
+                const r = a >= 0 ? 1 + a * 7 : 1 + a * 2;
+                return Math.abs(r) < 0.12 ? 0 : r;
+            };
 
-function resetTime() { fractalTime = 0; rate = 1; input.paused = false; }
+            function resetTime() {
+                fractalTime = 0;
+                rate = 1;
+                input.paused = false;
+            }
 
-const MOVE_SPEED = 1.5; const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
-const invRot = new THREE.Quaternion();
+            const MOVE_SPEED = 1.5;
+            const fwd = new THREE.Vector3(),
+                right = new THREE.Vector3(),
+                up = new THREE.Vector3(0, 1, 0);
+            const invRot = new THREE.Quaternion();
 
-function applyInput(dt) {
-        const target = input.paused ? 0 : rateFromAxis(input.timeAxis);
-    rate += (target - rate) * Math.min(1, dt * 6);
-    fractalTime += rate * dt + input.scrub;
-    input.scrub = 0;
+            function applyInput(dt) {
+                const target = input.paused ? 0 : rateFromAxis(input.timeAxis);
+                rate += (target - rate) * Math.min(1, dt * 6);
+                fractalTime += rate * dt + input.scrub;
+                input.scrub = 0;
 
-            uniforms.uTime.value = fractalTime;
-    uniforms.uPhase.value = fractalTime * 0.1;
-    fractal.rotation.y = fractalTime * 0.2;
-    fractal.updateMatrixWorld();
-    uniforms.uInvModel.value.copy(fractal.matrixWorld).invert();
+                uniforms.uTime.value = fractalTime;
+                uniforms.uPhase.value = fractalTime * 0.1;
+                fractal.rotation.y = fractalTime * 0.2;
+                fractal.updateMatrixWorld();
+                uniforms.uInvModel.value.copy(fractal.matrixWorld).invert();
 
-            invRot.copy(fractal.quaternion).invert();
-    uniforms.uSunL.value.copy(SUN_DIR).applyQuaternion(invRot);
-    uniforms.uBacL.value.copy(BAC_DIR).applyQuaternion(invRot);
-    uniforms.uUpL.value.copy(UP_DIR).applyQuaternion(invRot);
+                invRot.copy(fractal.quaternion).invert();
+                uniforms.uSunL.value.copy(SUN_DIR).applyQuaternion(invRot);
+                uniforms.uBacL.value.copy(BAC_DIR).applyQuaternion(invRot);
+                uniforms.uUpL.value.copy(UP_DIR).applyQuaternion(invRot);
 
-        camera.getWorldDirection(fwd);
-    fwd.y = 0;
-    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
-    fwd.normalize();
-    right.crossVectors(fwd, up);
-    const step = MOVE_SPEED * dt;
-    rig.position.addScaledVector(right, input.moveX * step);
-    rig.position.addScaledVector(fwd, -input.moveZ * step);
-    rig.position.addScaledVector(up, input.moveY * step);
-}
+                camera.getWorldDirection(fwd);
+                fwd.y = 0;
+                if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+                fwd.normalize();
+                right.crossVectors(fwd, up);
+                const step = MOVE_SPEED * dt;
+                rig.position.addScaledVector(right, input.moveX * step);
+                rig.position.addScaledVector(fwd, -input.moveZ * step);
+                rig.position.addScaledVector(up, input.moveY * step);
+            }
 
-// Quality levels trade march steps and (on desktop) render resolution for frame rate. Shadow
-// steps and fractal iterations stay fixed: dropping them changed the lighting, so close-ups,
-// which fill the screen and slow the frame, came out flat and over-lit.
-const SHADOW_STEPS = 32;
-const ITERATIONS = 7;
-const LEVELS = [            // [march steps, desktop resolution scale]
-    [40, 0.5],
-    [48, 0.6],
-    [56, 0.7],
-    [64, 0.8],
-    [64, 0.9],
-    [72, 1.0],
-    [80, 1.0],
-];
-const BASE_PIXEL_RATIO = Math.min(window.devicePixelRatio, 1.5);
-const quality = { ema: 1 / 60, target: 1 / 60, level: 5, max: 6, lastChange: 0 };
-uniforms.uShadow.value = SHADOW_STEPS;
-uniforms.uIter.value = ITERATIONS;
+            // Quality levels trade march steps and (on desktop) render resolution for frame rate. Shadow
+            // steps and fractal iterations stay fixed: dropping them changed the lighting, so close-ups,
+            // which fill the screen and slow the frame, came out flat and over-lit.
+            const SHADOW_STEPS = 32;
+            const ITERATIONS = 7;
+            const LEVELS = [
+                // [march steps, desktop resolution scale]
+                [40, 0.5],
+                [48, 0.6],
+                [56, 0.7],
+                [64, 0.8],
+                [64, 0.9],
+                [72, 1.0],
+                [80, 1.0],
+            ];
+            const BASE_PIXEL_RATIO = Math.min(window.devicePixelRatio, 1.5);
+            const quality = {
+                ema: 1 / 60,
+                target: 1 / 60,
+                level: 5,
+                max: 6,
+                lastChange: 0,
+            };
+            uniforms.uShadow.value = SHADOW_STEPS;
+            uniforms.uIter.value = ITERATIONS;
 
-function setLevel(l) {
-    quality.level = THREE.MathUtils.clamp(l, 0, quality.max);
-    const [steps, scale] = LEVELS[quality.level];
-    uniforms.uSteps.value = steps;
-    // The XR framebuffer size is fixed for a session, so resolution only adapts on desktop.
-    if (!renderer.xr.isPresenting && renderer.getPixelRatio() !== BASE_PIXEL_RATIO * scale) {
-        renderer.setPixelRatio(BASE_PIXEL_RATIO * scale);
-    }
-}
+            function setLevel(l) {
+                quality.level = THREE.MathUtils.clamp(l, 0, quality.max);
+                const [steps, scale] = LEVELS[quality.level];
+                uniforms.uSteps.value = steps;
+                // The XR framebuffer size is fixed for a session, so resolution only adapts on desktop.
+                if (
+                    !renderer.xr.isPresenting &&
+                    renderer.getPixelRatio() !== BASE_PIXEL_RATIO * scale
+                ) {
+                    renderer.setPixelRatio(BASE_PIXEL_RATIO * scale);
+                }
+            }
 
-function adaptQuality(dt, now) {
-    quality.ema += (dt - quality.ema) * 0.1;
-    if (quality.ema > quality.target * 1.15 && quality.level > 0) {
-        setLevel(quality.level - 1);
-        quality.ema = quality.target;
-        quality.lastChange = now;
-    } else if (quality.ema < quality.target * 1.05 && now - quality.lastChange > 4000) {
-        setLevel(quality.level + 1);
-        quality.lastChange = now;
-    }
-}
+            function adaptQuality(dt, now) {
+                quality.ema += (dt - quality.ema) * 0.1;
+                if (quality.ema > quality.target * 1.15 && quality.level > 0) {
+                    setLevel(quality.level - 1);
+                    quality.ema = quality.target;
+                    quality.lastChange = now;
+                } else if (
+                    quality.ema < quality.target * 1.05 &&
+                    now - quality.lastChange > 4000
+                ) {
+                    setLevel(quality.level + 1);
+                    quality.lastChange = now;
+                }
+            }
 
-// Surface-hit tolerance for a full-resolution pixel. It deliberately ignores the adaptive
-// resolution scale, so the surface detail and normals (and with them the shading) don't shift
-// when quality changes.
-function desktopPixel() {
-    const px = window.innerHeight * BASE_PIXEL_RATIO;
-    return 0.5 * 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / px;
-}
-uniforms.uPixel.value = desktopPixel();
-setLevel(quality.level);
+            // Surface-hit tolerance for a full-resolution pixel. It deliberately ignores the adaptive
+            // resolution scale, so the surface detail and normals (and with them the shading) don't shift
+            // when quality changes.
+            function desktopPixel() {
+                const px = window.innerHeight * BASE_PIXEL_RATIO;
+                return (
+                    (0.5 *
+                        2 *
+                        Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) /
+                    px
+                );
+            }
+            uniforms.uPixel.value = desktopPixel();
+            setLevel(quality.level);
 
-renderer.xr.addEventListener('sessionstart', () => {
-    const session = renderer.xr.getSession();
-    quality.target = 1 / (session.frameRate || 72);
-    quality.ema = quality.target;
-    quality.max = 4;
-    setLevel(3);
-    uniforms.uPixel.value = 0.0008;
-    document.getElementById('hud').style.display = 'none';
-});
-renderer.xr.addEventListener('sessionend', () => {
-    camera.position.set(0, 1.6, 0);
-    quality.target = 1 / 60;
-    quality.max = 6;
-    setLevel(5);
-    uniforms.uPixel.value = desktopPixel();
-    gamepads.left = gamepads.right = null;
-    document.getElementById('hud').style.display = '';
-});
+            renderer.xr.addEventListener('sessionstart', () => {
+                const session = renderer.xr.getSession();
+                quality.target = 1 / (session.frameRate || 72);
+                quality.ema = quality.target;
+                quality.max = 4;
+                setLevel(3);
+                uniforms.uPixel.value = 0.0008;
+                document.getElementById('hud').style.display = 'none';
+            });
+            renderer.xr.addEventListener('sessionend', () => {
+                camera.position.set(0, 1.6, 0);
+                quality.target = 1 / 60;
+                quality.max = 6;
+                setLevel(5);
+                uniforms.uPixel.value = desktopPixel();
+                gamepads.left = gamepads.right = null;
+                document.getElementById('hud').style.display = '';
+            });
 
-const vrPanel = (() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256; canvas.height = 96;
-    const ctx = canvas.getContext('2d');
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.1, 0.0375),
-        new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false })
-    );
-    mesh.position.set(0, 0.06, -0.02);
-    mesh.rotation.x = -Math.PI / 4;
-    mesh.renderOrder = 10;
-    let last = '';
-    return {
-        mesh,
-        update(rateText, timeText) {
-            const key = rateText + timeText;
-            if (key === last) return;
-            last = key;
-            ctx.clearRect(0, 0, 256, 96);
-            ctx.fillStyle = 'rgba(8,14,26,0.8)';
-            ctx.beginPath(); ctx.roundRect(0, 0, 256, 96, 18); ctx.fill();
-            ctx.fillStyle = '#8ccfff';
-            ctx.font = 'bold 40px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(rateText, 128, 46);
-            ctx.fillStyle = '#8a9ab0';
-            ctx.font = '24px monospace';
-            ctx.fillText(timeText, 128, 80);
-            tex.needsUpdate = true;
-        },
-    };
-})();
+            const vrPanel = (() => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 256;
+                canvas.height = 96;
+                const ctx = canvas.getContext('2d');
+                const tex = new THREE.CanvasTexture(canvas);
+                tex.colorSpace = THREE.SRGBColorSpace;
+                const mesh = new THREE.Mesh(
+                    new THREE.PlaneGeometry(0.1, 0.0375),
+                    new THREE.MeshBasicMaterial({
+                        map: tex,
+                        transparent: true,
+                        depthTest: false,
+                    }),
+                );
+                mesh.position.set(0, 0.06, -0.02);
+                mesh.rotation.x = -Math.PI / 4;
+                mesh.renderOrder = 10;
+                let last = '';
+                return {
+                    mesh,
+                    update(rateText, timeText) {
+                        const key = rateText + timeText;
+                        if (key === last) return;
+                        last = key;
+                        ctx.clearRect(0, 0, 256, 96);
+                        ctx.fillStyle = 'rgba(8,14,26,0.8)';
+                        ctx.beginPath();
+                        ctx.roundRect(0, 0, 256, 96, 18);
+                        ctx.fill();
+                        ctx.fillStyle = '#8ccfff';
+                        ctx.font = 'bold 40px monospace';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(rateText, 128, 46);
+                        ctx.fillStyle = '#8a9ab0';
+                        ctx.font = '24px monospace';
+                        ctx.fillText(timeText, 128, 80);
+                        tex.needsUpdate = true;
+                    },
+                };
+            })();
 
-const statsEl = document.getElementById('stats');
-let lastTime = performance.now();
-let statsTimer = 0;
+            const statsEl = document.getElementById('stats');
+            let lastTime = performance.now();
+            let statsTimer = 0;
 
-function rateLabel() {
-    if (input.paused) return '❚❚ paused';
-    const r = Math.abs(rate) < 0.05 ? 0 : rate;
-    const sym = r > 1.05 ? '▶▶' : r < -0.05 ? '◀◀' : r === 0 ? '■' : '▶';
-    return `${sym} ${r.toFixed(1)}x`;
-}
+            function rateLabel() {
+                if (input.paused) return '❚❚ paused';
+                const r = Math.abs(rate) < 0.05 ? 0 : rate;
+                const sym =
+                    r > 1.05 ? '▶▶' : r < -0.05 ? '◀◀' : r === 0 ? '■' : '▶';
+                return `${sym} ${r.toFixed(1)}x`;
+            }
 
-renderer.setAnimationLoop(now => {
-    const dt = Math.min((now - lastTime) / 1000, 0.1);
-    lastTime = now;
+            renderer.setAnimationLoop((now) => {
+                const dt = Math.min((now - lastTime) / 1000, 0.1);
+                lastTime = now;
 
-    if (renderer.xr.isPresenting) {
-        pollXRInput();
-    } else {
-        pollDesktopInput();
-        camera.rotation.set(pitch, yaw, 0, 'YXZ');
-    }
-    applyInput(dt);
-    adaptQuality(dt, now);
+                if (renderer.xr.isPresenting) {
+                    pollXRInput();
+                } else {
+                    pollDesktopInput();
+                    camera.rotation.set(pitch, yaw, 0, 'YXZ');
+                }
+                applyInput(dt);
+                adaptQuality(dt, now);
 
-    const timeText = `t ${fractalTime.toFixed(1)}`;
-    if (renderer.xr.isPresenting) {
-        vrPanel.update(rateLabel(), timeText);
-    } else if ((statsTimer += dt) > 0.25) {
-        statsTimer = 0;
-        statsEl.textContent =
-            `${rateLabel()}   ${timeText}\n` +
-            `${(1 / quality.ema).toFixed(0)} fps   quality ${quality.level}/${quality.max}` +
-            `   steps ${uniforms.uSteps.value}   res ${Math.round(renderer.getPixelRatio() / BASE_PIXEL_RATIO * 100)}%`;
-    }
+                const timeText = `t ${fractalTime.toFixed(1)}`;
+                if (renderer.xr.isPresenting) {
+                    vrPanel.update(rateLabel(), timeText);
+                } else if ((statsTimer += dt) > 0.25) {
+                    statsTimer = 0;
+                    statsEl.textContent =
+                        `${rateLabel()}   ${timeText}\n` +
+                        `${(1 / quality.ema).toFixed(0)} fps   quality ${quality.level}/${quality.max}` +
+                        `   steps ${uniforms.uSteps.value}   res ${Math.round((renderer.getPixelRatio() / BASE_PIXEL_RATIO) * 100)}%`;
+                }
 
-    renderer.render(scene, camera);
-});
+                renderer.render(scene, camera);
+            });
 
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    if (!renderer.xr.isPresenting) uniforms.uPixel.value = desktopPixel();
-});
-</script>
-</body>
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                if (!renderer.xr.isPresenting)
+                    uniforms.uPixel.value = desktopPixel();
+            });
+        </script>
+    </body>
 </html>
