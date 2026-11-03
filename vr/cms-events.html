@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#050a14">
+    <title>CMS Events</title>
+    <meta name="description" content="Real 2011 CMS collisions in WebXR: stand inside a life-size CMS detector, watch muons cross the drift tubes and cathode strip chambers, and find the Z, W and top quark in the mass plots.">
+    <link rel="stylesheet" href="/vr/vr.css">
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #050a14;
+            color: white;
+            font-family: 'Geist', sans-serif;
+        }
+        canvas { display: block; touch-action: none; }
+        #hud { top: 16px; left: 16px; width: 420px; user-select: none; pointer-events: none; }
+        #controls { top: 16px; right: 16px; width: 380px; }
+        #controls .row { display: flex; gap: 8px; align-items: center; }
+        #controls .row > select { flex: 1; min-width: 0; }
+        #controls input[type=range] { flex: 1; min-width: 0; }
+        #ev-label { color: var(--gold); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 11ch; text-align: right; }
+        #hover { color: white; font-family: 'Fira Code', monospace; font-size: 13px; line-height: 1.6; white-space: pre; }
+        #hover:empty { display: none; }
+        #error { color: #ef5350; font-family: 'Fira Code', monospace; font-size: 13px; white-space: pre-wrap; }
+        #error:empty { display: none; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+<div id="hud" class="hud">
+    <header>
+        <span>/vr/cms-events.html</span>
+        <a href="/vr/"><span>cd </span>..</a>
+    </header>
+    <section>
+        <span class="name">CMS Events</span>
+        <div class="stats" id="stats">loading events…</div>
+        <div id="hover"></div>
+        <div class="keys">
+            <div class="rule"></div>
+            <span class="command">controls <span>--desktop</span></span>
+            <dl>
+                <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>move</dd>
+                <dt><kbd>Q</kbd><kbd>E</kbd><kbd>Shift</kbd></dt><dd>down / up · fast</dd>
+                <dt><kbd>drag</kbd></dt><dd>look · hover a muon, jet or MET</dd>
+                <dt><kbd>scroll</kbd><kbd>+</kbd><kbd>−</kbd></dt><dd>scale the detector</dd>
+                <dt><kbd>←</kbd><kbd>→</kbd><kbd>Space</kbd></dt><dd>previous / next event · auto-play</dd>
+                <dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></dt><dd>Z → μμ · W → μν · tt̄</dd>
+                <dt><kbd>T</kbd><kbd>G</kbd></dt><dd>life size / tabletop · detector</dd>
+                <dt><kbd>R</kbd><kbd>H</kbd></dt><dd>reset view · hide help</dd>
+            </dl>
+            <span class="command">controls <span>--vr</span></span>
+            <dl>
+                <dt><kbd>L stick</kbd></dt><dd>move</dd>
+                <dt><kbd>R stick</kbd></dt><dd>↕ height · ↔ previous / next event</dd>
+                <dt><kbd>R trigger</kbd></dt><dd>ray hover</dd>
+                <dt><kbd>R grip</kbd><kbd>L grip</kbd></dt><dd>scale up · down</dd>
+                <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>next event · next sample</dd>
+                <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>auto-play · life size / tabletop</dd>
+            </dl>
+            <div class="rule"></div>
+            <span class="note">Real CMS collisions recorded in 2011 at √s = 7 TeV (CMS HEP Tutorial ntuple, CERN Open Data).
+                It holds reconstructed objects, not hits: muons are propagated through an approximate 3.8 T solenoid
+                and −1.8 T return-yoke field, and the chambers they cross are worked out from a simplified CMS layout.</span>
+        </div>
+    </section>
+</div>
+
+<div id="controls" class="hud">
+    <header><span>events</span></header>
+    <section>
+        <div class="row">
+            <select id="sample" aria-label="Sample"></select>
+            <button id="prev" aria-label="Previous event">Prev</button>
+            <button id="next" aria-label="Next event">Next</button>
+        </div>
+        <div class="row">
+            <input id="ev-slider" type="range" min="0" max="0" step="1" value="0" aria-label="Event">
+            <span id="ev-label"></span>
+            <button id="play" aria-pressed="false">Auto</button>
+        </div>
+        <div class="row">
+            <button id="size">Tabletop</button>
+            <button id="layers" aria-pressed="true">Detector on</button>
+            <button id="random">Random</button>
+        </div>
+        <div id="error"></div>
+    </section>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+
+// ─── Renderer / rig ─────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050a14);
+scene.add(new THREE.GridHelper(60, 60, 0x1c2a40, 0x111a28));
+const rig = new THREE.Group();
+scene.add(rig);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 300);
+rig.add(camera);
+
+// CMS coordinates, in metres: x toward the LHC centre, y up, z along the beam — both right-handed,
+// so they map straight onto three's axes. At life size the yoke's flats rest on the floor.
+const cms = new THREE.Group();
+scene.add(cms);
+const detector = new THREE.Group(), eventGroup = new THREE.Group();
+cms.add(detector, eventGroup);
+const LIFE_Y = 7.6;                                     // the beam line's height at 1:1
+const TABLETOP = 0.06;
+const VIEW = new THREE.Vector3(17, -2.5, 9);             // where the view opens, from the centre, in CMS metres
+
+const params = new URLSearchParams(location.search);
+const state = { data: null, sample: 0, index: 0, scale: 1, playing: false, playTimer: 0, grow: 1, objects: [], hits: 0 };
+
+function placeCMS() {
+    cms.scale.setScalar(state.scale);
+    cms.position.set(0, Math.max(1.25, LIFE_Y * state.scale), 0);
+}
+function setScale(s) {
+    state.scale = THREE.MathUtils.clamp(s, 0.03, 1.5);
+    placeCMS();
+    sizeButton.textContent = state.scale < 0.5 ? 'Life size' : 'Tabletop';
+}
+
+let yaw = 0, pitch = 0;
+function resetView() {
+    rig.position.set(0, 0, 0);
+    rig.rotation.set(0, 0, 0);
+    camera.position.copy(VIEW).multiplyScalar(state.scale).add(cms.position);
+    camera.position.y = Math.max(1.6, camera.position.y);
+    const f = cms.position.clone().sub(camera.position).normalize();
+    yaw = Math.atan2(-f.x, -f.z);
+    pitch = Math.asin(f.y);
+}
+
+// ─── Detector (a simplified CMS: radii and lengths from the TDRs, rounded) ──
+const WHITE = new THREE.Color(1, 1, 1);
+function solid(geometry, colour, opacity) {
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+        color: colour, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false,
+    }));
+    mesh.renderOrder = -1;
+    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), new THREE.LineBasicMaterial({
+        color: new THREE.Color(colour).lerp(WHITE, 0.3), transparent: true, opacity: Math.min(0.5, opacity * 5),
+    })));
+    return mesh;
+}
+// A ring of rectangular cross-section swept about the beam. With 12 sides (the iron yoke), the radii
+// are the flats' and the flats face the muon sectors at φ = 0°, 30°, …
+function annulus(rIn, rOut, z0, z1, sides = 48) {
+    const k = sides === 12 ? 1 / Math.cos(Math.PI / 12) : 1;
+    const profile = [[rIn, z0], [rOut, z0], [rOut, z1], [rIn, z1], [rIn, z0]].map(([r, z]) => new THREE.Vector2(r * k, z));
+    // Lathe sweeps about y with vertices at azimuth φ − 90° once turned onto z; start at 15° for 12 sides.
+    return new THREE.LatheGeometry(profile, sides, sides === 12 ? Math.PI / 2 + Math.PI / 12 : 0).rotateX(Math.PI / 2);
+}
+const bothEnds = (z0, z1, make) => [make(z0, z1), make(-z1, -z0)];
+[
+    solid(annulus(0.025, 0.03, -10.6, 10.6, 16), '#90a4ae', 0.25),                 // beam pipe
+    solid(annulus(1.08, 1.16, -2.8, 2.8), '#4dd0e1', 0.05),                         // tracker
+    solid(annulus(1.29, 1.75, -3.0, 3.0), '#66bb6a', 0.07),                         // ECAL barrel
+    ...bothEnds(3.15, 3.37, (a, b) => solid(annulus(0.32, 1.71, a, b), '#66bb6a', 0.07)),
+    solid(annulus(1.81, 2.95, -3.88, 3.88), '#7986cb', 0.05),                       // HCAL barrel
+    ...bothEnds(3.88, 5.6, (a, b) => solid(annulus(0.4, 2.95, a, b), '#7986cb', 0.05)),
+    solid(annulus(2.97, 3.48, -6.3, 6.3), '#b0bec5', 0.07),                         // solenoid
+    ...[-2, -1, 0, 1, 2].map(w => solid(annulus(3.9, 7.38, w * 2.54 - 1.24, w * 2.54 + 1.24, 12), '#c62828', 0.025)),
+    ...[[7.25, 7.85], [8.65, 9.2], [9.75, 10.05]].flatMap(([a, b]) => bothEnds(a, b, (z0, z1) => solid(annulus(1.3, 7.0, z0, z1, 12), '#c62828', 0.025))),
+].forEach(m => detector.add(m));
+
+// Muon chambers: 250 drift-tube chambers in the barrel (4 stations × 5 wheels × 12 sectors) and the
+// cathode strip chambers of both endcaps as installed in 2011 (no ME4/2 yet).
+const chambers = [];                                   // { name, inverse, half, rMid, group, matrix, centre, reach }
+const chamberGroups = [];                              // { geometry, edges, matrices }
+function chamberGroup(geometry, list) {
+    const group = { geometry, edges: new THREE.EdgesGeometry(geometry, 1), matrices: list.map(c => c.matrix) };
+    chamberGroups.push(group);
+    for (const c of list) {
+        c.group = group;
+        c.inverse = c.matrix.clone().invert();
+        c.centre = new THREE.Vector3().setFromMatrixPosition(c.matrix);
+        c.reach = Math.hypot(...c.half) * 1.1;
+        chambers.push(c);
+    }
+}
+const signed = v => (v > 0 ? `+${v}` : v < 0 ? `−${-v}` : '0');
+[4.33, 5.05, 6.0, 7.07].forEach((r, s) => {
+    const half = [0.13, r * Math.tan(Math.PI / 12) * 0.92, 1.22];
+    const list = [];
+    for (let w = -2; w <= 2; w++) for (let k = 0; k < 12; k++) {
+        const phi = k * Math.PI / 6;
+        list.push({
+            name: `MB${s + 1} wheel ${signed(w)} sector ${k + 1}`, half, rMid: 0,
+            matrix: new THREE.Matrix4().makeRotationZ(phi).setPosition(r * Math.cos(phi), r * Math.sin(phi), w * 2.54),
+        });
+    }
+    chamberGroup(new THREE.BoxGeometry(half[0] * 2, half[1] * 2, half[2] * 2), list);
+});
+[
+    { st: '1/1', z: 6.0, r0: 1.0, r1: 2.6, n: 36 }, { st: '1/2', z: 6.95, r0: 2.8, r1: 4.6, n: 36 },
+    { st: '1/3', z: 6.95, r0: 5.05, r1: 6.95, n: 36 },
+    { st: '2/1', z: 8.4, r0: 1.4, r1: 3.5, n: 18 }, { st: '2/2', z: 8.4, r0: 3.6, r1: 7.0, n: 36 },
+    { st: '3/1', z: 9.5, r0: 1.6, r1: 3.5, n: 18 }, { st: '3/2', z: 9.5, r0: 3.6, r1: 7.0, n: 36 },
+    { st: '4/1', z: 10.35, r0: 1.75, r1: 3.5, n: 18 },
+].forEach(({ st, z, r0, r1, n }) => {
+    // A trapezoid: radial along local x, φ along y (wider at larger radius), beam along z.
+    const rMid = (r0 + r1) / 2, half = [(r1 - r0) / 2, rMid * Math.tan(Math.PI / n), 0.08];
+    const geometry = new THREE.BoxGeometry(half[0] * 2, half[1] * 2, half[2] * 2);
+    const pos = geometry.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) pos.setY(i, pos.getY(i) * (rMid + pos.getX(i)) / rMid);
+    const list = [];
+    for (const side of [1, -1]) for (let c = 0; c < n; c++) {
+        const phi = (c + 0.5) * 2 * Math.PI / n;
+        list.push({
+            name: `ME${side > 0 ? '+' : '−'}${st} chamber ${c + 1}`, half, rMid,
+            matrix: new THREE.Matrix4().makeRotationZ(phi).setPosition(rMid * Math.cos(phi), rMid * Math.sin(phi), side * z),
+        });
+    }
+    chamberGroup(geometry, list);
+});
+const chamberMaterial = { dt: '#90a4ae', csc: '#4DB6AC' };
+for (const g of chamberGroups) {
+    const colour = chambers.find(c => c.group === g).rMid ? chamberMaterial.csc : chamberMaterial.dt;
+    const mesh = new THREE.InstancedMesh(g.geometry, new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: 0.05, side: THREE.DoubleSide, depthWrite: false }), g.matrices.length);
+    g.matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
+    mesh.renderOrder = -1;
+    detector.add(mesh);
+    // Every chamber's outline in one draw
+    const base = g.edges.getAttribute('position'), out = new Float32Array(base.count * 3 * g.matrices.length), v = new THREE.Vector3();
+    g.matrices.forEach((m, k) => {
+        for (let i = 0; i < base.count; i++) { v.fromBufferAttribute(base, i).applyMatrix4(m); out.set([v.x, v.y, v.z], (k * base.count + i) * 3); }
+    });
+    const lines = new THREE.BufferGeometry();
+    lines.setAttribute('position', new THREE.BufferAttribute(out, 3));
+    detector.add(new THREE.LineSegments(lines, new THREE.LineBasicMaterial({ color: colour, transparent: true, opacity: 0.14 })));
+}
+const _local = new THREE.Vector3();
+function chamberAt(p) {
+    for (const c of chambers) {
+        if (c.centre.distanceToSquared(p) > c.reach * c.reach) continue;
+        _local.copy(p).applyMatrix4(c.inverse);
+        const [hx, hy, hz] = c.half;
+        const width = c.rMid ? hy * (c.rMid + _local.x) / c.rMid : hy;
+        if (Math.abs(_local.x) <= hx && Math.abs(_local.z) <= hz && Math.abs(_local.y) <= width) return c;
+    }
+    return null;
+}
+
+// ─── Physics objects ────────────────────────────────────────────────────────
+const C = 0.299792458;                                  // GeV of transverse kick per (T · m) per unit charge
+// Bz only: the solenoid inside its coil, the return flux (opposite and weaker) in the barrel yoke.
+// The endcap disks' field is left out, so endcap muons run straight once past the coil.
+function field(x, y, z) {
+    const r = Math.hypot(x, y), az = Math.abs(z);
+    if (r < 2.97 && az < 6.0) return 3.8;
+    if (r > 3.9 && r < 7.38 && az < 6.3) return -1.8;
+    return 0;
+}
+const STEP = 0.02;
+// Steps a track out from the vertex until stop(position) — every step kept, with its path length.
+function propagate(px, py, pz, q, stop) {
+    const p = new THREE.Vector3(px, py, pz), pMag = p.length() || 1;
+    const pos = new THREE.Vector3(), pts = [pos.clone()];
+    for (let s = 0; s < 2000; s++) {
+        const dx = p.x / pMag, dy = p.y / pMag, dz = p.z / pMag;
+        pos.x += dx * STEP; pos.y += dy * STEP; pos.z += dz * STEP;
+        const B = q ? field(pos.x, pos.y, pos.z) : 0;
+        if (B) {
+            // dp = q C (p̂ × B) ds, with B = (0, 0, Bz); |p| held fixed (no energy loss)
+            p.x += q * C * dy * B * STEP;
+            p.y -= q * C * dx * B * STEP;
+            p.setLength(pMag);
+        }
+        pts.push(pos.clone());
+        if (stop(pos)) break;
+    }
+    return pts;
+}
+const outOfMuonSystem = p => Math.hypot(p.x, p.y) > 7.45 || Math.abs(p.z) > 10.5;
+const atECAL = p => Math.hypot(p.x, p.y) >= 1.29 || Math.abs(p.z) >= 3.15;
+// Distance along a straight line from the vertex to the ECAL's front face
+function toECAL(d) {
+    const rt = Math.hypot(d.x, d.y);
+    return Math.min(rt > 1e-9 ? 1.29 / rt : Infinity, Math.abs(d.z) > 1e-9 ? 3.15 / Math.abs(d.z) : Infinity);
+}
+
+const COLOUR = { mu: '#ef5350', el: '#66bb6a', ph: '#ffd54f', jet: '#FFB74D', bjet: '#42a5f5', met: '#ce93d8' };
+const MATERIAL = {
+    mu: new THREE.MeshBasicMaterial({ color: COLOUR.mu }),
+    el: new THREE.MeshBasicMaterial({ color: COLOUR.el }),
+    elTower: new THREE.MeshBasicMaterial({ color: COLOUR.el, transparent: true, opacity: 0.85 }),
+    ph: new THREE.MeshBasicMaterial({ color: COLOUR.ph, transparent: true, opacity: 0.6 }),
+    phTower: new THREE.MeshBasicMaterial({ color: COLOUR.ph, transparent: true, opacity: 0.85 }),
+    jet: new THREE.MeshBasicMaterial({ color: COLOUR.jet, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false }),
+    jetTower: new THREE.MeshBasicMaterial({ color: COLOUR.jet, transparent: true, opacity: 0.85 }),
+    bjet: new THREE.MeshBasicMaterial({ color: COLOUR.bjet, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }),
+    bjetTower: new THREE.MeshBasicMaterial({ color: COLOUR.bjet, transparent: true, opacity: 0.85 }),
+    met: new THREE.MeshBasicMaterial({ color: COLOUR.met }),
+    hit: new THREE.MeshBasicMaterial({ color: COLOUR.mu, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }),
+    hitEdge: new THREE.LineBasicMaterial({ color: '#ffab91' }),
+};
+const Y = new THREE.Vector3(0, 1, 0);
+// Unit shapes that open along +y from the origin
+const CONE = new THREE.ConeGeometry(Math.tan(0.2), 1, 24, 1, true).rotateX(Math.PI).translate(0, 0.5, 0);
+const TOWER = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+const SHAFT = new THREE.CylinderGeometry(0.06, 0.06, 1, 12).translate(0, 0.5, 0);
+const HEAD = new THREE.ConeGeometry(0.2, 0.5, 16).translate(0, 0.25, 0);
+const BTAG = 1.74;
+const TOWER_M_PER_GEV = 0.02;                            // tower height per GeV of E_T
+
+const kin = (px, py, pz) => {
+    const pt = Math.hypot(px, py);
+    return { pt, eta: Math.asinh(pz / (pt || 1e-9)), phi: Math.atan2(py, px) };
+};
+const f2 = v => v.toFixed(2), f1 = v => v.toFixed(1);
+const SUP = { 1: '⁺', '-1': '⁻' };
+
+function tube(points, radius, material) {
+    const every = Math.max(1, Math.floor(points.length / 150));
+    const sub = points.filter((_, i) => i % every === 0 || i === points.length - 1);
+    const geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(sub), Math.max(8, sub.length * 2), radius, 6, false);
+    return new THREE.Mesh(geometry, material);
+}
+// How far along its path an object has grown is set by the reveal distance D (metres from the vertex).
+function trackObject(pts, radius, material) {
+    const mesh = tube(pts, radius, material);
+    let length = 0;
+    for (let i = 1; i < pts.length; i++) length += pts[i].distanceTo(pts[i - 1]);
+    const count = mesh.geometry.index.count;
+    eventGroup.add(mesh);
+    return { mesh, length, grow: D => mesh.geometry.setDrawRange(0, Math.floor(Math.min(1, D / length) * count / 3) * 3) };
+}
+function oriented(geometry, material, origin, dir) {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.copy(origin);
+    mesh.quaternion.setFromUnitVectors(Y, dir);
+    eventGroup.add(mesh);
+    return mesh;
+}
+// A calorimeter deposit: a tower standing on the ECAL face along dir, sized by E_T
+function towerObject(dir, start, et, width, material) {
+    const h = THREE.MathUtils.clamp(et * TOWER_M_PER_GEV, 0.1, 4);
+    const mesh = oriented(TOWER, material, dir.clone().multiplyScalar(start), dir);
+    return { h, grow: D => { const t = THREE.MathUtils.clamp((D - start) / h, 0, 1); mesh.visible = t > 0; mesh.scale.set(width, h * t || 1e-3, width); } };
+}
+const along = (dir, from, to, n = 12) => Array.from({ length: n + 1 }, (_, i) => dir.clone().multiplyScalar(from + (to - from) * i / n));
+
+function clearEvent() {
+    for (const m of [...eventGroup.children]) {
+        if (m.geometry && ![CONE, TOWER, SHAFT, HEAD].includes(m.geometry) && !chamberGroups.some(g => g.geometry === m.geometry || g.edges === m.geometry)) m.geometry.dispose();
+        eventGroup.remove(m);
+    }
+    state.objects = [];
+    state.hits = 0;
+    setHover(null);
+}
+
+function buildEvent(ev) {
+    clearEvent();
+    const objects = state.objects;
+    const vertex = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    eventGroup.add(vertex);
+
+    // Muons: through the field to the edge of the muon system, lighting the chambers they cross
+    for (const [px, py, pz, E, q, iso] of ev.mu) {
+        const pts = propagate(px, py, pz, q, outOfMuonSystem);
+        const track = trackObject(pts, 0.07, MATERIAL.mu);
+        const crossed = new Map();
+        pts.forEach((p, i) => {
+            if (Math.hypot(p.x, p.y) < 3.9 && Math.abs(p.z) < 5.8) return;
+            const c = chamberAt(p);
+            if (c && !crossed.has(c)) crossed.set(c, i * STEP);
+        });
+        const hitMeshes = [...crossed].map(([c, at]) => {
+            const mesh = new THREE.Mesh(c.group.geometry, MATERIAL.hit);
+            mesh.matrixAutoUpdate = false;
+            mesh.matrix.copy(c.matrix);
+            mesh.add(new THREE.LineSegments(c.group.edges, MATERIAL.hitEdge));
+            eventGroup.add(mesh);
+            return { mesh, at };
+        });
+        state.hits += crossed.size;
+        const k = kin(px, py, pz);
+        objects.push({
+            points: pts.filter((_, i) => i % 10 === 0), colour: COLOUR.mu,
+            title: `μ${SUP[q] ?? ''} · pT ${f1(k.pt)} GeV`, sub: `η ${f2(k.eta)} · φ ${f2(k.phi)}`,
+            info: `muon μ${SUP[q] ?? ''}   pT ${f2(k.pt)} GeV   |p| ${f2(Math.hypot(px, py, pz))} GeV\n` +
+                `η ${f2(k.eta)}   φ ${f2(k.phi)}   isolation ${f2(iso)} GeV\n` +
+                `${crossed.size} muon chambers crossed${crossed.size ? ':' : ''}\n` +
+                [...crossed.keys()].map(c => `  ${c.name}`).join('\n'),
+            grow: D => { track.grow(D); for (const h of hitMeshes) h.mesh.visible = D >= h.at; },
+        });
+    }
+    // Electrons: curl to the ECAL and stop in a deposit
+    for (const [px, py, pz, E, q, iso] of ev.el) {
+        const pts = propagate(px, py, pz, q, atECAL);
+        const track = trackObject(pts, 0.04, MATERIAL.el);
+        const k = kin(px, py, pz), end = pts[pts.length - 1], dir = end.clone().normalize();
+        const tower = towerObject(dir, end.length(), k.pt, 0.2, MATERIAL.elTower);
+        objects.push({
+            points: [...pts.filter((_, i) => i % 5 === 0), ...along(dir, end.length(), end.length() + tower.h, 4)], colour: COLOUR.el,
+            title: `e${SUP[q] ?? ''} · pT ${f1(k.pt)} GeV`, sub: `η ${f2(k.eta)} · φ ${f2(k.phi)}`,
+            info: `electron e${SUP[q] ?? ''}   pT ${f2(k.pt)} GeV   E ${f2(E)} GeV\nη ${f2(k.eta)}   φ ${f2(k.phi)}   isolation ${f2(iso)} GeV`,
+            grow: D => { track.grow(D); tower.grow(D); },
+        });
+    }
+    // Photons: no track, a straight dotted path to an ECAL deposit
+    for (const [px, py, pz, E, iso] of ev.ph) {
+        const dir = new THREE.Vector3(px, py, pz).normalize(), L = toECAL(dir), k = kin(px, py, pz);
+        const line = trackObject(along(dir, 0, L, 20), 0.012, MATERIAL.ph);
+        const tower = towerObject(dir, L, k.pt, 0.2, MATERIAL.phTower);
+        objects.push({
+            points: along(dir, 0, L + tower.h), colour: COLOUR.ph,
+            title: `γ · ET ${f1(k.pt)} GeV`, sub: `η ${f2(k.eta)} · φ ${f2(k.phi)}`,
+            info: `photon γ   ET ${f2(k.pt)} GeV   E ${f2(E)} GeV\nη ${f2(k.eta)}   φ ${f2(k.phi)}   isolation ${f2(iso)} GeV`,
+            grow: D => { line.grow(D); tower.grow(D); },
+        });
+    }
+    // Jets: a cone to the calorimeters and a tower through them; b-tagged jets in blue
+    for (const [px, py, pz, E, btag] of ev.j) {
+        const dir = new THREE.Vector3(px, py, pz).normalize(), L = toECAL(dir), k = kin(px, py, pz), b = btag > BTAG;
+        const cone = oriented(CONE, b ? MATERIAL.bjet : MATERIAL.jet, new THREE.Vector3(), dir);
+        const tower = towerObject(dir, L, k.pt, 0.32, b ? MATERIAL.bjetTower : MATERIAL.jetTower);
+        objects.push({
+            points: along(dir, 0, L + tower.h), colour: b ? COLOUR.bjet : COLOUR.jet,
+            title: `${b ? 'b-jet' : 'jet'} · ET ${f1(k.pt)} GeV`, sub: `η ${f2(k.eta)} · φ ${f2(k.phi)}`,
+            info: `${b ? 'b-tagged jet' : 'jet'}   ET ${f2(k.pt)} GeV   E ${f2(E)} GeV\n` +
+                `η ${f2(k.eta)}   φ ${f2(k.phi)}   b-tag (TCHE) ${btag < 0 ? '—' : f2(btag)}${b ? ` > ${BTAG}` : ''}`,
+            grow: D => { const t = Math.min(1, D / L); cone.visible = t > 0; cone.scale.setScalar(L * t || 1e-3); tower.grow(D); },
+        });
+    }
+    // Missing E_T: an arrow in the transverse plane, the direction of whatever escaped unseen
+    {
+        const [mx, my] = ev.met, met = Math.hypot(mx, my);
+        if (met > 0) {
+            const dir = new THREE.Vector3(mx, my, 0).normalize(), len = THREE.MathUtils.clamp(met * 0.06, 0.6, 6.5);
+            const shaft = oriented(SHAFT, MATERIAL.met, new THREE.Vector3(), dir), head = oriented(HEAD, MATERIAL.met, new THREE.Vector3(), dir);
+            objects.push({
+                points: along(dir, 0, len + 0.5), colour: COLOUR.met,
+                title: `MET · ${f1(met)} GeV`, sub: `φ ${f2(Math.atan2(my, mx))}`,
+                info: `missing transverse energy   ${f2(met)} GeV   φ ${f2(Math.atan2(my, mx))}\n` +
+                    `the momentum imbalance in the transverse plane: a neutrino, if this is a W`,
+                grow: D => {
+                    const t = THREE.MathUtils.clamp(D / len, 0, 1);
+                    shaft.visible = head.visible = t > 0;
+                    shaft.scale.set(1, len * t || 1e-3, 1);
+                    head.position.copy(dir).multiplyScalar(len * t);
+                },
+            });
+        }
+    }
+    state.grow = 0;
+    applyGrow();
+}
+const GROW_METRES = 14, GROW_SECONDS = 1.4;
+function applyGrow() { const D = state.grow * GROW_METRES; for (const o of state.objects) o.grow(D); }
+
+// ─── Histogram panel ────────────────────────────────────────────────────────
+// Stands beside the barrel, turned toward the opening view, and scales with CMS.
+const histPanel = (() => {
+    const W = 1024, H = 640;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 4), new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide }));
+    mesh.position.set(9.5, -3.6, -3);
+    mesh.rotation.y = Math.atan2(VIEW.x - mesh.position.x, VIEW.z - mesh.position.z);
+    cms.add(mesh);
+    function wrap(text, x, y, width, lineHeight) {
+        let line = '';
+        for (const word of text.split(' ')) {
+            if (ctx.measureText(line + word).width > width && line) { ctx.fillText(line.trim(), x, y); y += lineHeight; line = ''; }
+            line += word + ' ';
+        }
+        ctx.fillText(line.trim(), x, y);
+    }
+    return {
+        mesh,
+        draw(s, ev) {
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = 'rgba(5,10,20,0.9)';
+            ctx.beginPath(); ctx.roundRect(4, 4, W - 8, H - 8, 28); ctx.fill();
+            ctx.strokeStyle = 'rgba(255,183,77,0.35)'; ctx.lineWidth = 3; ctx.stroke();
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#FFB74D'; ctx.font = 'bold 44px "Fira Code", monospace';
+            ctx.fillText(s.title, 48, 74);
+            ctx.fillStyle = '#a1a1a1'; ctx.font = '24px "Fira Code", monospace';
+            ctx.fillText(`${s.passing.toLocaleString()} events pass · ${s.quantity} [${s.unit}]`, 48, 114);
+
+            const { lo, hi, counts } = s.hist, n = counts.length, max = Math.max(...counts, 1);
+            const x0 = 110, x1 = W - 48, y0 = 160, y1 = 500, bw = (x1 - x0) / n;
+            const evBin = Math.floor((ev.v - lo) / (hi - lo) * n);
+            counts.forEach((c, i) => {
+                const h = c / max * (y1 - y0);
+                ctx.fillStyle = i === evBin ? '#FFB74D' : '#3d5a80';
+                ctx.fillRect(x0 + i * bw + 1, y1 - h, bw - 2, h);
+            });
+            ctx.strokeStyle = '#a1a1a1'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.lineTo(x1, y1); ctx.stroke();
+            ctx.fillStyle = '#a1a1a1'; ctx.font = '22px "Fira Code", monospace';
+            const step = (hi - lo) / 6;
+            ctx.textAlign = 'center';
+            for (let v = lo; v <= hi + 1e-9; v += step) ctx.fillText(String(+v.toFixed(0)), x0 + (v - lo) / (hi - lo) * (x1 - x0), y1 + 32);
+            ctx.textAlign = 'right';
+            ctx.fillText(max.toLocaleString(), x0 - 12, y0 + 8);
+            ctx.fillText('0', x0 - 12, y1 + 8);
+            ctx.textAlign = 'left';
+            ctx.fillText(`events / ${+((hi - lo) / n).toFixed(1)} ${s.unit}`, x0 + 12, y0 + 8);
+
+            // This event's value
+            const x = x0 + THREE.MathUtils.clamp((ev.v - lo) / (hi - lo), 0, 1) * (x1 - x0);
+            ctx.strokeStyle = '#FFB74D'; ctx.setLineDash([10, 8]); ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(x, y0 + 30); ctx.lineTo(x, y1); ctx.stroke(); ctx.setLineDash([]);
+            ctx.fillStyle = '#FFB74D'; ctx.font = 'bold 26px "Fira Code", monospace';
+            ctx.textAlign = x > (x0 + x1) / 2 ? 'right' : 'left';
+            ctx.fillText(`this event ${f1(ev.v)} ${s.unit}${ev.v > hi ? ' →' : ''}`, x + (x > (x0 + x1) / 2 ? -14 : 14), y0 + 52);
+
+            ctx.textAlign = 'left'; ctx.fillStyle = '#a1a1a1'; ctx.font = '23px "Geist", sans-serif';
+            wrap(s.about, 48, 572, W - 96, 32);
+            tex.needsUpdate = true;
+        },
+    };
+})();
+
+// ─── Samples / events ───────────────────────────────────────────────────────
+const sampleSelect = document.getElementById('sample'), evSlider = document.getElementById('ev-slider'), evLabel = document.getElementById('ev-label');
+const playButton = document.getElementById('play'), sizeButton = document.getElementById('size'), layersButton = document.getElementById('layers');
+const errorEl = document.getElementById('error'), statsEl = document.getElementById('stats'), hoverEl = document.getElementById('hover');
+
+const currentSample = () => state.data.samples[state.sample];
+const currentEvent = () => currentSample().events[state.index];
+function showEvent(index) {
+    const s = currentSample();
+    state.index = ((index % s.events.length) + s.events.length) % s.events.length;
+    evSlider.value = state.index;
+    evLabel.textContent = `${state.index + 1} / ${s.events.length}`;
+    buildEvent(currentEvent());
+    histPanel.draw(s, currentEvent());
+    state.playTimer = 0;
+}
+function setSample(k, index = 0) {
+    state.sample = ((k % state.data.samples.length) + state.data.samples.length) % state.data.samples.length;
+    sampleSelect.value = state.sample;
+    evSlider.max = currentSample().events.length - 1;
+    showEvent(index);
+}
+function setPlaying(on) {
+    state.playing = on;
+    state.playTimer = 0;
+    playButton.textContent = on ? 'Stop' : 'Auto';
+    playButton.setAttribute('aria-pressed', on);
+}
+function setDetector(on) {
+    detector.visible = on;
+    layersButton.textContent = on ? 'Detector on' : 'Detector off';
+    layersButton.setAttribute('aria-pressed', on);
+}
+const toggleSize = () => { setScale(state.scale < 0.5 ? 1 : TABLETOP); if (!renderer.xr.isPresenting) resetView(); };
+
+sampleSelect.addEventListener('change', () => setSample(+sampleSelect.value));
+evSlider.addEventListener('input', () => showEvent(+evSlider.value));
+document.getElementById('prev').addEventListener('click', () => showEvent(state.index - 1));
+document.getElementById('next').addEventListener('click', () => showEvent(state.index + 1));
+document.getElementById('random').addEventListener('click', () => showEvent(Math.floor(Math.random() * currentSample().events.length)));
+playButton.addEventListener('click', () => setPlaying(!state.playing));
+sizeButton.addEventListener('click', toggleSize);
+layersButton.addEventListener('click', () => setDetector(!detector.visible));
+
+// ─── Hover ──────────────────────────────────────────────────────────────────
+const hoverLabel = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.25), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false }));
+    mesh.renderOrder = 10;
+    mesh.visible = false;
+    scene.add(mesh);
+    let last = '';
+    return {
+        mesh,
+        draw(top, bottom, colour) {
+            if (top + bottom + colour === last) return;
+            last = top + bottom + colour;
+            ctx.clearRect(0, 0, 512, 128);
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.beginPath(); ctx.roundRect(0, 0, 512, 128, 20); ctx.fill();
+            ctx.textAlign = 'center';
+            ctx.fillStyle = colour; ctx.font = 'bold 40px "Fira Code", monospace'; ctx.fillText(top, 256, 54);
+            ctx.fillStyle = '#a1a1a1'; ctx.font = '28px "Fira Code", monospace'; ctx.fillText(bottom, 256, 98);
+            tex.needsUpdate = true;
+        },
+    };
+})();
+let hovered = null;
+const hoverAt = new THREE.Vector3(), _w = new THREE.Vector3(), _d = new THREE.Vector3();
+const HOVER_RADIANS = 0.025;
+function nearestObject(ray) {
+    let best = null, bestA = HOVER_RADIANS * HOVER_RADIANS;
+    for (const o of state.objects) for (const p of o.points) {
+        _w.copy(p).applyMatrix4(cms.matrixWorld);
+        _d.subVectors(_w, ray.origin);
+        const t = _d.dot(ray.direction);
+        if (t <= 0) continue;
+        const a = (_d.lengthSq() - t * t) / (t * t);
+        if (a < bestA) { bestA = a; best = o; hoverAt.copy(_w); }
+    }
+    return best;
+}
+function setHover(o) {
+    hovered = o;
+    hoverLabel.mesh.visible = !!o;
+    hoverEl.textContent = o ? o.info : '';
+    if (o) hoverLabel.draw(o.title, o.sub, o.colour);
+}
+
+// ─── Input ──────────────────────────────────────────────────────────────────
+const DEADZONE = 0.15;
+const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
+const input = { moveX: 0, moveZ: 0, moveY: 0, fast: false, zoom: 0 };
+
+const controllerModels = new XRControllerModelFactory();
+const gamepads = { left: null, right: null };
+const prev = {};
+let rightRay = null, stickArmed = true;
+for (let i = 0; i < 2; i++) {
+    const grip = renderer.xr.getControllerGrip(i);
+    grip.add(controllerModels.createControllerModel(grip));
+    rig.add(grip);
+    const ray = renderer.xr.getController(i);
+    const beam = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
+        new THREE.LineBasicMaterial({ color: 0xffb74d, transparent: true, opacity: 0.6 }),
+    );
+    beam.scale.z = 30;
+    beam.visible = false;
+    ray.add(beam);
+    rig.add(ray);
+    grip.addEventListener('connected', e => {
+        const hand = e.data.handedness;
+        gamepads[hand] = e.data.gamepad || null;
+        if (hand === 'right') { rightRay = ray; beam.visible = true; }
+        if (hand === 'left') grip.add(vrPanel.mesh);
+    });
+    grip.addEventListener('disconnected', e => {
+        const hand = e.data.handedness;
+        gamepads[hand] = null;
+        if (hand === 'right') { rightRay = null; beam.visible = false; }
+        if (hand === 'left') grip.remove(vrPanel.mesh);
+    });
+}
+function stick(gp) {
+    if (!gp) return [0, 0];
+    const o = gp.axes.length >= 4 ? 2 : 0;
+    return [dz(gp.axes[o] || 0), dz(gp.axes[o + 1] || 0)];
+}
+const edge = (name, down) => { const e = down && !prev[name]; prev[name] = down; return e; };
+
+const _ray = new THREE.Ray(), _m = new THREE.Matrix4();
+function pollXRInput() {
+    const [lx, ly] = stick(gamepads.left);
+    const [rx, ry] = stick(gamepads.right);
+    input.moveX = lx; input.moveZ = ly; input.moveY = -ry; input.fast = false;
+    const grip = gp => gp?.buttons?.[1]?.value ?? 0;
+    input.zoom = grip(gamepads.right) - grip(gamepads.left);
+    if (Math.abs(rx) > 0.6) { if (stickArmed) { showEvent(state.index + Math.sign(rx)); stickArmed = false; } }
+    else stickArmed = true;
+    const r = gamepads.right?.buttons || [], l = gamepads.left?.buttons || [];
+    if (edge('a', !!r[4]?.pressed)) showEvent(state.index + 1);
+    if (edge('b', !!r[5]?.pressed)) setSample(state.sample + 1);
+    if (edge('x', !!l[4]?.pressed)) setPlaying(!state.playing);
+    if (edge('y', !!l[5]?.pressed)) toggleSize();
+    if (rightRay && (r[0]?.value ?? 0) > 0.3) {
+        _m.identity().extractRotation(rightRay.matrixWorld);
+        _ray.origin.setFromMatrixPosition(rightRay.matrixWorld);
+        _ray.direction.set(0, 0, -1).applyMatrix4(_m);
+        setHover(nearestObject(_ray));
+    }
+}
+
+const keys = new Set();
+window.addEventListener('keydown', e => {
+    if (e.target.closest?.('select, input, button') && e.code !== 'Escape') return;
+    if (e.repeat && !e.code.startsWith('Arrow')) return;
+    keys.add(e.code);
+    if (!state.data) return;
+    if (e.code === 'Space') { setPlaying(!state.playing); e.preventDefault(); }
+    if (e.code === 'ArrowRight' || e.code === 'KeyN') { showEvent(state.index + 1); e.preventDefault(); }
+    if (e.code === 'ArrowLeft' || e.code === 'KeyP') { showEvent(state.index - 1); e.preventDefault(); }
+    if (/^Digit[1-9]$/.test(e.code) && +e.code.slice(5) <= state.data.samples.length) setSample(+e.code.slice(5) - 1);
+    if (e.code === 'KeyT') toggleSize();
+    if (e.code === 'KeyG') setDetector(!detector.visible);
+    if (e.code === 'KeyR') resetView();
+    if (e.code === 'KeyH') document.getElementById('hud').classList.toggle('hidden');
+});
+window.addEventListener('keyup', e => keys.delete(e.code));
+window.addEventListener('blur', () => keys.clear());
+
+let drag = null;
+const pointer = new THREE.Vector2(), raycaster = new THREE.Raycaster();
+let pointerInside = false;
+const el = renderer.domElement;
+el.addEventListener('contextmenu', e => e.preventDefault());
+el.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; el.setPointerCapture(e.pointerId); });
+el.addEventListener('pointermove', e => {
+    pointer.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    pointerInside = true;
+    if (!drag) return;
+    yaw -= (e.clientX - drag.x) * 0.004;
+    pitch = THREE.MathUtils.clamp(pitch - (e.clientY - drag.y) * 0.004, -1.5, 1.5);
+    drag.x = e.clientX; drag.y = e.clientY;
+});
+el.addEventListener('pointerleave', () => { pointerInside = false; });
+el.addEventListener('wheel', e => { e.preventDefault(); setScale(state.scale * Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+const endDrag = () => { drag = null; };
+el.addEventListener('pointerup', endDrag);
+el.addEventListener('pointercancel', endDrag);
+
+function pollDesktopInput() {
+    const k = c => (keys.has(c) ? 1 : 0);
+    input.moveX = k('KeyD') - k('KeyA');
+    input.moveZ = k('KeyS') - k('KeyW');
+    input.moveY = k('KeyE') - k('KeyQ');
+    input.fast = keys.has('ShiftLeft') || keys.has('ShiftRight');
+    input.zoom = k('Equal') + k('NumpadAdd') - k('Minus') - k('NumpadSubtract');
+    if (pointerInside && !drag) {
+        raycaster.setFromCamera(pointer, camera);
+        setHover(nearestObject(raycaster.ray));
+    }
+}
+
+const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+function applyMovement(dt) {
+    camera.getWorldDirection(fwd);
+    fwd.y = 0;
+    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+    fwd.normalize();
+    right.crossVectors(fwd, up);
+    // Walking pace at tabletop scale, a brisk 4 m/s round the life-size detector
+    const step = THREE.MathUtils.clamp(4 * state.scale, 0.6, 4) * (input.fast ? 3 : 1) * dt;
+    const target = renderer.xr.isPresenting ? rig.position : camera.position;
+    target.addScaledVector(right, input.moveX * step);
+    target.addScaledVector(fwd, -input.moveZ * step);
+    target.addScaledVector(up, input.moveY * step);
+}
+
+renderer.xr.addEventListener('sessionstart', () => {
+    // Stand where the desktop view was, on the floor, facing the same way.
+    rig.position.set(camera.position.x, 0, camera.position.z);
+    rig.rotation.set(0, yaw, 0);
+    camera.position.set(0, 0, 0);
+    document.getElementById('hud').style.display = 'none';
+    document.getElementById('controls').style.display = 'none';
+});
+renderer.xr.addEventListener('sessionend', () => {
+    resetView();
+    gamepads.left = gamepads.right = null;
+    document.getElementById('hud').style.display = '';
+    document.getElementById('controls').style.display = '';
+});
+
+// Wrist panel on the left controller
+const vrPanel = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320; canvas.height = 96;
+    const ctx = canvas.getContext('2d');
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.125, 0.0375), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false }));
+    mesh.position.set(0, 0.06, -0.02);
+    mesh.rotation.x = -Math.PI / 4;
+    mesh.renderOrder = 10;
+    let last = '';
+    return {
+        mesh,
+        update(top, bottom) {
+            if (top + bottom === last) return;
+            last = top + bottom;
+            ctx.clearRect(0, 0, 320, 96);
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.beginPath(); ctx.roundRect(0, 0, 320, 96, 18); ctx.fill();
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#FFB74D'; ctx.font = 'bold 26px monospace'; ctx.fillText(top, 160, 42);
+            ctx.fillStyle = '#a1a1a1'; ctx.font = '22px monospace'; ctx.fillText(bottom, 160, 76);
+            tex.needsUpdate = true;
+        },
+    };
+})();
+
+// ─── Load ───────────────────────────────────────────────────────────────────
+// cms-events/events.json is written by `python tools/pack-cms-events.py vr/data.root`.
+setScale(1);
+resetView();
+try {
+    const r = await fetch('cms-events/events.json');
+    if (!r.ok) throw new Error(`cms-events/events.json: HTTP ${r.status}`);
+    state.data = await r.json();
+    sampleSelect.replaceChildren(...state.data.samples.map((s, i) => new Option(`${s.title} · ${s.events.length}`, i)));
+    const want = state.data.samples.findIndex(s => s.key === params.get('sample'));
+    setSample(Math.max(0, want), Math.max(0, (parseInt(params.get('event'), 10) || 1) - 1));
+    document.fonts?.ready.then(() => histPanel.draw(currentSample(), currentEvent()));
+} catch (e) {
+    errorEl.textContent = `Could not load events: ${e.message}`;
+    statsEl.textContent = 'could not load';
+}
+
+// ─── Loop ───────────────────────────────────────────────────────────────────
+let lastTime = performance.now(), statsTimer = 0, fps = 60;
+const AUTO_SECONDS = 3.5;
+const _q = new THREE.Quaternion(), _cam = new THREE.Vector3();
+
+renderer.setAnimationLoop(now => {
+    const dt = Math.min((now - lastTime) / 1000, 0.1);
+    lastTime = now;
+    fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05;
+
+    if (renderer.xr.isPresenting) pollXRInput();
+    else {
+        pollDesktopInput();
+        camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    }
+    applyMovement(dt);
+    if (input.zoom) setScale(state.scale * Math.exp(input.zoom * 1.2 * dt));
+    if (state.grow < 1) { state.grow = Math.min(1, state.grow + dt / GROW_SECONDS); applyGrow(); }
+    if (state.playing && state.data && (state.playTimer += dt) > AUTO_SECONDS) showEvent(state.index + 1);
+
+    camera.getWorldPosition(_cam);
+    if (hovered) {
+        const dist = _cam.distanceTo(hoverAt);
+        hoverLabel.mesh.scale.setScalar(dist * 0.12);
+        hoverLabel.mesh.position.copy(hoverAt).add(new THREE.Vector3(0, dist * 0.035, 0));
+        hoverLabel.mesh.quaternion.copy(camera.getWorldQuaternion(_q));
+    }
+
+    if (state.data) {
+        const s = currentSample(), ev = currentEvent();
+        if (renderer.xr.isPresenting) {
+            vrPanel.update(`${s.label} ${state.index + 1}/${s.events.length}`, `${s.quantity} ${f1(ev.v)} ${s.unit}`);
+        } else if ((statsTimer += dt) > 0.25) {
+            statsTimer = 0;
+            const nb = ev.j.filter(j => j[4] > BTAG).length;
+            statsEl.textContent = `${s.title}   event ${state.index + 1} of ${s.events.length.toLocaleString()}   entry ${ev.i}\n` +
+                `${ev.mu.length} μ   ${ev.el.length} e   ${ev.ph.length} γ   ${ev.j.length} jets (${nb} b)   MET ${f1(Math.hypot(...ev.met))} GeV\n` +
+                `${s.quantity} ${f2(ev.v)} ${s.unit}   ${ev.npv} primary vertices   ${state.hits} chambers crossed\n` +
+                `scale ${state.scale >= 0.995 ? '1:1' : `1:${(1 / state.scale).toPrecision(3)}`}   ${fps.toFixed(0)} fps`;
+        }
+    }
+    renderer.render(scene, camera);
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

@@ -29,6 +29,12 @@ const SITE_VISUALS = [
         title: 'G4Xr',
         description: "A WebXR viewer for UCLA's G4Xr Geant4 driver. Walk round a detector and replay its trajectories step by step, or drop in your own trial.glb, run.bin or session zip."
     },
+    {
+        slug: 'cms-events',
+        url: 'vr/cms-events.html',
+        title: 'CMS Events',
+        description: 'Real 2011 CMS collisions around a life-size CMS detector. Watch muons bend out through the drift tubes and cathode strip chambers, and find the Z, the W and the top quark in the mass plots.'
+    },
 ];
 
 function siteVisualUrl(path, rootPrefix) {
