@@ -23,7 +23,7 @@
         #controls .row > select { flex: 1; min-width: 0; }
         #controls input[type=range] { flex: 1; }
         #controls label { color: var(--secondary); font-family: 'Fira Code', monospace; font-size: 13px; }
-        #w-row[hidden] { display: none; }
+        #w-row[hidden], #brightness-row[hidden] { display: none; }
         #w-label { color: var(--gold); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 9ch; text-align: right; }
         #error { color: #ef5350; font-family: 'Fira Code', monospace; font-size: 13px; white-space: pre-wrap; }
         #error:empty { display: none; }
@@ -69,6 +69,7 @@
                 <dt><kbd>drag</kbd></dt><dd>look · hover a bin or star</dd>
                 <dt><kbd>scroll</kbd><kbd>+</kbd><kbd>−</kbd></dt><dd>zoom a point cloud toward Earth</dd>
                 <dt><kbd>←</kbd><kbd>→</kbd><kbd>Space</kbd></dt><dd>step w · play w</dd>
+                <dt><kbd>B</kbd></dt><dd>stars: brightness from Earth / absolute</dd>
                 <dt><kbd>N</kbd><kbd>R</kbd><kbd>H</kbd></dt><dd>next dataset · reset view · hide help</dd>
             </dl>
             <span class="command">controls <span>--vr</span></span>
@@ -78,6 +79,7 @@
                 <dt><kbd>R trigger</kbd></dt><dd>ray hover</dd>
                 <dt><kbd>R grip</kbd><kbd>L grip</kbd></dt><dd>zoom toward Earth · back out</dd>
                 <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>play w · next dataset</dd>
+                <dt><kbd>X</kbd></dt><dd>stars: brightness from Earth / absolute</dd>
             </dl>
             <div class="rule"></div>
             <span class="note">Drop a <code>/get_data</code> dump from a ROOT VR server to plot it.<br><span id="credit">ROOT VR by UCLA "VR for Science"</span><br>Star data: Bright Star Catalogue via frostoven/BSC5P-JSON-XYZ (CC BY 4.0)</span>
@@ -100,6 +102,10 @@
             <input id="w-slider" type="range" min="0" max="0" step="1" value="0">
             <span id="w-label"></span>
             <button id="w-play" aria-label="Play w">▶</button>
+        </div>
+        <div class="row" id="brightness-row" hidden>
+            <label for="brightness">size by</label>
+            <button id="brightness" aria-pressed="false">Brightness from Earth</button>
         </div>
         <div id="error"></div>
     </section>
@@ -402,9 +408,13 @@ function parseROOT(text) {
             d.focusLabel = line().trim();
             d.stars = [];
             for (let k = 0; k < d.nx; k++) {
-                const x = f(), y = f(), z = f(), r = f(), g = f(), b = f(), size = f();
-                d.stars.push({ x, y, z, rgb: [r, g, b], size, name: line().trim() });
+                const x = f(), y = f(), z = f(), r = f(), g = f(), b = f();
+                // "size [absolute size]": the second value sizes by absolute brightness, if present
+                const [size, absSize] = line().trim().split(/\s+/).map(parseFloat);
+                if (Number.isNaN(size)) throw new Error(`line ${i}: expected a number`);
+                d.stars.push({ x, y, z, rgb: [r, g, b], size, absSize, name: line().trim() });
             }
+            d.hasAbsolute = d.stars.length > 0 && d.stars.every(s => Number.isFinite(s.absSize));
             const [fx, fy, fz] = d.focus;
             const dist = d.stars.map(p => Math.hypot(p.x - fx, p.y - fy, p.z - fz)).sort((a, b) => a - b);
             // Zoom 1 fits every point in the cube; the view opens framing the nearest 90%, and can
@@ -424,6 +434,9 @@ function parseROOT(text) {
 // ─── Data visual (port of gpu_inst_script.cs, drawn with the compiled Data shader) ──
 const gen = bundle.scene.bindings.generator;
 const dataPrimitive = PRIMITIVES[gen?.mesh ?? 'Cube']();
+// Point clouds draw each point as a dot rather than the generator's bar mesh; the Data shader is
+// unlit, so a low-poly sphere reads as a round dot from every side.
+const cloudPrimitive = new THREE.SphereGeometry(0.5, 12, 8);
 const dataMaterial = gen?.material ? material(gen.material) : null;
 const transformAttr = Object.keys(bundle.shaders[bundle.materials[gen?.material]?.shader]?.instanceAttributes ?? {})
     .find(a => /transform/i.test(a)) ?? 'a_Transforms';
@@ -434,7 +447,7 @@ dataMesh.frustumCulled = false;
 dataMesh.visible = false;
 scene.add(dataMesh);
 
-const state = { data: null, points: [], colors: null, wAxis: [], wIndex: 0, hover: -1, playing: null, zoom: 1 };
+const state = { data: null, points: [], colors: null, wAxis: [], wIndex: 0, hover: -1, playing: null, zoom: 1, absolute: false };
 
 // Uncertainty readout that floats above the hovered bin
 const hoverLabel = new Label({
@@ -509,7 +522,8 @@ function computeInstances() {
         else if (d.type === 'PointCloud') {
             // Brighter stars draw bigger; anything zoomed out of the cube collapses to nothing.
             const star = d.stars[i];
-            sizes[i] = inCube(state.points[i]) ? POINT_SIZE * (1 + 3 * star.size) : 0;
+            const brightness = state.absolute && d.hasAbsolute ? star.absSize : star.size;
+            sizes[i] = inCube(state.points[i]) ? POINT_SIZE * (1 + 3 * brightness) : 0;
             scale = [sizes[i], sizes[i], sizes[i]]; pos = [x, y, z];
         }
         else { scale = [POINT_SIZE, POINT_SIZE, POINT_SIZE]; pos = [x, y, z]; }
@@ -532,7 +546,7 @@ function uploadPoints() {
     const n = state.points.length;
     // A fresh geometry every time: three caches an instanced geometry's max instance count on
     // first draw, so reusing one would silently drop instances when a bigger dataset loads.
-    const geometry = new THREE.InstancedBufferGeometry().copy(dataPrimitive);
+    const geometry = new THREE.InstancedBufferGeometry().copy(state.data.type === 'PointCloud' ? cloudPrimitive : dataPrimitive);
     geometry.setAttribute(transformAttr, new THREE.InstancedBufferAttribute(new Float32Array(n * 16), 16));
     geometry.setAttribute(colorAttr, new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4));
     geometry.instanceCount = n;
@@ -629,6 +643,8 @@ const wRow = document.getElementById('w-row');
 const wSlider = document.getElementById('w-slider');
 const wLabel = document.getElementById('w-label');
 const wPlay = document.getElementById('w-play');
+const brightnessRow = document.getElementById('brightness-row');
+const brightnessButton = document.getElementById('brightness');
 const datasets = bundle.examples.map(e => ({ name: e.name, text: e.data }));
 
 function refreshDatasetList(selected) {
@@ -650,6 +666,7 @@ function loadDataset(index) {
         state.zoom = cloud ? state.data.startZoom : 1;
         placeValueLabels(cloud ? GRID_WIDTH : VERTICAL_SCALE);
         focusMarker.visible = focusLabel.mesh.visible = cloud && !!state.data.focusLabel;
+        brightnessRow.hidden = !(cloud && state.data.hasAbsolute);
         if (cloud) focusLabel.set(state.data.focusLabel || ' ');
         buildPoints();
         uploadPoints();
@@ -701,6 +718,19 @@ function setPlotZoom(zoom) {
     state.labelsDirty = true;
     if (state.hover >= 0) placeHoverLabel(state.hover);
 }
+
+// Star sizes: brightness as seen from Earth (apparent magnitude) or intrinsic (absolute magnitude).
+function setAbsolute(on) {
+    state.absolute = on;
+    brightnessButton.textContent = on ? 'Absolute brightness' : 'Brightness from Earth';
+    brightnessButton.setAttribute('aria-pressed', on);
+    const d = state.data;
+    if (d?.type !== 'PointCloud' || !d.hasAbsolute) return;
+    computeInstances();
+    state.sortedFrom = null;                            // next frame re-sorts and re-uploads
+    if (state.hover >= 0) placeHoverLabel(state.hover);
+}
+brightnessButton.addEventListener('click', () => setAbsolute(!state.absolute));
 
 datasetSel.addEventListener('change', () => loadDataset(+datasetSel.value));
 wSlider.addEventListener('input', () => setW(+wSlider.value));
@@ -794,7 +824,7 @@ const ZOOM_RATE = 1.6;                                  // e-folds per second at
 
 const controllerModels = new XRControllerModelFactory();
 const gamepads = { left: null, right: null };
-const prevButtons = { a: false, b: false };
+const prevButtons = { a: false, b: false, x: false };
 let rightRay = null;
 let wStickArmed = true;
 
@@ -850,6 +880,9 @@ function pollXRInput() {
     if (a && !prevButtons.a) play();
     if (b && !prevButtons.b) nextDataset();
     prevButtons.a = a; prevButtons.b = b;
+    const x = !!gamepads.left?.buttons?.[4]?.pressed;
+    if (x && !prevButtons.x) setAbsolute(!state.absolute);
+    prevButtons.x = x;
 
     if (rightRay) {
         _m.identity().extractRotation(rightRay.matrixWorld);
@@ -868,6 +901,7 @@ window.addEventListener('keydown', e => {
     if (e.code === 'ArrowRight') { setW(state.wIndex + 1); e.preventDefault(); }
     if (e.code === 'ArrowLeft') { setW(state.wIndex - 1); e.preventDefault(); }
     if (e.code === 'KeyN') nextDataset();
+    if (e.code === 'KeyB') setAbsolute(!state.absolute);
     if (e.code === 'KeyR') { resetView(); if (state.data?.type === 'PointCloud') setPlotZoom(state.data.startZoom); }
     if (e.code === 'KeyH') document.getElementById('hud').classList.toggle('hidden');
 });
@@ -1029,7 +1063,8 @@ renderer.setAnimationLoop(now => {
         let body;
         if (cloud) {
             body = `${d.nx} points   ${state.drawn} in view\n` +
-                `view ${viewText} about ${d.focusLabel || 'focus'}   zoom ×${state.zoom.toPrecision(3)}\n`;
+                `view ${viewText} about ${d.focusLabel || 'focus'}   zoom ×${state.zoom.toPrecision(3)}\n` +
+                (d.hasAbsolute ? `size by ${state.absolute ? 'absolute brightness' : 'brightness from Earth'}\n` : '');
         } else {
             const s = statistics();
             body = (d.type.startsWith('TH')

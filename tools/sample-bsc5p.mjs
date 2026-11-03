@@ -18,6 +18,9 @@
  *   <xmin> <xmax> <ymin> <ymax> <zmin> <zmax>
  *   <focus x> <focus y> <focus z> <focus label>      the point zoom closes in on
  *   n × { x y z r g b size name }                     rgb in 0–1 sRGB, size in 0–1, name may be empty
+ *
+ * The size line may carry a second value, the size by absolute brightness ("0.312 0.587"), which
+ * the viewer can switch to; readers that only parse the first number still see the apparent size.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -62,7 +65,8 @@ const toSuperscript = s => s.replace(/\d/g, d => '⁰¹²³⁴⁵⁶⁷⁸⁹'[d
 
 // Apparent magnitude from the catalogue's naive luminosity N (L☉) and distance p (pc):
 // m = M☉ − 2.5·log10(N) + 5·log10(p / 10), with M☉ = 4.83.
-const apparentMag = s => 4.83 - 2.5 * Math.log10(s.N) + 5 * Math.log10(s.p / 10);
+const absoluteMag = s => 4.83 - 2.5 * Math.log10(s.N);
+const apparentMag = s => absoluteMag(s) + 5 * Math.log10(s.p / 10);
 
 // Beyond MAX_PC the catalogue's distances come from near-zero parallaxes (one reads 200 kpc);
 // no naked-eye star is that far, and they would dominate the zoom range.
@@ -80,14 +84,18 @@ for (const s of rest) { if (picked.size >= COUNT) break; picked.add(s); }
 const sample = [...picked].sort((a, b) => a.i - b.i);
 
 // Size by apparent brightness: magnitude 6.5 (naked-eye limit) → 0, magnitude −1.5 (Sirius) → 1.
-const size = s => Math.min(1, Math.max(0, (6.5 - apparentMag(s)) / 8));
+const clamp01 = v => Math.min(1, Math.max(0, v));
+const size = s => clamp01((6.5 - apparentMag(s)) / 8);
+// Size by absolute brightness: magnitude +6 → 0, magnitude −6 → 1 (spans ~98% of the catalogue).
+const absoluteSize = s => clamp01((6 - absoluteMag(s)) / 12);
 const ext = k => [Math.min(...sample.map(s => s[k])), Math.max(...sample.map(s => s[k]))];
 const f6 = v => v.toFixed(6);
 
 const out = ['PointCloud', 'x [pc]', 'y [pc]', 'z [pc]', sample.length,
     ...ext('x').map(f6), ...ext('y').map(f6), ...ext('z').map(f6),
     f6(0), f6(0), f6(0), 'Earth'];
-for (const s of sample) out.push(f6(s.x), f6(s.y), f6(s.z), s.K.r, s.K.g, s.K.b, size(s).toFixed(3), displayName(s));
+for (const s of sample) out.push(f6(s.x), f6(s.y), f6(s.z), s.K.r, s.K.g, s.K.b,
+    `${size(s).toFixed(3)} ${absoluteSize(s).toFixed(3)}`, displayName(s));
 
 fs.mkdirSync(path.dirname(outFile), { recursive: true });
 fs.writeFileSync(outFile, out.join('\n') + '\n');
