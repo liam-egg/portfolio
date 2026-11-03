@@ -122,8 +122,10 @@
             camera.position.set(0, 1.6, 0);
             rig.add(camera);
 
-            const FRACTAL_CENTER = new THREE.Vector3(0, 1.5, -3.0);
-            const FRACTAL_SCALE = 1.2;
+            // Starts about 1 m across at chest height, an arm's length or so ahead, so you can lean
+            // in and walk round it; grips / scroll still grow it to room scale.
+            const FRACTAL_CENTER = new THREE.Vector3(0, 1.3, -1.2);
+            const FRACTAL_SCALE = 0.4;
             const BOUND_RADIUS = 1.25;
             const MAX_STEPS_CAP = 96;
             const MAX_SHADOW_CAP = 48;
@@ -331,7 +333,7 @@
             // grows about the spot on the floor beneath it: once it's taller than eye level it
             // rests on the floor instead of sinking through it.
             const SIZE_MIN = 0.25,
-                SIZE_MAX = 20;
+                SIZE_MAX = 60;
             const SIZE_RATE = 1.2; // e-folds per second at full squeeze / key held
             let size = 1;
             function setSize(s) {
