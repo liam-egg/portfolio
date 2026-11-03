@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#050a14">
+    <title>G4Xr</title>
+    <meta name="description" content="A WebXR viewer for the G4Xr Geant4 visualisation driver: walk through a detector and replay its particle trajectories in the browser or a headset.">
+    <link rel="stylesheet" href="/vr/vr.css">
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #050a14;
+            color: white;
+            font-family: 'Geist', sans-serif;
+        }
+        canvas { display: block; touch-action: none; }
+        #hud { top: 16px; left: 16px; width: 400px; user-select: none; pointer-events: none; }
+        #controls { top: 16px; right: 16px; width: 380px; }
+        #controls .row { display: flex; gap: 8px; align-items: center; }
+        #controls .row > select { flex: 1; min-width: 0; }
+        #controls input[type=range] { flex: 1; min-width: 0; }
+        #controls label { color: var(--secondary); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 6ch; }
+        #t-label { color: var(--gold); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 10ch; text-align: right; }
+        #hover { color: white; font-family: 'Fira Code', monospace; font-size: 13px; line-height: 1.6; white-space: pre; }
+        #hover:empty { display: none; }
+        #error { color: #ef5350; font-family: 'Fira Code', monospace; font-size: 13px; white-space: pre-wrap; }
+        #error:empty { display: none; }
+        #drop {
+            position: fixed;
+            inset: 0;
+            z-index: 2;
+            display: none;
+            place-items: center;
+            background: #000000c0;
+            border: 2px dashed var(--secondary);
+            font-family: 'Fira Code', monospace;
+            font-size: 16px;
+            color: white;
+            pointer-events: none;
+        }
+        body.dragging #drop { display: grid; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+<div id="hud" class="hud">
+    <header>
+        <span>/vr/g4xr.html</span>
+        <a href="/vr/"><span>cd </span>..</a>
+    </header>
+    <section>
+        <span class="name">G4Xr</span>
+        <div class="stats" id="stats">loading…</div>
+        <div id="hover"></div>
+        <div class="keys">
+            <div class="rule"></div>
+            <span class="command">controls <span>--desktop</span></span>
+            <dl>
+                <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>move</dd>
+                <dt><kbd>Q</kbd><kbd>E</kbd><kbd>Shift</kbd></dt><dd>down / up · fast</dd>
+                <dt><kbd>drag</kbd></dt><dd>look · hover a step point</dd>
+                <dt><kbd>scroll</kbd><kbd>+</kbd><kbd>−</kbd></dt><dd>scale the detector</dd>
+                <dt><kbd>Space</kbd><kbd>←</kbd><kbd>→</kbd></dt><dd>play · scrub time</dd>
+                <dt><kbd>N</kbd><kbd>P</kbd><kbd>C</kbd></dt><dd>next / previous event · colour</dd>
+                <dt><kbd>R</kbd><kbd>H</kbd></dt><dd>reset view · hide help</dd>
+            </dl>
+            <span class="command">controls <span>--vr</span></span>
+            <dl>
+                <dt><kbd>L stick</kbd></dt><dd>move</dd>
+                <dt><kbd>R stick</kbd></dt><dd>↕ height · ↔ scrub time</dd>
+                <dt><kbd>R trigger</kbd></dt><dd>ray hover</dd>
+                <dt><kbd>R grip</kbd><kbd>L grip</kbd></dt><dd>scale up · down</dd>
+                <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>play · next event</dd>
+                <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>colour · reset scale</dd>
+            </dl>
+            <div class="rule"></div>
+            <span class="note">Reads the G4Xr driver's <code>trial.glb</code> + <code>runN.bin</code>, or a <code>/Xr/session</code> zip. Drop them here.<br>
+                <span id="credit">G4Xr by Benjamin Jobilal, UCLA</span></span>
+        </div>
+    </section>
+</div>
+
+<div id="controls" class="hud">
+    <header><span id="source">session</span></header>
+    <section>
+        <div class="row">
+            <select id="event" aria-label="Event"></select>
+            <select id="colour" aria-label="Colour by">
+                <option value="charge">by charge</option>
+                <option value="particle">by particle</option>
+                <option value="energy">by energy</option>
+            </select>
+            <button id="open">Open…</button>
+            <input id="file" type="file" accept=".glb,.bin,.zip" multiple hidden>
+        </div>
+        <div class="row">
+            <label for="t-slider">t</label>
+            <input id="t-slider" type="range" min="0" max="1000" step="1" value="1000">
+            <span id="t-label"></span>
+            <button id="play" aria-label="Play">▶</button>
+        </div>
+        <div id="error"></div>
+    </section>
+</div>
+<div id="drop">Drop G4Xr files: trial.glb, runN.bin or a session .zip</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// ─── Renderer / rig ─────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050a14);
+const grid = new THREE.GridHelper(12, 24, 0x1c2a40, 0x111a28);
+scene.add(grid);
+const rig = new THREE.Group();
+scene.add(rig);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 200);
+rig.add(camera);
+
+// The detector hangs at chest height a metre ahead; Geant4's millimetres are scaled to fit.
+const ANCHOR = new THREE.Vector3(0, 1.3, -1);
+const FIT = 1.3;                                            // metres across the largest dimension at scale ×1
+
+let yaw = 0, pitch = 0;
+function resetView() {
+    rig.position.set(0, 0, 0);
+    camera.position.set(0.9, 1.65, 0.6);
+    const f = ANCHOR.clone().sub(camera.position).normalize();
+    yaw = Math.atan2(-f.x, -f.z);
+    pitch = Math.asin(f.y);
+}
+resetView();
+
+// ─── Session files ──────────────────────────────────────────────────────────
+// A G4Xr session is GLTF/trial.glb (the detector) plus GLTF/run<N>.bin per run (trajectories), served
+// from uploads/testuser/ or packed into <session>.zip by /Xr/session.
+function parseTracks(buffer) {
+    const dv = new DataView(buffer);
+    const magic = String.fromCharCode(...new Uint8Array(buffer, 0, 4));
+    if (magic !== 'G4TK') throw new Error('not a G4Xr track file (no G4TK header)');
+    const version = dv.getUint32(4, true), stringCount = dv.getUint32(8, true), trackCount = dv.getUint32(12, true);
+    if (version !== 2) throw new Error(`G4TK version ${version} (this viewer reads version 2)`);
+    const tracks = [];
+    let o = 16;
+    const f32 = n => { const a = new Float32Array(buffer.slice(o, o + 4 * n)); o += 4 * n; return a; };
+    const u16 = n => { const a = new Uint16Array(buffer.slice(o, o + 2 * n)); o += 2 * n; return a; };
+    for (let i = 0; i < trackCount; i++) {
+        if (o + 34 > buffer.byteLength) throw new Error(`track ${i} of ${trackCount}: file ends early`);
+        const t = {
+            trackID: dv.getInt32(o, true), eventID: dv.getInt32(o + 4, true), nameID: dv.getUint16(o + 8, true),
+            charge: dv.getFloat64(o + 10, true),
+            rgb: [dv.getFloat32(o + 18, true), dv.getFloat32(o + 22, true), dv.getFloat32(o + 26, true)],
+        };
+        const n = dv.getUint32(o + 30, true);
+        o += 34;
+        if (o + n * 40 > buffer.byteLength) throw new Error(`track ${i} of ${trackCount}: file ends early`);
+        Object.assign(t, { n, x: f32(n), y: f32(n), z: f32(n), time: f32(n), edep: f32(n), px: f32(n), py: f32(n), pz: f32(n), energy: f32(n), process: u16(n), volume: u16(n) });
+        tracks.push(t);
+    }
+    const strings = [], decoder = new TextDecoder();
+    for (let i = 0; i < stringCount && o + 2 <= buffer.byteLength; i++) {
+        const len = dv.getUint16(o, true);
+        strings.push(decoder.decode(new Uint8Array(buffer, o + 2, len)));
+        o += 2 + len;
+    }
+    const name = id => strings[id] ?? `#${id}`;
+    for (const t of tracks) t.particle = name(t.nameID);
+    return { tracks, name };
+}
+
+// A minimal zip reader (stored + deflate, which is what miniz writes) on DecompressionStream.
+async function unzip(buffer) {
+    const dv = new DataView(buffer), bytes = new Uint8Array(buffer);
+    let eocd = -1;
+    for (let i = buffer.byteLength - 22; i >= Math.max(0, buffer.byteLength - 65557); i--) {
+        if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('not a zip file');
+    const count = dv.getUint16(eocd + 10, true);
+    let p = dv.getUint32(eocd + 16, true);
+    const files = new Map(), decoder = new TextDecoder();
+    for (let i = 0; i < count; i++) {
+        if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('zip: bad central directory');
+        const method = dv.getUint16(p + 10, true), size = dv.getUint32(p + 20, true);
+        const nameLen = dv.getUint16(p + 28, true), extraLen = dv.getUint16(p + 30, true), commentLen = dv.getUint16(p + 32, true);
+        const local = dv.getUint32(p + 42, true);
+        const name = decoder.decode(bytes.subarray(p + 46, p + 46 + nameLen));
+        p += 46 + nameLen + extraLen + commentLen;
+        const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+        const data = bytes.subarray(start, start + size);
+        if (method === 0) files.set(name, data.slice().buffer);
+        else if (method === 8) {
+            const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+            files.set(name, await new Response(stream).arrayBuffer());
+        } else throw new Error(`zip: ${name} uses unsupported method ${method}`);
+    }
+    return files;
+}
+
+// Sort dropped / fetched files into { glb, runs: [{ name, buffer }] }.
+async function collect(entries) {
+    const out = { glb: null, glbName: '', runs: [] };
+    for (const [name, buffer] of entries) {
+        const base = name.split('/').pop();
+        if (/\.zip$/i.test(base)) {
+            const inner = await collect(await unzip(buffer));
+            out.glb ??= inner.glb; out.glbName ||= inner.glbName;
+            out.runs.push(...inner.runs);
+        } else if (/\.glb$/i.test(base)) { out.glb = buffer; out.glbName = base; }
+        else if (/\.bin$/i.test(base) && buffer.byteLength >= 4 && new TextDecoder().decode(new Uint8Array(buffer, 0, 4)) === 'G4TK') {
+            out.runs.push({ name: base, buffer });
+        }
+    }
+    out.runs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    return out;
+}
+
+// ─── Detector + trajectories ────────────────────────────────────────────────
+const detector = new THREE.Group();                         // Geant4 space, millimetres
+scene.add(detector);
+const geometryGroup = new THREE.Group(), trackGroup = new THREE.Group();
+detector.add(geometryGroup, trackGroup);
+const state = { session: null, run: null, tracks: [], name: () => '', tMax: 1, time: 1, playing: false,
+    event: -1, events: [], colour: 'charge', scale: 1, fitScale: 0.001, center: new THREE.Vector3(), volumes: 0 };
+
+function placeDetector() {
+    detector.scale.setScalar(state.fitScale * state.scale);
+    detector.position.copy(ANCHOR).addScaledVector(state.center, -state.fitScale * state.scale);
+}
+function setScale(s) {
+    state.scale = THREE.MathUtils.clamp(s, 0.1, 40);
+    placeDetector();
+}
+
+const loader = new GLTFLoader();
+async function loadGeometry(buffer) {
+    geometryGroup.clear();
+    state.volumes = 0;
+    if (!buffer) return;
+    const gltf = await new Promise((res, rej) => loader.parse(buffer, '', res, rej));
+    // G4Xr writes every volume with alpha 0.1, BLEND. Keep that see-through look, but add edges so the
+    // shapes read on a dark background (lightened, since e.g. B1's Envelope is pure blue).
+    gltf.scene.traverse(o => {
+        if (!o.isMesh) return;
+        const src = o.material, colour = src.color?.clone() ?? new THREE.Color(0.5, 0.5, 0.5);
+        // Both sides of every face are drawn, so halve the alpha to keep the file's overall see-through look.
+        o.material = new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: Math.max((src.opacity ?? 0.1) * 0.5, 0.03), side: THREE.DoubleSide, depthWrite: false });
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry, 25),
+            new THREE.LineBasicMaterial({ color: colour.clone().lerp(new THREE.Color(1, 1, 1), 0.45), transparent: true, opacity: 0.55 }));
+        o.add(edges);
+        o.renderOrder = -1;
+        state.volumes++;
+    });
+    geometryGroup.add(gltf.scene);
+}
+
+const PALETTE = { gamma: '#4DB6AC', 'e-': '#ef5350', 'e+': '#42a5f5', proton: '#FFB74D', neutron: '#b0bec5', 'mu-': '#ab47bc', 'mu+': '#7e57c2', 'pi+': '#9ccc65', 'pi-': '#d4e157', alpha: '#ffd54f' };
+const hashColour = name => new THREE.Color().setHSL([...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7) / 360, 0.6, 0.6);
+function trackColour(t, out) {
+    if (state.colour === 'particle') return out.set(PALETTE[t.particle] ?? hashColour(t.particle));
+    if (state.colour === 'energy') {
+        // log10 of the track's total energy (MeV), from 0.1 MeV to the run's maximum
+        const lo = -1, hi = Math.log10(Math.max(state.eMax, 1));
+        const v = THREE.MathUtils.clamp((Math.log10(Math.max(t.energy[0], 1e-3)) - lo) / (hi - lo || 1), 0, 1);
+        return out.set('#3b1f6b').lerp(new THREE.Color('#ef5350'), Math.min(1, v * 2)).lerp(new THREE.Color('#fff3c4'), Math.max(0, v * 2 - 1));
+    }
+    return out.setRGB(...t.rgb);                       // the driver's colour: drawByCharge unless set
+}
+
+// Each step point carries its global time; fragments later than uTime are discarded, so a segment
+// fills in smoothly between its two points as time runs.
+const trackUniforms = { uTime: { value: 1e9 }, uEvent: { value: -1 }, uPointSize: { value: 5 } };
+const trackVertex = /* glsl */`
+    attribute float time;
+    attribute float event;
+    uniform float uPointSize;
+    varying vec3 vColor;
+    varying float vTime;
+    varying float vEvent;
+    void main() {
+        vColor = color; vTime = time; vEvent = event;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = uPointSize;
+    }`;
+const trackFragment = (points) => /* glsl */`
+    uniform float uTime;
+    uniform float uEvent;
+    varying vec3 vColor;
+    varying float vTime;
+    varying float vEvent;
+    void main() {
+        if (vTime > uTime || (uEvent >= 0.0 && abs(vEvent - uEvent) > 0.5)) discard;
+        ${points ? 'vec2 c = gl_PointCoord - 0.5; if (dot(c, c) > 0.25) discard;' : ''}
+        gl_FragColor = vec4(vColor, ${points ? '1.0' : '0.95'});
+    }`;
+const lineMaterial = new THREE.ShaderMaterial({ uniforms: trackUniforms, vertexShader: trackVertex, fragmentShader: trackFragment(false), vertexColors: true, transparent: true });
+const pointMaterial = new THREE.ShaderMaterial({ uniforms: trackUniforms, vertexShader: trackVertex, fragmentShader: trackFragment(true), vertexColors: true });
+
+let pointIndex = [];                                    // flat point → [track, step]
+function buildTracks() {
+    trackGroup.clear();
+    const tracks = state.tracks;
+    let segs = 0, pts = 0;
+    for (const t of tracks) { segs += Math.max(0, t.n - 1); pts += t.n; }
+    const lp = new Float32Array(segs * 6), lc = new Float32Array(segs * 6), lt = new Float32Array(segs * 2), le = new Float32Array(segs * 2);
+    const pp = new Float32Array(pts * 3), pc = new Float32Array(pts * 3), pt = new Float32Array(pts), pe = new Float32Array(pts);
+    pointIndex = [];
+    const c = new THREE.Color();
+    let s = 0, q = 0;
+    for (const t of tracks) {
+        trackColour(t, c);
+        for (let i = 0; i < t.n; i++) {
+            pp.set([t.x[i], t.y[i], t.z[i]], q * 3); pc.set([c.r, c.g, c.b], q * 3);
+            pt[q] = t.time[i]; pe[q] = t.eventID;
+            pointIndex.push([t, i]);
+            q++;
+            if (i === 0) continue;
+            lp.set([t.x[i - 1], t.y[i - 1], t.z[i - 1], t.x[i], t.y[i], t.z[i]], s * 6);
+            lc.set([c.r, c.g, c.b, c.r, c.g, c.b], s * 6);
+            lt[s * 2] = t.time[i - 1]; lt[s * 2 + 1] = t.time[i];
+            le[s * 2] = le[s * 2 + 1] = t.eventID;
+            s++;
+        }
+    }
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute('position', new THREE.BufferAttribute(lp, 3));
+    lg.setAttribute('color', new THREE.BufferAttribute(lc, 3));
+    lg.setAttribute('time', new THREE.BufferAttribute(lt, 1));
+    lg.setAttribute('event', new THREE.BufferAttribute(le, 1));
+    const pg = new THREE.BufferGeometry();
+    pg.setAttribute('position', new THREE.BufferAttribute(pp, 3));
+    pg.setAttribute('color', new THREE.BufferAttribute(pc, 3));
+    pg.setAttribute('time', new THREE.BufferAttribute(pt, 1));
+    pg.setAttribute('event', new THREE.BufferAttribute(pe, 1));
+    const lines = new THREE.LineSegments(lg, lineMaterial), points = new THREE.Points(pg, pointMaterial);
+    lines.frustumCulled = points.frustumCulled = false;
+    trackGroup.add(lines, points);
+}
+
+const eventSelect = document.getElementById('event'), colourSelect = document.getElementById('colour');
+const tSlider = document.getElementById('t-slider'), tLabel = document.getElementById('t-label'), playButton = document.getElementById('play');
+const errorEl = document.getElementById('error');
+
+function selectRun(i) {
+    const run = state.session.runs[i];
+    state.run = run;
+    const { tracks, name } = run.parsed;
+    state.tracks = tracks;
+    state.name = name;
+    state.events = [...new Set(tracks.map(t => t.eventID))].sort((a, b) => a - b);
+    state.tMax = Math.max(1, ...tracks.map(t => t.time[t.n - 1] ?? 0));
+    state.eMax = Math.max(0, ...tracks.map(t => t.energy[0] ?? 0));
+    eventSelect.replaceChildren(new Option('all events', -1),
+        ...state.events.map(e => new Option(`event ${e}`, e)));
+    if (state.session.runs.length > 1) {
+        eventSelect.prepend(...state.session.runs.map((r, j) => Object.assign(new Option(r.name, `run:${j}`), { selected: j === i })));
+    }
+    state.event = -1;
+    eventSelect.value = -1;
+    trackUniforms.uEvent.value = -1;
+    buildTracks();
+    setTime(state.tMax);
+}
+
+async function loadSession(entries, label) {
+    errorEl.textContent = '';
+    const session = await collect(entries);
+    if (!session.glb && !session.runs.length) throw new Error('no trial.glb or G4TK run*.bin found');
+    for (const r of session.runs) r.parsed = parseTracks(r.buffer);
+    // A dropped .bin alone keeps the detector already on screen.
+    if (session.glb || !state.session) await loadGeometry(session.glb);
+    else session.glb = state.session.glb;
+    state.session = session;
+    document.getElementById('source').textContent = label;
+
+    // Fit: the detector's bounding box (or the tracks', when there is no geometry) to FIT metres,
+    // measured in Geant4 space, so with the detector's own scale undone.
+    detector.position.set(0, 0, 0);
+    detector.scale.setScalar(1);
+    detector.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(geometryGroup);
+    if (box.isEmpty()) for (const r of session.runs) for (const t of r.parsed.tracks) for (let i = 0; i < t.n; i++) box.expandByPoint(new THREE.Vector3(t.x[i], t.y[i], t.z[i]));
+    if (box.isEmpty()) box.set(new THREE.Vector3(-500, -500, -500), new THREE.Vector3(500, 500, 500));
+    const size = box.getSize(new THREE.Vector3());
+    state.fitScale = FIT / Math.max(size.x, size.y, size.z, 1e-6);
+    box.getCenter(state.center);
+    state.scale = 1;
+    placeDetector();
+
+    if (session.runs.length) selectRun(0);
+    else { state.tracks = []; trackGroup.clear(); eventSelect.replaceChildren(new Option('no trajectories', -1)); setTime(1); }
+}
+
+// ─── Time / events / colour ─────────────────────────────────────────────────
+const fmtTime = ps => (ps >= 1e6 ? `${(ps / 1e6).toPrecision(3)} µs` : ps >= 1e3 ? `${(ps / 1e3).toPrecision(3)} ns` : `${ps.toPrecision(3)} ps`);
+function setTime(t) {
+    state.time = THREE.MathUtils.clamp(t, 0, state.tMax);
+    trackUniforms.uTime.value = state.time >= state.tMax ? 1e30 : state.time;
+    tSlider.value = Math.round((state.time / state.tMax) * 1000);
+    tLabel.textContent = fmtTime(state.time);
+}
+function play() {
+    if (state.playing) { state.playing = false; }
+    else { if (state.time >= state.tMax) setTime(0); state.playing = true; }
+    playButton.textContent = state.playing ? '❚❚' : '▶';
+    playButton.setAttribute('aria-label', state.playing ? 'Pause' : 'Play');
+}
+function setEvent(e) {
+    state.event = e;
+    trackUniforms.uEvent.value = e;
+    eventSelect.value = e;
+}
+function stepEvent(d) {
+    if (!state.events.length) return;
+    const list = [-1, ...state.events];
+    const i = list.indexOf(state.event);
+    setEvent(list[(i + d + list.length) % list.length]);
+}
+function setColour(mode) {
+    state.colour = mode;
+    colourSelect.value = mode;
+    if (state.tracks.length) buildTracks();
+}
+tSlider.addEventListener('input', () => { state.playing = false; playButton.textContent = '▶'; setTime((+tSlider.value / 1000) * state.tMax); });
+playButton.addEventListener('click', play);
+eventSelect.addEventListener('change', () => {
+    const v = eventSelect.value;
+    if (v.startsWith('run:')) selectRun(+v.slice(4));
+    else setEvent(+v);
+});
+colourSelect.addEventListener('change', () => setColour(colourSelect.value));
+
+// ─── Files ──────────────────────────────────────────────────────────────────
+const fileInput = document.getElementById('file');
+document.getElementById('open').addEventListener('click', () => fileInput.click());
+async function loadFiles(fileList) {
+    const files = [...fileList];                        // the input's FileList empties once it is reset
+    if (!files.length) return;
+    try {
+        const entries = await Promise.all(files.map(async f => [f.name, await f.arrayBuffer()]));
+        await loadSession(entries, files.length === 1 ? files[0].name : `${files.length} files`);
+    } catch (e) { errorEl.textContent = e.message; }
+}
+fileInput.addEventListener('change', () => { loadFiles(fileInput.files); fileInput.value = ''; });
+let dragDepth = 0;
+window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+window.addEventListener('drop', e => {
+    e.preventDefault();
+    dragDepth = 0;
+    document.body.classList.remove('dragging');
+    loadFiles(e.dataTransfer.files);
+});
+
+// ─── Hover ──────────────────────────────────────────────────────────────────
+const hoverLabel = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.06), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false }));
+    mesh.renderOrder = 10;
+    mesh.visible = false;
+    scene.add(mesh);
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(0.008, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffb74d, depthTest: false }));
+    marker.renderOrder = 9;
+    marker.visible = false;
+    scene.add(marker);
+    let last = '';
+    return {
+        mesh, marker,
+        draw(top, bottom) {
+            if (top + bottom === last) return;
+            last = top + bottom;
+            ctx.clearRect(0, 0, 512, 128);
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.beginPath(); ctx.roundRect(0, 0, 512, 128, 20); ctx.fill();
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#FFB74D'; ctx.font = 'bold 40px "Fira Code", monospace'; ctx.fillText(top, 256, 54);
+            ctx.fillStyle = '#a1a1a1'; ctx.font = '28px "Fira Code", monospace'; ctx.fillText(bottom, 256, 98);
+            tex.needsUpdate = true;
+        },
+    };
+})();
+const hoverEl = document.getElementById('hover');
+let hovered = null;
+const _local = new THREE.Ray(), _inv = new THREE.Matrix4(), _p = new THREE.Vector3(), _w = new THREE.Vector3();
+function nearestPoint(worldRay) {
+    if (!pointIndex.length) return null;
+    _inv.copy(detector.matrixWorld).invert();
+    _local.copy(worldRay).applyMatrix4(_inv);
+    const scale = state.fitScale * state.scale;
+    const reach = 0.025 / scale;                            // 2.5 cm in the room, in mm
+    let best = null, bestD = reach * reach;
+    for (const entry of pointIndex) {
+        const [t, i] = entry;
+        if (t.time[i] > state.time || (state.event >= 0 && t.eventID !== state.event)) continue;
+        _p.set(t.x[i], t.y[i], t.z[i]);
+        if (_local.direction.dot(_w.subVectors(_p, _local.origin)) < 0) continue;
+        const d = _local.distanceSqToPoint(_p);
+        if (d < bestD) { bestD = d; best = entry; }
+    }
+    return best;
+}
+const fmtE = mev => (mev >= 1e3 ? `${(mev / 1e3).toPrecision(3)} GeV` : mev >= 1 ? `${mev.toPrecision(3)} MeV` : `${(mev * 1e3).toPrecision(3)} keV`);
+function setHover(entry) {
+    hovered = entry;
+    if (!entry) {
+        hoverLabel.mesh.visible = hoverLabel.marker.visible = false;
+        hoverEl.textContent = '';
+        return;
+    }
+    const [t, i] = entry;
+    const proc = state.name(t.process[i]), vol = state.name(t.volume[i]);
+    hoverLabel.draw(`${t.particle} · ${proc}`, `${vol} · ${fmtTime(t.time[i])}`);
+    hoverLabel.marker.position.set(t.x[i], t.y[i], t.z[i]).applyMatrix4(detector.matrixWorld);
+    hoverLabel.mesh.position.copy(hoverLabel.marker.position).add(new THREE.Vector3(0, 0.05, 0));
+    hoverLabel.mesh.visible = hoverLabel.marker.visible = true;
+    const p = Math.hypot(t.px[i], t.py[i], t.pz[i]);
+    hoverEl.textContent = `${t.particle}   track ${t.trackID}   event ${t.eventID}   q ${t.charge > 0 ? '+' : ''}${t.charge}\n` +
+        `step ${i}/${t.n - 1}   ${proc}   in ${vol}\n` +
+        `x ${t.x[i].toFixed(1)}  y ${t.y[i].toFixed(1)}  z ${t.z[i].toFixed(1)} mm\n` +
+        `t ${fmtTime(t.time[i])}   edep ${fmtE(t.edep[i])}\n` +
+        `E ${fmtE(t.energy[i])}   |p| ${fmtE(p)}/c (at start)`;
+}
+
+// ─── Input ──────────────────────────────────────────────────────────────────
+const DEADZONE = 0.15;
+const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
+const input = { moveX: 0, moveZ: 0, moveY: 0, fast: false, zoom: 0, scrub: 0 };
+
+const controllerModels = new XRControllerModelFactory();
+const gamepads = { left: null, right: null };
+const prev = {};
+let rightRay = null;
+for (let i = 0; i < 2; i++) {
+    const grip = renderer.xr.getControllerGrip(i);
+    grip.add(controllerModels.createControllerModel(grip));
+    rig.add(grip);
+    const ray = renderer.xr.getController(i);
+    const beam = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
+        new THREE.LineBasicMaterial({ color: 0xffb74d, transparent: true, opacity: 0.6 }),
+    );
+    beam.scale.z = 5;
+    beam.visible = false;
+    ray.add(beam);
+    rig.add(ray);
+    grip.addEventListener('connected', e => {
+        const hand = e.data.handedness;
+        gamepads[hand] = e.data.gamepad || null;
+        if (hand === 'right') { rightRay = ray; beam.visible = true; }
+        if (hand === 'left') grip.add(vrPanel.mesh);
+    });
+    grip.addEventListener('disconnected', e => {
+        const hand = e.data.handedness;
+        gamepads[hand] = null;
+        if (hand === 'right') { rightRay = null; beam.visible = false; }
+        if (hand === 'left') grip.remove(vrPanel.mesh);
+    });
+}
+function stick(gp) {
+    if (!gp) return [0, 0];
+    const o = gp.axes.length >= 4 ? 2 : 0;
+    return [dz(gp.axes[o] || 0), dz(gp.axes[o + 1] || 0)];
+}
+const edge = (name, down) => { const e = down && !prev[name]; prev[name] = down; return e; };
+
+const _ray = new THREE.Ray(), _m = new THREE.Matrix4();
+function pollXRInput() {
+    const [lx, ly] = stick(gamepads.left);
+    const [rx, ry] = stick(gamepads.right);
+    input.moveX = lx; input.moveZ = ly; input.moveY = -ry; input.fast = false;
+    input.scrub = rx;
+    const grip = gp => gp?.buttons?.[1]?.value ?? 0;
+    input.zoom = grip(gamepads.right) - grip(gamepads.left);
+    const r = gamepads.right?.buttons || [], l = gamepads.left?.buttons || [];
+    if (edge('a', !!r[4]?.pressed)) play();
+    if (edge('b', !!r[5]?.pressed)) stepEvent(1);
+    if (edge('x', !!l[4]?.pressed)) setColour({ charge: 'particle', particle: 'energy', energy: 'charge' }[state.colour]);
+    if (edge('y', !!l[5]?.pressed)) setScale(1);
+    if (rightRay && (r[0]?.value ?? 0) > 0.3) {
+        _m.identity().extractRotation(rightRay.matrixWorld);
+        _ray.origin.setFromMatrixPosition(rightRay.matrixWorld);
+        _ray.direction.set(0, 0, -1).applyMatrix4(_m);
+        setHover(nearestPoint(_ray));
+    }
+}
+
+const keys = new Set();
+window.addEventListener('keydown', e => {
+    if (e.target.closest?.('select, input, button') && e.code !== 'Escape') return;
+    if (e.repeat && !e.code.startsWith('Arrow')) return;
+    keys.add(e.code);
+    if (e.code === 'Space') { play(); e.preventDefault(); }
+    if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') {
+        state.playing = false; playButton.textContent = '▶';
+        setTime(state.time + (e.code === 'ArrowRight' ? 1 : -1) * state.tMax / 50);
+        e.preventDefault();
+    }
+    if (e.code === 'KeyN') stepEvent(1);
+    if (e.code === 'KeyP') stepEvent(-1);
+    if (e.code === 'KeyC') setColour({ charge: 'particle', particle: 'energy', energy: 'charge' }[state.colour]);
+    if (e.code === 'KeyR') { resetView(); setScale(1); }
+    if (e.code === 'KeyH') document.getElementById('hud').classList.toggle('hidden');
+});
+window.addEventListener('keyup', e => keys.delete(e.code));
+window.addEventListener('blur', () => keys.clear());
+
+let drag = null;
+const pointer = new THREE.Vector2(), raycaster = new THREE.Raycaster();
+let pointerInside = false;
+const el = renderer.domElement;
+el.addEventListener('contextmenu', e => e.preventDefault());
+el.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; el.setPointerCapture(e.pointerId); });
+el.addEventListener('pointermove', e => {
+    pointer.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    pointerInside = true;
+    if (!drag) return;
+    yaw -= (e.clientX - drag.x) * 0.004;
+    pitch = THREE.MathUtils.clamp(pitch - (e.clientY - drag.y) * 0.004, -1.5, 1.5);
+    drag.x = e.clientX; drag.y = e.clientY;
+});
+el.addEventListener('pointerleave', () => { pointerInside = false; });
+el.addEventListener('wheel', e => { e.preventDefault(); setScale(state.scale * Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+const endDrag = () => { drag = null; };
+el.addEventListener('pointerup', endDrag);
+el.addEventListener('pointercancel', endDrag);
+
+function pollDesktopInput() {
+    const k = c => (keys.has(c) ? 1 : 0);
+    input.moveX = k('KeyD') - k('KeyA');
+    input.moveZ = k('KeyS') - k('KeyW');
+    input.moveY = k('KeyE') - k('KeyQ');
+    input.fast = keys.has('ShiftLeft') || keys.has('ShiftRight');
+    input.zoom = k('Equal') + k('NumpadAdd') - k('Minus') - k('NumpadSubtract');
+    input.scrub = 0;
+    if (pointerInside && !drag) {
+        raycaster.setFromCamera(pointer, camera);
+        setHover(nearestPoint(raycaster.ray));
+    }
+}
+
+const MOVE_SPEED = 1.5;
+const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+function applyMovement(dt) {
+    camera.getWorldDirection(fwd);
+    fwd.y = 0;
+    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+    fwd.normalize();
+    right.crossVectors(fwd, up);
+    const step = MOVE_SPEED * (input.fast ? 3 : 1) * dt;
+    const target = renderer.xr.isPresenting ? rig.position : camera.position;
+    target.addScaledVector(right, input.moveX * step);
+    target.addScaledVector(fwd, -input.moveZ * step);
+    target.addScaledVector(up, input.moveY * step);
+}
+
+renderer.xr.addEventListener('sessionstart', () => {
+    rig.position.set(0, 0, 0);
+    camera.position.set(0, 0, 0);
+    trackUniforms.uPointSize.value = 7;
+    document.getElementById('hud').style.display = 'none';
+    document.getElementById('controls').style.display = 'none';
+});
+renderer.xr.addEventListener('sessionend', () => {
+    resetView();
+    trackUniforms.uPointSize.value = 5;
+    gamepads.left = gamepads.right = null;
+    document.getElementById('hud').style.display = '';
+    document.getElementById('controls').style.display = '';
+});
+
+// Wrist panel on the left controller
+const vrPanel = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320; canvas.height = 96;
+    const ctx = canvas.getContext('2d');
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.125, 0.0375), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false }));
+    mesh.position.set(0, 0.06, -0.02);
+    mesh.rotation.x = -Math.PI / 4;
+    mesh.renderOrder = 10;
+    let last = '';
+    return {
+        mesh,
+        update(top, bottom) {
+            if (top + bottom === last) return;
+            last = top + bottom;
+            ctx.clearRect(0, 0, 320, 96);
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.beginPath(); ctx.roundRect(0, 0, 320, 96, 18); ctx.fill();
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#FFB74D'; ctx.font = 'bold 30px monospace'; ctx.fillText(top, 160, 42);
+            ctx.fillStyle = '#a1a1a1'; ctx.font = '22px monospace'; ctx.fillText(bottom, 160, 76);
+            tex.needsUpdate = true;
+        },
+    };
+})();
+
+// ─── Load the demo ──────────────────────────────────────────────────────────
+// vr/g4xr/B1/ is written by `node tools/make-g4xr-demo.mjs`: example B1's detector in G4Xr's exact
+// GLB layout, with toy-transport trajectories in its G4TK format (not Geant4 output).
+const DEMO = 'g4xr/B1/';
+try {
+    const entries = await Promise.all(['trial.glb', 'run0.bin'].map(async f => {
+        const r = await fetch(DEMO + f);
+        if (!r.ok) throw new Error(`${DEMO}${f}: HTTP ${r.status}`);
+        return [f, await r.arrayBuffer()];
+    }));
+    await loadSession(entries, 'demo · example B1');
+    document.getElementById('credit').textContent += ' · demo: Geant4 example B1 geometry, toy-transport tracks';
+} catch (e) { errorEl.textContent = `Could not load the demo: ${e.message}`; }
+
+// ─── Loop ───────────────────────────────────────────────────────────────────
+const statsEl = document.getElementById('stats');
+let lastTime = performance.now(), statsTimer = 0, fps = 60, scrubTimer = 0;
+const PLAY_SECONDS = 6;                                 // one pass through the run's time span
+
+renderer.setAnimationLoop(now => {
+    const dt = Math.min((now - lastTime) / 1000, 0.1);
+    lastTime = now;
+    fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05;
+
+    if (renderer.xr.isPresenting) pollXRInput();
+    else {
+        pollDesktopInput();
+        camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    }
+    applyMovement(dt);
+    if (input.zoom) setScale(state.scale * Math.exp(input.zoom * 1.2 * dt));
+    if (input.scrub) {
+        state.playing = false; playButton.textContent = '▶';
+        setTime(state.time + input.scrub * state.tMax * 0.4 * dt);
+    }
+    if (state.playing) {
+        setTime(state.time + (state.tMax / PLAY_SECONDS) * dt);
+        if (state.time >= state.tMax) play();
+    }
+    if (hovered) {
+        hoverLabel.marker.position.set(hovered[0].x[hovered[1]], hovered[0].y[hovered[1]], hovered[0].z[hovered[1]]).applyMatrix4(detector.matrixWorld);
+        hoverLabel.mesh.position.copy(hoverLabel.marker.position).add(new THREE.Vector3(0, 0.05, 0));
+        hoverLabel.mesh.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion()));
+    }
+
+    const evText = state.event >= 0 ? `event ${state.event}` : `${state.events.length} events`;
+    if (renderer.xr.isPresenting) {
+        vrPanel.update(fmtTime(state.time), `${evText} · ×${state.scale.toPrecision(2)}`);
+    } else if ((statsTimer += dt) > 0.25) {
+        statsTimer = 0;
+        const shown = state.event >= 0 ? state.tracks.filter(t => t.eventID === state.event) : state.tracks;
+        const counts = {};
+        for (const t of shown) counts[t.particle] = (counts[t.particle] || 0) + 1;
+        statsEl.textContent = `${state.volumes} volumes   ${state.run ? state.run.name : 'no run'}\n` +
+            `${shown.length} tracks   ${evText}\n` +
+            `${Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join('   ') || '—'}\n` +
+            `1 m here = ${(1 / (state.fitScale * state.scale)).toPrecision(3)} mm   ${fps.toFixed(0)} fps`;
+    }
+    renderer.render(scene, camera);
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

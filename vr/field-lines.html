@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0b0f16">
+    <title>VR Field Lines</title>
+    <meta name="description" content="Electric and magnetic field lines you can walk through: point charges, a relativistic moving charge, parallel wires and a current loop, in the browser or a WebXR headset.">
+    <link rel="stylesheet" href="/vr/vr.css">
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #0b0f16;
+            color: white;
+            font-family: 'Geist', sans-serif;
+        }
+        canvas { display: block; touch-action: none; }
+        #hud { top: 16px; left: 16px; width: 400px; user-select: none; pointer-events: none; }
+        #controls { top: 16px; right: 16px; width: 360px; max-height: calc(100vh - 32px); overflow-y: auto; }
+        #controls .row { display: flex; gap: 8px; align-items: center; }
+        #controls .row > select { flex: 1; min-width: 0; }
+        #controls input[type=range] { flex: 1; min-width: 0; }
+        #controls label { color: var(--secondary); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 9ch; }
+        #controls output { color: var(--gold); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 6ch; text-align: right; }
+        #controls .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+        #controls button[aria-pressed=false] { background: var(--second); color: var(--secondary); }
+        #hint { color: var(--secondary); font-size: 13px; }
+        #hint:empty { display: none; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+<div id="hud" class="hud">
+    <header>
+        <span>/vr/field-lines.html</span>
+        <a href="/vr/"><span>cd </span>..</a>
+    </header>
+    <section>
+        <span class="name">VR Field Lines</span>
+        <div class="stats" id="stats">building…</div>
+        <div class="keys">
+            <div class="rule"></div>
+            <span class="command">controls <span>--desktop</span></span>
+            <dl>
+                <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>move</dd>
+                <dt><kbd>Q</kbd><kbd>E</kbd><kbd>Shift</kbd></dt><dd>down / up · fast</dd>
+                <dt><kbd>drag</kbd></dt><dd>look · drag a charge to move it</dd>
+                <dt><kbd>1</kbd>–<kbd>5</kbd><kbd>N</kbd></dt><dd>scene · next preset</dd>
+                <dt><kbd>[</kbd><kbd>]</kbd></dt><dd>fewer / more field lines</dd>
+                <dt><kbd>R</kbd><kbd>H</kbd></dt><dd>reset view · hide help</dd>
+            </dl>
+            <span class="command">controls <span>--vr</span></span>
+            <dl>
+                <dt><kbd>R stick</kbd></dt><dd>move</dd>
+                <dt><kbd>L stick</kbd></dt><dd>turn</dd>
+                <dt><kbd>B</kbd><kbd>A</kbd></dt><dd>up / down</dd>
+                <dt><kbd>trigger</kbd></dt><dd>select · move charges</dd>
+                <dt><kbd>grip</kbd></dt><dd>show / hide the menu</dd>
+            </dl>
+            <div class="rule"></div>
+            <span class="note">VR Field Lines (Quest, Unity) rebuilt for WebXR. Lines are traced from Coulomb's law and Biot–Savart; arrows point along the field.</span>
+        </div>
+    </section>
+</div>
+
+<div id="controls" class="hud">
+    <header><span id="scene-path">scene</span></header>
+    <section id="widgets"></section>
+    <div id="hint"></div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+
+// ─── Renderer / rig ─────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const scene = new THREE.Scene();
+const rig = new THREE.Group();
+scene.add(rig);
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.02, 100);
+rig.add(camera);
+
+// Everything is laid out around a point a metre in front of where you stand, at chest height.
+const CENTER = new THREE.Vector3(0, 1.35, -1);
+
+let yaw = 0, pitch = 0;
+function resetView() {
+    rig.position.set(0, 0, 0);
+    rig.rotation.set(0, 0, 0);
+    camera.position.set(0, 1.55, 0.7);
+    const f = CENTER.clone().sub(camera.position).normalize();
+    yaw = Math.atan2(-f.x, -f.z);
+    pitch = Math.asin(f.y);
+}
+resetView();
+
+// ─── Environment ────────────────────────────────────────────────────────────
+// A dim take on Unity's procedural skybox (the app's background), dark enough for the lines to read.
+scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(60, 32, 16),
+    new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        depthWrite: false,
+        vertexShader: `varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: `varying vec3 vDir;
+            void main() {
+                float h = vDir.y;
+                vec3 sky = mix(vec3(0.075, 0.09, 0.12), vec3(0.025, 0.035, 0.06), smoothstep(0.0, 0.6, h));
+                vec3 ground = mix(vec3(0.06, 0.06, 0.065), vec3(0.03, 0.03, 0.035), smoothstep(0.0, -0.4, h));
+                gl_FragColor = vec4(h > 0.0 ? sky : ground, 1.0);
+            }`,
+    })
+));
+const grid = new THREE.GridHelper(12, 24, 0x2a3140, 0x1a1f2a);
+scene.add(grid);
+scene.add(new THREE.HemisphereLight(0xc8d4ff, 0x202020, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 2);
+sun.position.set(1, 3, 2);
+scene.add(sun);
+
+// ─── Shared drawing ─────────────────────────────────────────────────────────
+const WEAK = new THREE.Color('#2a6f69'), STRONG = new THREE.Color('#ffffff');   // site teal → white
+const strengthColor = (t, out = new THREE.Color()) => out.copy(WEAK).lerp(STRONG, THREE.MathUtils.clamp(t, 0, 1));
+
+const MAX_ARROWS = 6000;
+const arrowGeometry = new THREE.ConeGeometry(0.011, 0.034, 10).translate(0, 0.017, 0);
+function makeArrows() {
+    const mesh = new THREE.InstancedMesh(arrowGeometry, new THREE.MeshBasicMaterial({ color: 0xffffff }), MAX_ARROWS);
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_ARROWS * 3), 3);
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    return mesh;
+}
+
+// Collects line segments and arrowheads, then uploads them into one LineSegments + one InstancedMesh.
+class FieldDrawing {
+    constructor(parent) {
+        this.lines = new THREE.LineSegments(new THREE.BufferGeometry(),
+            new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }));
+        this.lines.frustumCulled = false;
+        this.arrows = makeArrows();
+        parent.add(this.lines, this.arrows);
+        this.begin();
+    }
+    begin() { this.pos = []; this.col = []; this.arrowCount = 0; }
+    segment(ax, ay, az, bx, by, bz, color) {
+        this.pos.push(ax, ay, az, bx, by, bz);
+        this.col.push(color.r, color.g, color.b, color.r, color.g, color.b);
+    }
+    arrow(position, direction, color) {
+        if (this.arrowCount >= MAX_ARROWS) return;
+        _q.setFromUnitVectors(_up, _d.copy(direction).normalize());
+        _m.compose(position, _q, _one);
+        this.arrows.setMatrixAt(this.arrowCount, _m);
+        this.arrows.setColorAt(this.arrowCount, color);
+        this.arrowCount++;
+    }
+    // A polyline with arrows every `spacing` metres of arc length, pointing along `sign` × its direction.
+    polyline(points, colors, sign = 1, spacing = 0.2) {
+        let run = spacing / 2;
+        for (let i = 1; i < points.length; i++) {
+            const a = points[i - 1], b = points[i];
+            this.segment(a.x, a.y, a.z, b.x, b.y, b.z, colors[i]);
+            run += a.distanceTo(b);
+            if (run >= spacing && i < points.length - 1) {
+                run = 0;
+                this.arrow(b, _d2.subVectors(b, a).multiplyScalar(sign), colors[i]);
+            }
+        }
+    }
+    end() {
+        const g = this.lines.geometry;
+        g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+        g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+        g.computeBoundingSphere();
+        this.arrows.count = this.arrowCount;
+        this.arrows.instanceMatrix.needsUpdate = true;
+        if (this.arrows.instanceColor) this.arrows.instanceColor.needsUpdate = true;
+        return this.pos.length / 6;
+    }
+}
+const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _one = new THREE.Vector3(1, 1, 1);
+const _up = new THREE.Vector3(0, 1, 0), _d = new THREE.Vector3(), _d2 = new THREE.Vector3();
+
+// Marching squares over a scalar grid: contours at levels start + k·step for k in [kMin, kMax].
+// Calls emit(x1, y1, x2, y2, k) in grid coordinates (cell units). NaN corners skip the cell.
+const MS = [[], [[3, 0]], [[0, 1]], [[3, 1]], [[1, 2]], [[3, 0], [1, 2]], [[0, 2]], [[3, 2]],
+    [[2, 3]], [[0, 2]], [[0, 1], [2, 3]], [[1, 2]], [[1, 3]], [[0, 1]], [[3, 0]], []];
+function contour(values, nx, ny, start, step, kMin, kMax, emit) {
+    const e = [0, 0, 0, 0, 0, 0, 0, 0];
+    for (let j = 0; j < ny - 1; j++) {
+        for (let i = 0; i < nx - 1; i++) {
+            const v0 = values[j * nx + i], v1 = values[j * nx + i + 1];
+            const v2 = values[(j + 1) * nx + i + 1], v3 = values[(j + 1) * nx + i];
+            if (Number.isNaN(v0 + v1 + v2 + v3)) continue;
+            const lo = Math.min(v0, v1, v2, v3), hi = Math.max(v0, v1, v2, v3);
+            const k0 = Math.max(kMin, Math.ceil((lo - start) / step)), k1 = Math.min(kMax, Math.floor((hi - start) / step));
+            for (let k = k0; k <= k1; k++) {
+                const L = start + k * step;
+                const c = (v0 > L ? 1 : 0) | (v1 > L ? 2 : 0) | (v2 > L ? 4 : 0) | (v3 > L ? 8 : 0);
+                if (c === 0 || c === 15) continue;
+                // edge points: 0 bottom (v0→v1), 1 right (v1→v2), 2 top (v3→v2), 3 left (v0→v3)
+                e[0] = i + (L - v0) / (v1 - v0); e[1] = j;
+                e[2] = i + 1; e[3] = j + (L - v1) / (v2 - v1);
+                e[4] = i + (L - v3) / (v2 - v3); e[5] = j + 1;
+                e[6] = i; e[7] = j + (L - v0) / (v3 - v0);
+                for (const [a, b] of MS[c]) emit(e[a * 2], e[a * 2 + 1], e[b * 2], e[b * 2 + 1], k);
+            }
+        }
+    }
+}
+
+// Arrows on unchained contour segments: accept a segment's midpoint only when it is `spacing`
+// away from every arrow already placed on the same level, which spaces them evenly along each line.
+class ArrowSpacer {
+    constructor(spacing) { this.s2 = spacing * spacing; this.byLevel = new Map(); }
+    accept(key, p) {
+        let list = this.byLevel.get(key);
+        if (!list) this.byLevel.set(key, (list = []));
+        for (const q of list) if (q.distanceToSquared(p) < this.s2) return false;
+        list.push(p.clone());
+        return true;
+    }
+}
+
+function chargeMesh(q) {
+    const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.035, 32, 16),
+        new THREE.MeshStandardMaterial(q > 0
+            ? { color: 0xff0000, roughness: 0.4, emissive: 0x330000 }          // the app's Red material
+            : { color: 0x00f8ff, roughness: 0.4, emissive: 0x003033 })         // and its Cyan
+    );
+    mesh.userData.q = q;
+    return mesh;
+}
+const wireMaterial = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.565, 0.933, 0.565), transparent: true, opacity: 0.718, roughness: 0.5 });
+
+// ─── Electric field of point charges ────────────────────────────────────────
+// Coulomb with k = 1: E = Σ q (r − rᵢ) / |r − rᵢ|³. Lines start on a small sphere round each
+// charge (Fibonacci directions, count ∝ |q|) and are traced with RK4 along Ê until they land on an
+// opposite charge, leave the room or run out. Lines seeded on negative charges (traced against E)
+// are only kept when they escape, so no line is drawn twice.
+const R_START = 0.04, R_END = 0.03, BOUND = 2.4;
+function fieldAt(charges, x, y, z, out) {
+    let ex = 0, ey = 0, ez = 0;
+    for (const c of charges) {
+        const dx = x - c.p.x, dy = y - c.p.y, dz = z - c.p.z;
+        const r2 = dx * dx + dy * dy + dz * dz, s = c.q / (r2 * Math.sqrt(r2));
+        ex += dx * s; ey += dy * s; ez += dz * s;
+    }
+    out[0] = ex; out[1] = ey; out[2] = ez;
+    return Math.hypot(ex, ey, ez);
+}
+const _e = [0, 0, 0];
+function traceLine(charges, start, sign) {
+    const pts = [start.clone()];
+    let x = start.x, y = start.y, z = start.z, length = 0, end = null;
+    const k = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    const dir = (px, py, pz, o) => {
+        const n = fieldAt(charges, px, py, pz, _e) || 1e-12;
+        o[0] = sign * _e[0] / n; o[1] = sign * _e[1] / n; o[2] = sign * _e[2] / n;
+        return n;
+    };
+    for (let step = 0; step < 2000 && length < 7; step++) {
+        let near = Infinity, nearest = null;
+        for (const c of charges) {
+            const d = Math.hypot(x - c.p.x, y - c.p.y, z - c.p.z);
+            if (d < near) { near = d; nearest = c; }
+        }
+        if (step > 2 && near < R_END) { end = nearest; pts.push(nearest.p.clone()); break; }
+        const h = THREE.MathUtils.clamp(near * 0.15, 0.003, 0.025);
+        if (dir(x, y, z, k[0]) < 1e-6) break;                 // a null point
+        dir(x + k[0][0] * h / 2, y + k[0][1] * h / 2, z + k[0][2] * h / 2, k[1]);
+        dir(x + k[1][0] * h / 2, y + k[1][1] * h / 2, z + k[1][2] * h / 2, k[2]);
+        dir(x + k[2][0] * h, y + k[2][1] * h, z + k[2][2] * h, k[3]);
+        x += h / 6 * (k[0][0] + 2 * k[1][0] + 2 * k[2][0] + k[3][0]);
+        y += h / 6 * (k[0][1] + 2 * k[1][1] + 2 * k[2][1] + k[3][1]);
+        z += h / 6 * (k[0][2] + 2 * k[1][2] + 2 * k[2][2] + k[3][2]);
+        length += h;
+        if (step % 2 === 0 || near < 0.1) pts.push(new THREE.Vector3(x, y, z));
+        if (Math.hypot(x - CENTER.x, y - CENTER.y, z - CENTER.z) > BOUND) break;
+    }
+    return { pts, end };
+}
+function fibonacciDirections(n) {
+    const out = [], golden = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < n; i++) {
+        const y = 1 - (2 * (i + 0.5)) / n, r = Math.sqrt(1 - y * y), t = golden * i;
+        out.push(new THREE.Vector3(Math.cos(t) * r, y, Math.sin(t) * r));
+    }
+    return out;
+}
+// log10 |E| ≈ 0 one metre from a unit charge, ≈ 2.8 at its surface
+const eStrength = (charges, p) => (Math.log10(fieldAt(charges, p.x, p.y, p.z, _e) + 1e-9) + 0.6) / 3.4;
+function drawElectric(drawing, charges, linesPerCharge) {
+    drawing.begin();
+    let lines = 0;
+    for (const c of charges) {
+        const sign = Math.sign(c.q);
+        for (const d of fibonacciDirections(Math.max(1, Math.round(linesPerCharge * Math.abs(c.q))))) {
+            const { pts, end } = traceLine(charges, c.p.clone().addScaledVector(d, R_START), sign);
+            if (sign < 0 && end) continue;                       // already drawn from the positive end
+            if (pts.length < 2) continue;
+            drawing.polyline(pts, pts.map(p => strengthColor(eStrength(charges, p))), sign);
+            lines++;
+        }
+    }
+    drawing.end();
+    return lines;
+}
+
+// ─── Scenes ─────────────────────────────────────────────────────────────────
+// The five scenes of the Quest app: DefaultScene, CustomScene, RelativisticTest, Rin_fields, Loop_Current.
+const at = (x, y, z = 0) => CENTER.clone().add(new THREE.Vector3(x, y, z));
+const PRESETS = [
+    { name: '+ve Single', charges: [[1, 0, 0]] },
+    { name: '+ve Couple', charges: [[1, -0.25, 0], [1, 0.25, 0]] },
+    { name: 'Dipole', charges: [[1, -0.25, 0], [-1, 0.25, 0]] },
+    { name: '+ve Triangle', charges: [0, 1, 2].map(i => [1, 0.3 * Math.sin(i * 2 * Math.PI / 3), 0.3 * Math.cos(i * 2 * Math.PI / 3)]) },
+    { name: 'PNP', charges: [[1, -0.4, 0], [-1, 0, 0], [1, 0.4, 0]] },
+    { name: 'Quadrupole', charges: [[1, -0.22, -0.22], [-1, 0.22, -0.22], [1, 0.22, 0.22], [-1, -0.22, 0.22]] },
+];
+
+class PresetScene {
+    title = 'Electric field lines';
+    root = new THREE.Group();
+    drawing = new FieldDrawing(this.root);
+    state = { preset: 2, lines: 16 };
+    charges = [];
+    widgets() {
+        return [
+            { kind: 'choice', label: 'arrangement', options: PRESETS.map(p => p.name), get: () => this.state.preset, set: i => { this.state.preset = i; this.dirty = true; } },
+            { kind: 'slider', label: 'field lines', min: 10, max: 50, step: 1, get: () => this.state.lines, set: v => { this.state.lines = v; this.dirty = true; }, format: v => `${v}` },
+        ];
+    }
+    next() { this.state.preset = (this.state.preset + 1) % PRESETS.length; this.dirty = true; }
+    moreLines(d) { this.state.lines = THREE.MathUtils.clamp(this.state.lines + d * 2, 10, 50); this.dirty = true; }
+    rebuild() {
+        for (const c of this.charges) this.root.remove(c.mesh);
+        this.charges = PRESETS[this.state.preset].charges.map(([q, x, y]) => {
+            const mesh = chargeMesh(q);
+            mesh.position.copy(at(x, y));
+            this.root.add(mesh);
+            return { q, p: mesh.position, mesh };
+        });
+        this.lineCount = drawElectric(this.drawing, this.charges, this.state.lines);
+    }
+    stats() {
+        const net = this.charges.reduce((s, c) => s + c.q, 0);
+        return `${PRESETS[this.state.preset].name}   ${this.charges.length} charges   net q ${net > 0 ? '+' : ''}${net}\n${this.lineCount} field lines`;
+    }
+}
+
+class CustomScene {
+    title = 'Custom arrangement';
+    root = new THREE.Group();
+    drawing = new FieldDrawing(this.root);
+    state = { field: true, lines: 16 };
+    charges = [];
+    spawned = 0;
+    constructor() { this.spawn(1); this.spawn(-1); }
+    widgets() {
+        return [
+            { kind: 'toggle', label: 'generate field', hint: 'resets the scene when you turn it off', get: () => this.state.field, set: v => this.setField(v) },
+            { kind: 'button', label: 'Create +ve', action: () => this.spawn(1) },
+            { kind: 'button', label: 'Create −ve', action: () => this.spawn(-1) },
+            { kind: 'slider', label: 'field lines', min: 10, max: 50, step: 1, get: () => this.state.lines, set: v => { this.state.lines = v; this.dirty = true; }, format: v => `${v}` },
+        ];
+    }
+    hint = 'Drag a charge to move it (trigger in VR).';
+    setField(on) {
+        this.state.field = on;
+        if (!on) {                                       // CustomScene's toggle: off clears the arrangement
+            for (const c of this.charges) this.root.remove(c.mesh);
+            this.charges = [];
+            this.spawned = 0;
+        }
+        this.dirty = true;
+    }
+    spawn(q) {
+        // Spawn points walk round a small circle so new charges don't stack on each other.
+        const a = this.spawned++ * 2.4;
+        const mesh = chargeMesh(q);
+        mesh.position.copy(at(0.3 * Math.cos(a) * Math.min(1, this.spawned / 2), 0.3 * Math.sin(a) * Math.min(1, this.spawned / 2)));
+        this.root.add(mesh);
+        this.charges.push({ q, p: mesh.position, mesh });
+        this.dirty = true;
+    }
+    moreLines(d) { this.state.lines = THREE.MathUtils.clamp(this.state.lines + d * 2, 10, 50); this.dirty = true; }
+    get draggable() { return this.charges.map(c => c.mesh); }
+    rebuild() {
+        this.lineCount = this.state.field && this.charges.length ? drawElectric(this.drawing, this.charges, this.state.lines) : (this.drawing.begin(), this.drawing.end(), 0);
+    }
+    stats() {
+        const pos = this.charges.filter(c => c.q > 0).length;
+        return `${pos} positive   ${this.charges.length - pos} negative\n` +
+            (this.state.field ? `${this.lineCount} field lines` : 'field off — turn on "generate field"');
+    }
+}
+
+// A charge moving at constant v: its field lines stay straight and radial from where the charge is
+// *now*, but the pattern is the rest-frame one squashed along v by 1/γ, so they crowd towards the
+// plane perpendicular to the motion: E = q(1 − β²) R̂ / R²(1 − β² sin²ψ)^{3/2}. It also carries
+// B = v × E / c², rings round the line of motion that vanish ahead of and behind the charge.
+class RelativisticScene {
+    title = 'Relativistic point charge';
+    root = new THREE.Group();
+    carrier = new THREE.Group();
+    drawing = new FieldDrawing(this.carrier);
+    state = { beta: 0.177, b: true, moving: true };
+    x = -1;
+    constructor() {
+        this.root.add(this.carrier);
+        this.charge = chargeMesh(1);
+        this.carrier.add(this.charge);
+        this.track = new THREE.Line(new THREE.BufferGeometry().setFromPoints([at(-1.4, 0), at(1.4, 0)]),
+            new THREE.LineDashedMaterial({ color: 0x5a6273, dashSize: 0.04, gapSize: 0.03 }));
+        this.track.computeLineDistances();
+        this.root.add(this.track);
+        this.velocity = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0.05, 0, 0), 0.2, 0xffb74d, 0.05, 0.03);
+        this.carrier.add(this.velocity);
+    }
+    widgets() {
+        return [
+            { kind: 'slider', label: 'v / c', min: 0, max: 0.99, step: 0.001, get: () => this.state.beta, set: v => { this.state.beta = v; this.dirty = true; }, format: v => v.toFixed(3) },
+            { kind: 'toggle', label: 'magnetic field', get: () => this.state.b, set: v => { this.state.b = v; this.dirty = true; } },
+            { kind: 'toggle', label: 'moving', get: () => this.state.moving, set: v => { this.state.moving = v; } },
+        ];
+    }
+    moreLines(d) { this.state.beta = THREE.MathUtils.clamp(+(this.state.beta + d * 0.05).toFixed(3), 0, 0.99); this.dirty = true; }
+    rebuild() {
+        const b = this.state.beta, g = 1 / Math.sqrt(1 - b * b);
+        this.charge.scale.set(1 / g, 1, 1);              // Lorentz contraction of the charge itself
+        this.velocity.setLength(0.06 + 0.4 * b, 0.05, 0.03);
+        this.velocity.visible = b > 0;
+        const d = this.drawing;
+        d.begin();
+        // Relative field strength along a direction at angle ψ to v, at fixed distance:
+        const factor = sinPsi => (1 - b * b) / Math.pow(1 - b * b * sinPsi * sinPsi, 1.5);
+        const fMax = factor(1);                          // = γ, perpendicular to the motion
+        const c = new THREE.Color();
+        for (const dir of fibonacciDirections(48)) {
+            const v = new THREE.Vector3(dir.x / g, dir.y, dir.z).normalize();
+            const sinPsi = Math.hypot(v.y, v.z);
+            strengthColor(0.35 + 0.65 * Math.log(1 + factor(sinPsi)) / Math.log(1 + Math.max(fMax, 1)), c);
+            const pts = [];
+            for (let r = 0.04; r <= 1.0001; r += 0.06) pts.push(v.clone().multiplyScalar(r));
+            d.polyline(pts, pts.map(() => c), 1, 0.3);
+        }
+        if (this.state.b && b > 0) {
+            // |B| = β sinψ |E| on rings of radius ρ at offset x along v (charge at the origin).
+            const bAt = (x, rho) => { const R2 = x * x + rho * rho, s = rho / Math.sqrt(R2); return b * s * factor(s) / R2; };
+            const bRef = bAt(0, 0.12) / b * 0.99;            // scale so the nearest ring is full brightness near c
+            const gold = new THREE.Color('#ffb74d'), dark = new THREE.Color('#1a1f2a');
+            for (const x of [-0.45, -0.3, -0.15, 0, 0.15, 0.3, 0.45]) {
+                for (const rho of [0.12, 0.24, 0.4]) {
+                    const t = Math.min(1, bAt(x, rho) / bRef);
+                    if (t < 0.03) continue;
+                    c.copy(dark).lerp(gold, Math.sqrt(t));
+                    const pts = [];
+                    for (let i = 0; i <= 64; i++) {
+                        const a = (i / 64) * Math.PI * 2;
+                        pts.push(new THREE.Vector3(x, rho * Math.cos(a), rho * Math.sin(a)));
+                    }
+                    // B = v × E: for +q moving along +x this circulates +y → +z (right-handed about v).
+                    d.polyline(pts, pts.map(() => c), 1, rho * 1.5);
+                }
+            }
+        }
+        d.end();
+    }
+    update(dt) {
+        if (this.state.moving) {
+            this.x += dt * (0.15 + 0.85 * this.state.beta);    // shown slowed down, so you can watch it
+            if (this.x > 1.4) this.x = -1.4;
+        }
+        this.carrier.position.copy(at(this.x, 0));
+    }
+    stats() {
+        const b = this.state.beta, g = 1 / Math.sqrt(1 - b * b);
+        return `β ${b.toFixed(3)}   γ ${g.toFixed(3)}\nE⊥ / E∥ at equal distance ${(g ** 3).toFixed(2)}×   |B| / |E| ≤ β`;
+    }
+}
+
+// Long straight wires along y. With μ₀I/2π = I, B = ∇ × (A ŷ) with A = −Σ Iᵢ ln ρᵢ, so the field lines
+// are contours of A in each horizontal plane; equal steps in A keep equal flux between lines.
+class WiresScene {
+    title = 'Parallel wires';
+    hint = 'Current up (+) or down (−); arrows show B.';
+    root = new THREE.Group();
+    drawing = new FieldDrawing(this.root);
+    state = { I: [10, 10, 10], on: [true, true, false], spacing: 4, lines: 8 };
+    constructor() {
+        this.wires = [0, 1, 2].map(() => {
+            const g = new THREE.Group();
+            g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.8, 16), wireMaterial));
+            const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.08, 16), new THREE.MeshStandardMaterial({ color: 0xffb74d }));
+            arrow.position.y = 0.95;
+            g.add(arrow);
+            g.userData.arrow = arrow;
+            this.root.add(g);
+            return g;
+        });
+    }
+    widgets() {
+        const w = [];
+        for (let i = 0; i < 3; i++) {
+            w.push({ kind: 'toggle', label: `wire I${i + 1}`, get: () => this.state.on[i], set: v => { this.state.on[i] = v; this.dirty = true; } });
+            w.push({ kind: 'slider', label: `I${i + 1}`, min: -20, max: 20, step: 1, get: () => this.state.I[i], set: v => { this.state.I[i] = v; this.dirty = true; }, format: v => `${v > 0 ? '+' : ''}${v} A` });
+        }
+        w.push({ kind: 'slider', label: 'I1–I2 gap', min: 1, max: 10, step: 0.5, get: () => this.state.spacing, set: v => { this.state.spacing = v; this.dirty = true; }, format: v => `${(v * 10).toFixed(0)} cm` });
+        w.push({ kind: 'slider', label: 'field lines', min: 4, max: 10, step: 1, get: () => this.state.lines, set: v => { this.state.lines = v; this.dirty = true; }, format: v => `${v}` });
+        return w;
+    }
+    moreLines(d) { this.state.lines = THREE.MathUtils.clamp(this.state.lines + d, 4, 10); this.dirty = true; }
+    positions() {
+        const s = this.state.spacing / 10;
+        return [[-s / 2, 0], [s / 2, 0], [0, -0.45]];        // (x, z) relative to the centre
+    }
+    rebuild() {
+        const P = this.positions();
+        const active = [0, 1, 2].filter(i => this.state.on[i] && this.state.I[i] !== 0)
+            .map(i => ({ x: P[i][0], z: P[i][1], I: this.state.I[i] }));
+        this.wires.forEach((w, i) => {
+            w.visible = this.state.on[i];
+            w.position.copy(at(P[i][0], 0.05, P[i][1]));
+            w.userData.arrow.visible = this.state.I[i] !== 0;
+            w.userData.arrow.rotation.z = this.state.I[i] < 0 ? Math.PI : 0;
+        });
+        const d = this.drawing;
+        d.begin();
+        this.lineLevels = 0;
+        if (active.length) {
+            const N = 200, H = 1.05, cell = (2 * H) / (N - 1);
+            const A = new Float32Array(N * N);
+            for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+                const x = -H + i * cell, z = -H + j * cell;
+                let a = 0, near = Infinity;
+                for (const w of active) {
+                    const r = Math.hypot(x - w.x, z - w.z);
+                    near = Math.min(near, r);
+                    a -= w.I * Math.log(r);
+                }
+                A[j * N + i] = near < 0.05 ? NaN : a;
+            }
+            const step = (10 * 2.2) / this.state.lines;      // 10 A wire: ρ ratio e^{2.2/n} between lines
+            const c = new THREE.Color(), p = new THREE.Vector3(), dir = new THREE.Vector3();
+            const B = (x, z) => {
+                let bx = 0, bz = 0;
+                for (const w of active) {
+                    const dx = x - w.x, dz = z - w.z, r2 = dx * dx + dz * dz;
+                    bx += w.I * dz / r2; bz -= w.I * dx / r2;
+                }
+                return dir.set(bx, 0, bz);
+            };
+            // The field is the same at every height, so contour once and stack copies of the result.
+            const segs = [], arrows = [], levels = new Set();
+            const spacer = new ArrowSpacer(0.3);
+            contour(A, N, N, step / 2, step, -1000, 1000, (x1, z1, x2, z2, k) => {
+                const ax = -H + x1 * cell, az = -H + z1 * cell, bx = -H + x2 * cell, bz = -H + z2 * cell;
+                const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+                const color = strengthColor((Math.log10(B(mx, mz).length()) - 0.6) / 2);
+                segs.push([ax, az, bx, bz, color]);
+                levels.add(k);
+                if (spacer.accept(k, p.set(mx, 0, mz))) arrows.push([p.clone(), dir.clone(), color]);
+            });
+            for (const y of [-0.6, -0.3, 0, 0.45]) {          // planes kept clear of standing eye height
+                const o = at(0, y, 0);
+                for (const [ax, az, bx, bz, color] of segs) d.segment(o.x + ax, o.y, o.z + az, o.x + bx, o.y, o.z + bz, color);
+                for (const [q, v, color] of arrows) d.arrow(q.clone().add(o), v, color);
+            }
+            this.lineLevels = levels.size;
+        }
+        d.end();
+    }
+    stats() {
+        const on = [0, 1, 2].filter(i => this.state.on[i]);
+        const net = on.reduce((s, i) => s + this.state.I[i], 0);
+        return `${on.map(i => `I${i + 1} ${this.state.I[i]} A`).join('   ') || 'no wires on'}\n` +
+            `net current ${net} A   ${this.lineLevels} contour levels`;
+    }
+}
+
+// A circular loop of radius a in the horizontal plane. The vector potential only has a φ part,
+// A_φ = (1/πk)√(a/ρ)[(1 − k²/2)K(k) − E(k)], k² = 4aρ/((a+ρ)² + z²), and ψ = ρA_φ is constant along
+// every field line, so the lines in each vertical (meridian) plane are contours of ψ.
+function ellipticKE(m) {
+    let a = 1, b = Math.sqrt(1 - m), sum = m / 2, pow = 0.5;
+    for (let i = 0; i < 24; i++) {
+        const c = (a - b) / 2;
+        [a, b] = [(a + b) / 2, Math.sqrt(a * b)];
+        pow *= 2;
+        sum += pow * c * c;
+        if (c < 1e-14) break;
+    }
+    const K = Math.PI / (2 * a);
+    return [K, K * (1 - sum)];
+}
+function loopPsi(a, rho, z) {
+    if (rho < 1e-9) return 0;
+    const m = (4 * a * rho) / ((a + rho) ** 2 + z * z), k = Math.sqrt(m);
+    // Near the axis (1 − m/2)K − E cancels to ~m²; use its series there: (π/2)(m²/16 + 3m³/64).
+    let bracket;
+    if (m < 1e-3) bracket = (Math.PI / 2) * (m * m / 16 + 3 * m * m * m / 64);
+    else { const [K, E] = ellipticKE(m); bracket = (1 - m / 2) * K - E; }
+    return rho * (1 / (Math.PI * k)) * Math.sqrt(a / rho) * bracket;
+}
+class LoopScene {
+    title = 'Current loop';
+    root = new THREE.Group();
+    drawing = new FieldDrawing(this.root);
+    state = { planes: 8, lines: 5, reverse: false };
+    a = 0.3;
+    constructor() {
+        this.ring = new THREE.Mesh(new THREE.TorusGeometry(this.a, 0.012, 12, 96), wireMaterial);
+        this.ring.rotation.x = Math.PI / 2;
+        this.ring.position.copy(CENTER);
+        this.root.add(this.ring);
+        this.current = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.07, 16), new THREE.MeshStandardMaterial({ color: 0xffb74d }));
+        this.root.add(this.current);
+        // ψ on a meridian half-plane (ρ ≥ 0, z), sampled once — only the levels change with the sliders.
+        this.N = [150, 240];
+        const [nr, nz] = this.N;
+        this.R = 1.1; this.Z = 0.95;
+        this.dr = this.R / (nr - 1); this.dz = (2 * this.Z) / (nz - 1);
+        this.psi = new Float32Array(nr * nz);
+        for (let j = 0; j < nz; j++) for (let i = 0; i < nr; i++) {
+            const rho = i * this.dr, z = -this.Z + j * this.dz;
+            this.psi[j * nr + i] = Math.hypot(rho - this.a, z) < 0.02 ? NaN : loopPsi(this.a, rho, z);
+        }
+        this.psiRef = loopPsi(this.a, this.a * 0.93, 0);
+        this.b0 = 1 / (2 * this.a);                         // |B| at the centre in these units (μ₀I = 1)
+    }
+    widgets() {
+        return [
+            { kind: 'slider', label: 'planes', min: 2, max: 18, step: 1, get: () => this.state.planes, set: v => { this.state.planes = v; this.dirty = true; }, format: v => `${v}` },
+            { kind: 'slider', label: 'field lines', min: 1, max: 10, step: 1, get: () => this.state.lines, set: v => { this.state.lines = v; this.dirty = true; }, format: v => `${v}` },
+            { kind: 'toggle', label: 'reverse current', get: () => this.state.reverse, set: v => { this.state.reverse = v; this.dirty = true; } },
+        ];
+    }
+    moreLines(d) { this.state.lines = THREE.MathUtils.clamp(this.state.lines + d, 1, 10); this.dirty = true; }
+    rebuild() {
+        const sgn = this.state.reverse ? -1 : 1;
+        // Current arrow on the near side of the loop, pointing along the current (anticlockwise from above).
+        this.current.position.copy(CENTER).add(new THREE.Vector3(0, 0, this.a));
+        this.current.rotation.set(0, 0, sgn > 0 ? -Math.PI / 2 : Math.PI / 2);
+        const [nr] = this.N, d = this.drawing, n = this.state.lines;
+        const step = this.psiRef / (n + 0.5);
+        const c = new THREE.Color(), p = new THREE.Vector3(), dir = new THREE.Vector3();
+        const psiAt = (rho, z) => loopPsi(this.a, Math.max(rho, 1e-6), z);
+        d.begin();
+        // planes: meridian half-planes evenly spaced in azimuth (2 = one full plane through the axis)
+        for (let s = 0; s < this.state.planes; s++) {
+            const phi = (s / this.state.planes) * Math.PI * 2, cx = Math.cos(phi), cz = Math.sin(phi);
+            const spacer = new ArrowSpacer(0.2);
+            contour(this.psi, nr, this.N[1], step, step, 0, n - 1, (r1, z1, r2, z2, k) => {
+                const ra = r1 * this.dr, za = -this.Z + z1 * this.dz, rb = r2 * this.dr, zb = -this.Z + z2 * this.dz;
+                const rm = (ra + rb) / 2, zm = (za + zb) / 2, h = 1e-3;
+                // B_ρ = −(1/ρ)∂ψ/∂z, B_z = (1/ρ)∂ψ/∂ρ
+                const r0 = Math.max(rm - h, 0), rs = Math.max(rm, 1e-3);
+                const br = -(psiAt(rm, zm + h) - psiAt(rm, zm - h)) / (2 * h) / rs;
+                const bz = (psiAt(rm + h, zm) - psiAt(r0, zm)) / (rm + h - r0) / rs;
+                strengthColor((Math.log10(Math.hypot(br, bz) / this.b0) + 1.6) / 2.4, c);
+                // world: the loop's axis is vertical (y), ρ runs out along (cos φ, 0, sin φ)
+                d.segment(CENTER.x + ra * cx, CENTER.y + za, CENTER.z + ra * cz, CENTER.x + rb * cx, CENTER.y + zb, CENTER.z + rb * cz, c);
+                p.set(CENTER.x + rm * cx, CENTER.y + zm, CENTER.z + rm * cz);
+                if (spacer.accept(k, p)) d.arrow(p, dir.set(br * cx, bz, br * cz).multiplyScalar(sgn), c);
+            });
+        }
+        this.segments = d.end();
+    }
+    stats() {
+        return `loop radius ${(this.a * 100).toFixed(0)} cm   ${this.state.reverse ? 'clockwise' : 'anticlockwise'} from above\n` +
+            `${this.state.lines} lines × ${this.state.planes} planes`;
+    }
+}
+
+const SCENES = [new PresetScene(), new CustomScene(), new RelativisticScene(), new WiresScene(), new LoopScene()];
+let current = null;
+function setScene(i) {
+    if (current) scene.remove(current.root);
+    current = SCENES[(i + SCENES.length) % SCENES.length];
+    scene.add(current.root);
+    current.dirty = true;
+    buildDomWidgets();
+    vrMenu.rebuild();
+}
+
+// ─── Menu: one widget list, drawn as DOM controls and as a panel you point at in VR ────────────
+function allWidgets() {
+    return [{ kind: 'choice', label: 'scene', options: SCENES.map(s => s.title), get: () => SCENES.indexOf(current), set: i => setScene(i) },
+        ...current.widgets()];
+}
+
+const widgetsEl = document.getElementById('widgets');
+function buildDomWidgets() {
+    document.getElementById('scene-path').textContent = `scene ${SCENES.indexOf(current) + 1}/${SCENES.length}`;
+    document.getElementById('hint').textContent = current.hint ?? '';
+    widgetsEl.replaceChildren();
+    const buttons = document.createElement('div');
+    buttons.className = 'buttons';
+    for (const w of allWidgets()) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        const id = `w-${w.label.replace(/\W+/g, '-')}`;
+        if (w.kind === 'button') {
+            const b = document.createElement('button');
+            b.textContent = w.label;
+            b.addEventListener('click', () => { w.action(); refreshDom(); });
+            buttons.appendChild(b);
+            continue;
+        }
+        const label = document.createElement('label');
+        label.textContent = w.label;
+        label.htmlFor = id;
+        row.appendChild(label);
+        if (w.kind === 'choice') {
+            const s = document.createElement('select');
+            s.id = id;
+            w.options.forEach((o, i) => s.add(new Option(o, i)));
+            s.value = w.get();
+            s.addEventListener('change', () => { w.set(+s.value); refreshDom(); });
+            row.appendChild(s);
+            w.refresh = () => { s.value = w.get(); };
+        } else if (w.kind === 'slider') {
+            const r = document.createElement('input');
+            Object.assign(r, { type: 'range', id, min: w.min, max: w.max, step: w.step, value: w.get() });
+            const out = document.createElement('output');
+            out.textContent = w.format(w.get());
+            r.addEventListener('input', () => { w.set(+r.value); out.textContent = w.format(+r.value); });
+            row.append(r, out);
+            w.refresh = () => { r.value = w.get(); out.textContent = w.format(w.get()); };
+        } else if (w.kind === 'toggle') {
+            const b = document.createElement('button');
+            b.id = id;
+            const paint = () => { b.textContent = w.get() ? 'on' : 'off'; b.setAttribute('aria-pressed', w.get()); };
+            paint();
+            b.addEventListener('click', () => { w.set(!w.get()); refreshDom(); });
+            if (w.hint) b.title = w.hint;
+            row.appendChild(b);
+            w.refresh = paint;
+        }
+        widgetsEl.appendChild(row);
+        domWidgets.push(w);
+    }
+    if (buttons.childElementCount) widgetsEl.appendChild(buttons);
+}
+let domWidgets = [];
+function refreshDom() {
+    for (const w of domWidgets) w.refresh?.();
+    vrMenu.redraw();
+}
+
+// The VR panel: a canvas texture laid out in rows; the controller ray's hit UV picks the widget.
+const vrMenu = (() => {
+    const W = 1024, ROW = 84, HEAD = 96, PAD = 28, CTRL = 470;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+    mesh.renderOrder = 5;
+    let widgets = [], hover = -1;
+    const rowOf = y => Math.floor((y - HEAD) / ROW);
+    function rebuild() {
+        widgets = allWidgets();
+        canvas.width = W;
+        canvas.height = HEAD + widgets.length * ROW + PAD;
+        mesh.scale.set(0.7, 0.7 * canvas.height / W, 1);
+        redraw();
+    }
+    function redraw() {
+        const H = canvas.height;
+        ctx.clearRect(0, 0, W, H);
+        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.beginPath(); ctx.roundRect(0, 0, W, H, 28); ctx.fill();
+        ctx.fillStyle = 'rgba(255,183,77,0.7)';
+        ctx.font = '30px "Fira Code", monospace';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('menu', PAD, 34);
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 40px "Geist", sans-serif';
+        ctx.fillText(current.title, PAD, 74);
+        widgets.forEach((w, r) => {
+            const y = HEAD + r * ROW, cy = y + ROW / 2;
+            if (r === hover) { ctx.fillStyle = 'rgba(255,183,77,0.12)'; ctx.fillRect(8, y + 4, W - 16, ROW - 8); }
+            ctx.font = '30px "Fira Code", monospace';
+            ctx.fillStyle = '#a1a1a1';
+            ctx.textAlign = 'left';
+            if (w.kind !== 'button') ctx.fillText(w.label, PAD, cy);
+            const x0 = CTRL, x1 = W - PAD;
+            if (w.kind === 'choice') {
+                ctx.fillStyle = '#FFB74D';
+                ctx.beginPath(); ctx.roundRect(x0, y + 14, 70, ROW - 28, 10); ctx.roundRect(x1 - 70, y + 14, 70, ROW - 28, 10); ctx.fill();
+                ctx.fillStyle = 'black'; ctx.textAlign = 'center';
+                ctx.fillText('◀', x0 + 35, cy); ctx.fillText('▶', x1 - 35, cy);
+                ctx.fillStyle = 'white';
+                ctx.font = '30px "Geist", sans-serif';
+                ctx.fillText(w.options[w.get()], (x0 + x1) / 2, cy, x1 - x0 - 160);
+            } else if (w.kind === 'slider') {
+                const t = (w.get() - w.min) / (w.max - w.min), tx0 = x0, tx1 = x1 - 150;
+                ctx.fillStyle = '#1a1a1a'; ctx.fillRect(tx0, cy - 5, tx1 - tx0, 10);
+                ctx.fillStyle = '#FFB74D'; ctx.fillRect(tx0, cy - 5, (tx1 - tx0) * t, 10);
+                ctx.beginPath(); ctx.arc(tx0 + (tx1 - tx0) * t, cy, 18, 0, Math.PI * 2); ctx.fill();
+                ctx.textAlign = 'right'; ctx.fillText(w.format(w.get()), x1, cy);
+            } else if (w.kind === 'toggle') {
+                const on = w.get();
+                ctx.fillStyle = on ? '#FFB74D' : '#1a1a1a';
+                ctx.beginPath(); ctx.roundRect(x0, y + 16, 120, ROW - 32, (ROW - 32) / 2); ctx.fill();
+                ctx.fillStyle = on ? 'black' : '#a1a1a1';
+                ctx.beginPath(); ctx.arc(on ? x0 + 120 - (ROW - 32) / 2 : x0 + (ROW - 32) / 2, cy, (ROW - 32) / 2 - 6, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#a1a1a1'; ctx.textAlign = 'left';
+                ctx.fillText(on ? 'on' : 'off', x0 + 140, cy);
+            } else if (w.kind === 'button') {
+                ctx.fillStyle = '#FFB74D';
+                ctx.beginPath(); ctx.roundRect(PAD, y + 12, W - 2 * PAD, ROW - 24, 12); ctx.fill();
+                ctx.fillStyle = 'black'; ctx.textAlign = 'center';
+                ctx.font = 'bold 32px "Geist", sans-serif';
+                ctx.fillText(w.label, W / 2, cy);
+            }
+            ctx.textAlign = 'left';
+        });
+        tex.needsUpdate = true;
+    }
+    // press: true on the trigger's down edge; held: true while it stays down (for sliders)
+    function interact(uv, press, held, state) {
+        const x = uv.x * W, y = (1 - uv.y) * canvas.height;
+        const r = state.slider ?? rowOf(y);
+        if (r !== hover) { hover = r; redraw(); }
+        const w = widgets[r];
+        if (!w) return;
+        if (w.kind === 'slider' && (press || (held && state.slider === r))) {
+            state.slider = r;
+            const t = THREE.MathUtils.clamp((x - CTRL) / (W - 28 - 150 - CTRL), 0, 1);
+            const v = Math.round((w.min + t * (w.max - w.min)) / w.step) * w.step;
+            if (v !== w.get()) { w.set(+v.toFixed(4)); refreshDom(); }
+            return;
+        }
+        if (!press) return;
+        if (w.kind === 'choice') {
+            if (x < CTRL + 90) w.set((w.get() - 1 + w.options.length) % w.options.length);
+            else if (x > W - 28 - 90) w.set((w.get() + 1) % w.options.length);
+            else return;
+        } else if (w.kind === 'toggle') w.set(!w.get());
+        else if (w.kind === 'button') w.action();
+        if (w.label !== 'scene') refreshDom();          // a scene change already rebuilt both menus
+    }
+    function leave() { if (hover !== -1) { hover = -1; redraw(); } }
+    return { mesh, rebuild, redraw, interact, leave };
+})();
+vrMenu.mesh.visible = false;
+scene.add(vrMenu.mesh);
+
+const _head = new THREE.Vector3(), _fwd = new THREE.Vector3();
+function placeMenu() {
+    camera.getWorldPosition(_head);
+    camera.getWorldDirection(_fwd);
+    _fwd.y = 0;
+    if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, -1);
+    _fwd.normalize();
+    // Off to the left, as the app's Game Menu sits beside the field rather than in it.
+    const left = new THREE.Vector3(_fwd.z, 0, -_fwd.x);
+    vrMenu.mesh.position.copy(_head).addScaledVector(_fwd, 0.75).addScaledVector(left, 0.45);
+    vrMenu.mesh.position.y = _head.y - 0.15;
+    vrMenu.mesh.lookAt(_head.x, vrMenu.mesh.position.y, _head.z);
+}
+
+// ─── Input ──────────────────────────────────────────────────────────────────
+const DEADZONE = 0.15;
+const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
+const input = { moveX: 0, moveZ: 0, moveY: 0, turn: 0, fast: false };
+
+const controllerModels = new XRControllerModelFactory();
+const hands = [];
+for (let i = 0; i < 2; i++) {
+    const grip = renderer.xr.getControllerGrip(i);
+    grip.add(controllerModels.createControllerModel(grip));
+    rig.add(grip);
+    const ray = renderer.xr.getController(i);
+    const beam = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
+        new THREE.LineBasicMaterial({ color: 0xffb74d, transparent: true, opacity: 0.7 }),
+    );
+    beam.scale.z = 3;
+    ray.add(beam);
+    rig.add(ray);
+    const hand = { ray, beam, gamepad: null, handedness: null, prev: {}, ui: {}, grabbed: null, grabDistance: 0 };
+    hands.push(hand);
+    ray.addEventListener('connected', e => { hand.gamepad = e.data.gamepad || null; hand.handedness = e.data.handedness; });
+    ray.addEventListener('disconnected', () => { hand.gamepad = null; hand.handedness = null; hand.grabbed = null; });
+}
+const byHand = h => hands.find(x => x.handedness === h);
+function stick(gp) {
+    if (!gp) return [0, 0];
+    const o = gp.axes.length >= 4 ? 2 : 0;
+    return [dz(gp.axes[o] || 0), dz(gp.axes[o + 1] || 0)];
+}
+function edge(hand, name, down) {
+    const e = down && !hand.prev[name];
+    hand.prev[name] = down;
+    return e;
+}
+
+const raycaster = new THREE.Raycaster();
+const _m4 = new THREE.Matrix4();
+function rayFrom(object) {
+    _m4.identity().extractRotation(object.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(object.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(_m4);
+    return raycaster;
+}
+
+function pollXRInput() {
+    const right = byHand('right'), left = byHand('left');
+    // The app's mapping: right stick moves, left stick turns, B / A raise and lower you.
+    const [rx, ry] = stick(right?.gamepad);
+    const [lx] = stick(left?.gamepad);
+    input.moveX = rx; input.moveZ = ry; input.turn = -lx; input.fast = false;
+    const rb = right?.gamepad?.buttons || [];
+    input.moveY = (rb[5]?.pressed ? 1 : 0) - (rb[4]?.pressed ? 1 : 0);
+
+    for (const hand of hands) {
+        if (!hand.gamepad) continue;
+        const b = hand.gamepad.buttons;
+        const trigger = !!b[0]?.pressed, squeeze = !!b[1]?.pressed;
+        const press = edge(hand, 'trigger', trigger);
+        if (edge(hand, 'grip', squeeze)) {
+            vrMenu.mesh.visible = !vrMenu.mesh.visible;
+            if (vrMenu.mesh.visible) placeMenu();
+        }
+        rayFrom(hand.ray);
+        let length = 3;
+        if (hand.grabbed) {                                      // carrying a charge along the ray
+            if (trigger) {
+                hand.grabbed.position.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, hand.grabDistance);
+                current.dirty = 'drag';
+                length = hand.grabDistance;
+            } else { hand.grabbed = null; current.dirty = true; }
+        } else {
+            const menuHit = vrMenu.mesh.visible ? raycaster.intersectObject(vrMenu.mesh)[0] : null;
+            if (menuHit) {
+                vrMenu.interact(menuHit.uv, press, trigger, hand.ui);
+                length = menuHit.distance;
+            } else {
+                vrMenu.leave();
+                const hit = current.draggable ? raycaster.intersectObjects(current.draggable)[0] : null;
+                if (hit) {
+                    length = hit.distance;
+                    if (press) { hand.grabbed = hit.object; hand.grabDistance = hit.distance; }
+                }
+            }
+            if (!trigger) hand.ui.slider = undefined;
+        }
+        hand.beam.scale.z = length;
+    }
+}
+
+const keys = new Set();
+window.addEventListener('keydown', e => {
+    if (e.target.closest?.('select, input, button') && e.code !== 'Escape') return;
+    if (e.repeat) return;
+    keys.add(e.code);
+    const n = /^Digit([1-5])$/.exec(e.code);
+    if (n) setScene(+n[1] - 1);
+    if (e.code === 'KeyN' && current.next) { current.next(); refreshDom(); }
+    if (e.code === 'BracketLeft') { current.moreLines(-1); refreshDom(); }
+    if (e.code === 'BracketRight') { current.moreLines(1); refreshDom(); }
+    if (e.code === 'KeyR') resetView();
+    if (e.code === 'KeyH') document.getElementById('hud').classList.toggle('hidden');
+});
+window.addEventListener('keyup', e => keys.delete(e.code));
+window.addEventListener('blur', () => keys.clear());
+
+// Desktop: drag looks around, unless the press lands on a charge — then it moves the charge in
+// the plane through it facing the camera.
+let drag = null;
+const pointer = new THREE.Vector2();
+const el = renderer.domElement;
+const dragPlane = new THREE.Plane(), _hit = new THREE.Vector3();
+el.addEventListener('contextmenu', e => e.preventDefault());
+el.addEventListener('pointerdown', e => {
+    pointer.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    raycaster.setFromCamera(pointer, camera);
+    const hit = current.draggable ? raycaster.intersectObjects(current.draggable)[0] : null;
+    if (hit) {
+        camera.getWorldDirection(_fwd);
+        dragPlane.setFromNormalAndCoplanarPoint(_fwd, hit.object.position);
+        drag = { charge: hit.object };
+    } else drag = { x: e.clientX, y: e.clientY };
+    el.setPointerCapture(e.pointerId);
+});
+el.addEventListener('pointermove', e => {
+    pointer.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    if (!drag) {
+        raycaster.setFromCamera(pointer, camera);
+        el.style.cursor = current.draggable && raycaster.intersectObjects(current.draggable).length ? 'grab' : '';
+        return;
+    }
+    if (drag.charge) {
+        raycaster.setFromCamera(pointer, camera);
+        if (raycaster.ray.intersectPlane(dragPlane, _hit)) { drag.charge.position.copy(_hit); current.dirty = 'drag'; }
+        return;
+    }
+    yaw -= (e.clientX - drag.x) * 0.004;
+    pitch = THREE.MathUtils.clamp(pitch - (e.clientY - drag.y) * 0.004, -1.5, 1.5);
+    drag.x = e.clientX; drag.y = e.clientY;
+});
+const endDrag = () => { if (drag?.charge) current.dirty = true; drag = null; };
+el.addEventListener('pointerup', endDrag);
+el.addEventListener('pointercancel', endDrag);
+
+function pollDesktopInput() {
+    const k = c => (keys.has(c) ? 1 : 0);
+    input.moveX = k('KeyD') - k('KeyA');
+    input.moveZ = k('KeyS') - k('KeyW');
+    input.moveY = k('KeyE') - k('KeyQ');
+    input.turn = 0;
+    input.fast = keys.has('ShiftLeft') || keys.has('ShiftRight');
+}
+
+const MOVE_SPEED = 1.5, TURN_SPEED = 1.6;
+const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+function applyMovement(dt) {
+    if (input.turn && renderer.xr.isPresenting) {
+        camera.getWorldPosition(_head);
+        const a = input.turn * TURN_SPEED * dt;
+        rig.position.sub(_head).applyAxisAngle(up, a).add(_head);
+        rig.rotation.y += a;
+    }
+    camera.getWorldDirection(fwd);
+    fwd.y = 0;
+    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+    fwd.normalize();
+    right.crossVectors(fwd, up);
+    const step = MOVE_SPEED * (input.fast ? 3 : 1) * dt;
+    const target = renderer.xr.isPresenting ? rig.position : camera.position;
+    target.addScaledVector(right, input.moveX * step);
+    target.addScaledVector(fwd, -input.moveZ * step);
+    target.addScaledVector(up, input.moveY * step);
+}
+
+renderer.xr.addEventListener('sessionstart', () => {
+    rig.position.set(0, 0, 0);
+    camera.position.set(0, 0, 0);
+    document.getElementById('hud').style.display = 'none';
+    document.getElementById('controls').style.display = 'none';
+    vrMenu.mesh.visible = true;
+    requestAnimationFrame(placeMenu);
+});
+renderer.xr.addEventListener('sessionend', () => {
+    resetView();
+    vrMenu.mesh.visible = false;
+    for (const h of hands) { h.gamepad = null; h.grabbed = null; }
+    document.getElementById('hud').style.display = '';
+    document.getElementById('controls').style.display = '';
+});
+
+// ─── Loop ───────────────────────────────────────────────────────────────────
+setScene(0);
+const statsEl = document.getElementById('stats');
+let lastTime = performance.now(), statsTimer = 0, fps = 60, lastDragBuild = 0;
+
+renderer.setAnimationLoop(now => {
+    const dt = Math.min((now - lastTime) / 1000, 0.1);
+    lastTime = now;
+    fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05;
+
+    if (renderer.xr.isPresenting) pollXRInput();
+    else {
+        pollDesktopInput();
+        camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    }
+    applyMovement(dt);
+
+    // While a charge or slider is being dragged, re-trace at most ~15 times a second.
+    if (current.dirty && now - lastDragBuild > 66) {
+        const t0 = performance.now();
+        current.rebuild();
+        lastDragBuild = now;
+        current.buildMs = performance.now() - t0;
+        current.dirty = false;
+    }
+    current.update?.(dt);
+
+    if (!renderer.xr.isPresenting && (statsTimer += dt) > 0.25) {
+        statsTimer = 0;
+        statsEl.textContent = `${current.title}\n${current.stats()}\nbuilt in ${current.buildMs?.toFixed(0) ?? '–'} ms   ${fps.toFixed(0)} fps`;
+    }
+    renderer.render(scene, camera);
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

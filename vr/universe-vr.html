@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#000000">
+    <title>UniverseVR</title>
+    <meta name="description" content="Markus Lipp's UniverseVR in the browser: fly through 849,274 galaxies from the Millennium Simulation on a laptop or a WebXR headset.">
+    <link rel="stylesheet" href="/vr/vr.css">
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: black;
+            color: white;
+            font-family: 'Geist', sans-serif;
+        }
+        canvas { display: block; touch-action: none; }
+        #hud { top: 16px; left: 16px; width: 400px; user-select: none; pointer-events: none; }
+        #controls { top: 16px; right: 16px; width: 340px; }
+        #controls .row { display: flex; gap: 8px; align-items: center; }
+        #controls input[type=range] { flex: 1; }
+        #controls label { color: var(--secondary); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 8ch; }
+        #controls output { color: var(--gold); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 5ch; text-align: right; }
+        #error { color: #ef5350; font-family: 'Fira Code', monospace; font-size: 13px; white-space: pre-wrap; }
+        #error:empty { display: none; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+<div id="hud" class="hud">
+    <header>
+        <span>/vr/universe-vr.html</span>
+        <a href="/vr/"><span>cd </span>..</a>
+    </header>
+    <section>
+        <span class="name">UniverseVR</span>
+        <div class="stats" id="stats">loading galaxies…</div>
+        <div class="keys">
+            <div class="rule"></div>
+            <span class="command">controls <span>--desktop</span></span>
+            <dl>
+                <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>fly · arrow keys too</dd>
+                <dt><kbd>Q</kbd><kbd>E</kbd><kbd>Shift</kbd></dt><dd>down / up · faster</dd>
+                <dt><kbd>drag</kbd></dt><dd>look around</dd>
+                <dt><kbd>Enter</kbd><kbd>R</kbd></dt><dd>back to the centre</dd>
+                <dt><kbd>G</kbd><kbd>[</kbd><kbd>]</kbd></dt><dd>glow · exposure</dd>
+                <dt><kbd>M</kbd><kbd>Space</kbd></dt><dd>music · hide this panel</dd>
+            </dl>
+            <span class="command">controls <span>--vr</span></span>
+            <dl>
+                <dt><kbd>L stick</kbd></dt><dd>fly where you look</dd>
+                <dt><kbd>R stick</kbd></dt><dd>↕ height · ↔ snap turn</dd>
+                <dt><kbd>R trigger</kbd></dt><dd>faster</dd>
+                <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>glow · back to the centre</dd>
+                <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>music · exposure</dd>
+            </dl>
+            <div class="rule"></div>
+            <span class="note">UniverseVR beta by Markus Lipp, rebuilt for WebXR from its DK2 shaders.<br>
+                Galaxies: Millennium Simulation, Max Planck Institute for Astrophysics (Lemson &amp; Virgo Consortium 2006; Springel et al. 2005).<br>
+                Music: "Blazing Stars", "Cosmic Switchboard", "Lightyears" by Eric Matyas, soundimage.org</span>
+        </div>
+    </section>
+</div>
+
+<div id="controls" class="hud">
+    <header><span>render</span></header>
+    <section>
+        <div class="row">
+            <label for="exposure">exposure</label>
+            <input id="exposure" type="range" min="-2" max="2" step="0.05" value="0">
+            <output id="exposure-out">×1.00</output>
+        </div>
+        <div class="row">
+            <button id="glow" aria-pressed="true">Glow on</button>
+            <button id="music" aria-pressed="false">Music off</button>
+            <button id="center">Centre</button>
+        </div>
+        <div id="error"></div>
+    </section>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+
+// ─── Scale ──────────────────────────────────────────────────────────────────
+// galaxies.bin is the simulation box in [-0.5, 0.5]^3. UniverseVR's billboards are 0.14 wide and
+// fade in between 0.30 and 0.55 from the eye, so the box has to be tens of metres across for the
+// cosmic web to read as filaments rather than fog.
+const BOX = 50;                         // metres across the whole box
+const HALF_WIDTH = 0.07;                // GS_Billboard: float halfWidth = 0.07f
+const FADE_START = 0.30, FADE_RATE = 4; // saturate((distance - 0.30) * 4)
+const BLUR_SCALE = 0.12;                // blur kernel: ±0.028 × blurScale of the view height
+
+// ─── Renderer / rig ─────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000, 1);
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local');
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const galaxyScene = new THREE.Scene();     // drawn into the intensity buffer
+const overlayScene = new THREE.Scene();    // controllers and wrist panel, drawn after the colour map
+const rig = new THREE.Group();
+overlayScene.add(rig);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 200);
+rig.add(camera);
+
+let yaw = 0, pitch = 0;
+function center() {
+    rig.position.set(0, 0, 0);
+    rig.rotation.set(0, 0, 0);
+    camera.position.set(0, 0, 0);
+    yaw = 0; pitch = 0;
+}
+center();
+
+const errorEl = document.getElementById('error');
+const fail = msg => { errorEl.textContent = msg; document.getElementById('stats').textContent = 'could not load'; };
+
+// ─── Galaxies ───────────────────────────────────────────────────────────────
+const loadTex = url => new Promise((res, rej) => new THREE.TextureLoader().load(url, res, undefined, () => rej(new Error(`${url}: failed to load`))));
+let count = 0;
+const [buf, sprite, gradient] = await Promise.all([
+    fetch('universe-vr/galaxies.u16').then(r => {
+        if (!r.ok) throw new Error(`universe-vr/galaxies.u16: HTTP ${r.status}`);
+        return r.arrayBuffer();
+    }),
+    loadTex('universe-vr/sprite.png'),
+    loadTex('universe-vr/gradient.png'),
+]).catch(e => { fail(e.message); throw e; });
+
+// Both textures hold display values: the DK2 build sampled them as plain UNORM, so no colour conversion.
+for (const t of [sprite, gradient]) t.colorSpace = THREE.NoColorSpace;
+sprite.generateMipmaps = true;
+sprite.minFilter = THREE.LinearMipmapLinearFilter;
+gradient.wrapS = gradient.wrapT = THREE.ClampToEdgeWrapping;
+gradient.generateMipmaps = false;
+gradient.minFilter = THREE.LinearFilter;
+
+const q = new Uint16Array(buf);
+count = q.length / 4;
+const position = new Float32Array(count * 3), weight = new Float32Array(count);
+for (let i = 0; i < count; i++) {
+    // galaxies.bin is D3D (left-handed): mirror z for three.js.
+    position[i * 3] = (q[i * 4] / 65535 - 0.5) * BOX;
+    position[i * 3 + 1] = (q[i * 4 + 1] / 65535 - 0.5) * BOX;
+    position[i * 3 + 2] = -(q[i * 4 + 2] / 65535 - 0.5) * BOX;
+    weight[i] = q[i * 4 + 3] / 65535;
+}
+const geometry = new THREE.BufferGeometry();
+geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
+geometry.setAttribute('weight', new THREE.BufferAttribute(weight, 1));
+geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), BOX);
+
+// The billboard pass: each galaxy a camera-facing sprite 2 × halfWidth across, tinted by its weight
+// and faded out right in front of the eye, summed additively into a single intensity channel.
+const galaxyMaterial = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    uniforms: {
+        uSprite: { value: sprite },
+        uViewHeight: { value: 1 },
+        uGain: { value: 1 },
+    },
+    vertexShader: /* glsl */`
+        in float weight;
+        uniform float uViewHeight;
+        out float vIntensity;
+        void main() {
+            vec4 view = modelViewMatrix * vec4(position, 1.0);
+            float distance = length(view.xyz);
+            vIntensity = weight * clamp((distance - ${FADE_START.toFixed(2)}) * ${FADE_RATE.toFixed(1)}, 0.0, 1.0);
+            gl_Position = projectionMatrix * view;
+            // pixels across = world width × focal length (in pixels) / depth
+            gl_PointSize = vIntensity > 0.0 ? ${(2 * HALF_WIDTH).toFixed(2)} * projectionMatrix[1][1] * 0.5 * uViewHeight / max(-view.z, 1e-3) : 0.0;
+        }`,
+    fragmentShader: /* glsl */`
+        uniform sampler2D uSprite;
+        uniform float uGain;
+        in float vIntensity;
+        out vec4 fragColor;
+        void main() {
+            float s = texture(uSprite, gl_PointCoord).r;
+            if (s <= 0.02) discard;
+            fragColor = vec4(vec3(s * vIntensity * uGain), 1.0);
+        }`,
+    blending: THREE.AdditiveBlending,
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+});
+const galaxies = new THREE.Points(geometry, galaxyMaterial);
+galaxies.frustumCulled = false;
+galaxyScene.add(galaxies);
+
+// ─── Offscreen passes ───────────────────────────────────────────────────────
+// UniverseVR renders the sprites into an offscreen intensity buffer, blurs it with a 15-tap
+// Gaussian (horizontal, then vertical), and maps the result through gradient.dds. The passes run
+// on full-screen quads that read by gl_FragCoord, so in a headset both eyes' viewports are handled
+// in one go — the XR camera renders the quad once into each eye's half of the buffer.
+const half = renderer.capabilities.isWebGL2 && renderer.extensions.has('EXT_color_buffer_float')
+    ? THREE.HalfFloatType : THREE.UnsignedByteType;
+const makeTarget = () => new THREE.WebGLRenderTarget(1, 1, {
+    type: half, format: THREE.RGBAFormat, depthBuffer: false,
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+});
+const intensityTarget = makeTarget(), blurTarget = makeTarget();
+
+const WEIGHTS = [0.0044299121055113265, 0.00895781211794, 0.0215963866053, 0.0443683338718,
+    0.0776744219933, 0.115876621105, 0.147308056121, 0.159576912161];
+const quadVertex = /* glsl */`void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+const blurBody = /* glsl */`
+    uniform sampler2D uSource;
+    uniform vec2 uSize;
+    uniform vec2 uDirection;            // one tap step, in pixels
+    float blurred() {
+        const float W[8] = float[8](${WEIGHTS.map(w => w.toFixed(10)).join(', ')});
+        vec2 uv = gl_FragCoord.xy / uSize;
+        vec2 stepUv = uDirection / uSize;
+        float sum = texture(uSource, uv).r * W[7];
+        for (int i = 1; i < 8; i++) {
+            sum += (texture(uSource, uv + stepUv * float(i)).r + texture(uSource, uv - stepUv * float(i)).r) * W[7 - i];
+        }
+        return sum;
+    }`;
+function quadPass(fragmentShader, uniforms) {
+    const material = new THREE.ShaderMaterial({
+        glslVersion: THREE.GLSL3, vertexShader: quadVertex, fragmentShader, uniforms,
+        depthTest: false, depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    mesh.frustumCulled = false;
+    const scene = new THREE.Scene();
+    scene.add(mesh);
+    return { scene, uniforms: material.uniforms };
+}
+const blurH = quadPass(/* glsl */`
+    ${blurBody}
+    out vec4 fragColor;
+    void main() { fragColor = vec4(vec3(blurred()), 1.0); }`, {
+    uSource: { value: intensityTarget.texture }, uSize: { value: new THREE.Vector2(1, 1) }, uDirection: { value: new THREE.Vector2() },
+});
+// Vertical blur + gradient: gradColor = Gradient.Sample(Linear2, float2(color.x * 2.0f, 0.5f))
+const blurVGradient = quadPass(/* glsl */`
+    ${blurBody}
+    uniform sampler2D uGradient;
+    out vec4 fragColor;
+    void main() { fragColor = vec4(texture(uGradient, vec2(clamp(blurred() * 2.0, 0.0, 1.0), 0.5)).rgb, 1.0); }`, {
+    uSource: { value: blurTarget.texture }, uSize: { value: new THREE.Vector2(1, 1) }, uDirection: { value: new THREE.Vector2() },
+    uGradient: { value: gradient },
+});
+// Without the blur: Gradient.Sample(Linear2, float2(intensity * 1.5f, 0.5f))
+const sharpGradient = quadPass(/* glsl */`
+    uniform sampler2D uSource;
+    uniform sampler2D uGradient;
+    uniform vec2 uSize;
+    out vec4 fragColor;
+    void main() {
+        float intensity = texture(uSource, gl_FragCoord.xy / uSize).r;
+        fragColor = vec4(texture(uGradient, vec2(clamp(intensity * 1.5, 0.0, 1.0), 0.5)).rgb, 1.0);
+    }`, {
+    uSource: { value: intensityTarget.texture }, uSize: { value: new THREE.Vector2(1, 1) }, uGradient: { value: gradient },
+});
+
+const _size = new THREE.Vector2();
+function renderFrame() {
+    // In XR the renderer is bound to the session's framebuffer; render into ours, then back into it.
+    const output = renderer.getRenderTarget();
+    if (output) _size.set(output.width, output.height);
+    else renderer.getDrawingBufferSize(_size);
+    if (intensityTarget.width !== _size.x || intensityTarget.height !== _size.y) {
+        intensityTarget.setSize(_size.x, _size.y);
+        blurTarget.setSize(_size.x, _size.y);
+    }
+    galaxyMaterial.uniforms.uViewHeight.value = _size.y;
+    const tap = 0.004 * BLUR_SCALE * _size.y;           // taps every 0.004 × blurScale
+    for (const p of [blurH, blurVGradient, sharpGradient]) p.uniforms.uSize.value.copy(_size);
+    blurH.uniforms.uDirection.value.set(tap, 0);
+    blurVGradient.uniforms.uDirection.value.set(0, tap);
+
+    renderer.setRenderTarget(intensityTarget);
+    renderer.render(galaxyScene, camera);
+    if (settings.glow) {
+        renderer.setRenderTarget(blurTarget);
+        renderer.render(blurH.scene, camera);
+        renderer.setRenderTarget(output);
+        renderer.render(blurVGradient.scene, camera);
+    } else {
+        renderer.setRenderTarget(output);
+        renderer.render(sharpGradient.scene, camera);
+    }
+    renderer.autoClear = false;
+    renderer.render(overlayScene, camera);
+    renderer.autoClear = true;
+}
+
+// ─── Settings ───────────────────────────────────────────────────────────────
+const settings = { glow: true, exposure: 0 };
+const glowButton = document.getElementById('glow'), musicButton = document.getElementById('music');
+const exposureInput = document.getElementById('exposure'), exposureOut = document.getElementById('exposure-out');
+function setGlow(on) {
+    settings.glow = on;
+    glowButton.textContent = on ? 'Glow on' : 'Glow off';
+    glowButton.setAttribute('aria-pressed', on);
+}
+function setExposure(stops) {
+    settings.exposure = THREE.MathUtils.clamp(stops, -2, 2);
+    galaxyMaterial.uniforms.uGain.value = 2 ** settings.exposure;
+    exposureInput.value = settings.exposure;
+    exposureOut.textContent = `×${(2 ** settings.exposure).toFixed(2)}`;
+}
+glowButton.addEventListener('click', () => setGlow(!settings.glow));
+exposureInput.addEventListener('input', () => setExposure(+exposureInput.value));
+document.getElementById('center').addEventListener('click', center);
+
+const music = new Audio('universe-vr/music.mp3');
+music.loop = true;
+music.volume = 0.6;
+function toggleMusic() {
+    if (music.paused) music.play().catch(e => { errorEl.textContent = `music: ${e.message}`; });
+    else music.pause();
+}
+music.addEventListener('play', () => { musicButton.textContent = 'Music on'; musicButton.setAttribute('aria-pressed', 'true'); });
+music.addEventListener('pause', () => { musicButton.textContent = 'Music off'; musicButton.setAttribute('aria-pressed', 'false'); });
+musicButton.addEventListener('click', toggleMusic);
+
+// ─── Input ──────────────────────────────────────────────────────────────────
+const DEADZONE = 0.15;
+const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
+const input = { moveX: 0, moveZ: 0, moveY: 0, fast: false };
+
+const controllerModels = new XRControllerModelFactory();
+const gamepads = { left: null, right: null };
+const prev = {};
+let turnArmed = true;
+for (let i = 0; i < 2; i++) {
+    const grip = renderer.xr.getControllerGrip(i);
+    grip.add(controllerModels.createControllerModel(grip));
+    rig.add(grip);
+    grip.addEventListener('connected', e => {
+        gamepads[e.data.handedness] = e.data.gamepad || null;
+        if (e.data.handedness === 'left') grip.add(vrPanel.mesh);
+    });
+    grip.addEventListener('disconnected', e => {
+        gamepads[e.data.handedness] = null;
+        if (e.data.handedness === 'left') grip.remove(vrPanel.mesh);
+    });
+}
+function stick(gp) {
+    if (!gp) return [0, 0];
+    const o = gp.axes.length >= 4 ? 2 : 0;
+    return [dz(gp.axes[o] || 0), dz(gp.axes[o + 1] || 0)];
+}
+function pressed(name, isDown) {
+    const edge = isDown && !prev[name];
+    prev[name] = isDown;
+    return edge;
+}
+
+function pollXRInput() {
+    const [lx, ly] = stick(gamepads.left);
+    const [rx, ry] = stick(gamepads.right);
+    input.moveX = lx;
+    input.moveZ = ly;
+    input.moveY = -ry;
+    input.fast = (gamepads.right?.buttons?.[0]?.value ?? 0) > 0.5;
+    if (Math.abs(rx) > 0.6) {
+        if (turnArmed) { snapTurn(-Math.sign(rx) * Math.PI / 6); turnArmed = false; }
+    } else turnArmed = true;
+
+    const r = gamepads.right?.buttons || [], l = gamepads.left?.buttons || [];
+    if (pressed('a', !!r[4]?.pressed)) setGlow(!settings.glow);
+    if (pressed('b', !!r[5]?.pressed)) center();
+    if (pressed('x', !!l[4]?.pressed)) toggleMusic();
+    if (pressed('y', !!l[5]?.pressed)) setExposure(settings.exposure >= 2 ? -1 : settings.exposure + 0.5);
+}
+
+// Turn the rig about the head, so the view pivots in place.
+const _head = new THREE.Vector3();
+function snapTurn(angle) {
+    camera.getWorldPosition(_head);
+    rig.position.sub(_head).applyAxisAngle(new THREE.Vector3(0, 1, 0), angle).add(_head);
+    rig.rotation.y += angle;
+}
+
+const keys = new Set();
+window.addEventListener('keydown', e => {
+    if (e.target.closest?.('input, button') && e.code !== 'Escape') return;
+    if (e.repeat) return;
+    keys.add(e.code);
+    if (e.code === 'Space') { document.getElementById('hud').classList.toggle('hidden'); e.preventDefault(); }
+    if (e.code === 'Enter' || e.code === 'KeyR') center();
+    if (e.code === 'KeyG') setGlow(!settings.glow);
+    if (e.code === 'KeyM') toggleMusic();
+    if (e.code === 'BracketLeft') setExposure(settings.exposure - 0.25);
+    if (e.code === 'BracketRight') setExposure(settings.exposure + 0.25);
+    if (e.code.startsWith('Arrow')) e.preventDefault();
+});
+window.addEventListener('keyup', e => keys.delete(e.code));
+window.addEventListener('blur', () => keys.clear());
+
+let drag = null;
+const el = renderer.domElement;
+el.addEventListener('contextmenu', e => e.preventDefault());
+el.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; el.setPointerCapture(e.pointerId); });
+el.addEventListener('pointermove', e => {
+    if (!drag) return;
+    yaw -= (e.clientX - drag.x) * 0.004;
+    pitch = THREE.MathUtils.clamp(pitch - (e.clientY - drag.y) * 0.004, -1.55, 1.55);
+    drag.x = e.clientX; drag.y = e.clientY;
+});
+const endDrag = () => { drag = null; };
+el.addEventListener('pointerup', endDrag);
+el.addEventListener('pointercancel', endDrag);
+
+function pollDesktopInput() {
+    const k = (...c) => (c.some(x => keys.has(x)) ? 1 : 0);
+    input.moveX = k('KeyD', 'ArrowRight') - k('KeyA', 'ArrowLeft');
+    input.moveZ = k('KeyS', 'ArrowDown') - k('KeyW', 'ArrowUp');
+    input.moveY = k('KeyE') - k('KeyQ');
+    input.fast = keys.has('ShiftLeft') || keys.has('ShiftRight');
+}
+
+// Free flight: forward follows the gaze, up stays world-up.
+const MOVE_SPEED = 2;
+const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+let speed = 0;
+function applyMovement(dt) {
+    camera.getWorldDirection(fwd);
+    right.crossVectors(fwd, up).normalize();
+    const v = MOVE_SPEED * (input.fast ? 5 : 1);
+    const target = renderer.xr.isPresenting ? rig.position : camera.position;
+    const before = target.clone();
+    target.addScaledVector(right, input.moveX * v * dt);
+    target.addScaledVector(fwd, -input.moveZ * v * dt);
+    target.addScaledVector(up, input.moveY * v * dt);
+    speed = before.distanceTo(target) / Math.max(dt, 1e-3);
+}
+
+renderer.xr.addEventListener('sessionstart', () => {
+    rig.position.copy(camera.position);
+    rig.rotation.set(0, yaw, 0);
+    camera.position.set(0, 0, 0);
+    document.getElementById('hud').style.display = 'none';
+    document.getElementById('controls').style.display = 'none';
+});
+renderer.xr.addEventListener('sessionend', () => {
+    camera.position.copy(rig.position);
+    yaw = rig.rotation.y; pitch = 0;
+    rig.position.set(0, 0, 0);
+    rig.rotation.set(0, 0, 0);
+    gamepads.left = gamepads.right = null;
+    document.getElementById('hud').style.display = '';
+    document.getElementById('controls').style.display = '';
+});
+
+// Wrist panel on the left controller
+const vrPanel = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320; canvas.height = 96;
+    const ctx = canvas.getContext('2d');
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.125, 0.0375),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false })
+    );
+    mesh.position.set(0, 0.06, -0.02);
+    mesh.rotation.x = -Math.PI / 4;
+    mesh.renderOrder = 10;
+    let last = '';
+    return {
+        mesh,
+        update(top, bottom) {
+            if (top + bottom === last) return;
+            last = top + bottom;
+            ctx.clearRect(0, 0, 320, 96);
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.beginPath(); ctx.roundRect(0, 0, 320, 96, 18); ctx.fill();
+            ctx.fillStyle = '#FFB74D';
+            ctx.font = 'bold 30px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(top, 160, 42);
+            ctx.fillStyle = '#a1a1a1';
+            ctx.font = '22px monospace';
+            ctx.fillText(bottom, 160, 76);
+            tex.needsUpdate = true;
+        },
+    };
+})();
+
+// ─── Loop ───────────────────────────────────────────────────────────────────
+setExposure(0);
+const statsEl = document.getElementById('stats');
+const _pos = new THREE.Vector3();
+let lastTime = performance.now(), statsTimer = 0, fps = 60;
+const fmt = v => (v >= 0 ? ' ' : '') + v.toFixed(3);
+
+renderer.setAnimationLoop(now => {
+    const dt = Math.min((now - lastTime) / 1000, 0.1);
+    lastTime = now;
+    fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05;
+
+    if (renderer.xr.isPresenting) pollXRInput();
+    else {
+        pollDesktopInput();
+        camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    }
+    applyMovement(dt);
+
+    camera.getWorldPosition(_pos);
+    // Position in box units (the simulation box spans -0.5 … 0.5), back in the data's handedness.
+    const bx = _pos.x / BOX, by = _pos.y / BOX, bz = -_pos.z / BOX;
+    const inside = Math.max(Math.abs(bx), Math.abs(by), Math.abs(bz)) <= 0.5;
+    if (renderer.xr.isPresenting) {
+        vrPanel.update(`${speed.toFixed(1)} m/s`, `${fmt(bx)} ${fmt(by)} ${fmt(bz)}`);
+    } else if ((statsTimer += dt) > 0.25) {
+        statsTimer = 0;
+        statsEl.textContent = `${count.toLocaleString()} galaxies   box ${BOX} m\n` +
+            `at ${fmt(bx)} ${fmt(by)} ${fmt(bz)} ${inside ? '' : '  (outside the box)'}\n` +
+            `${settings.glow ? 'glow' : 'sharp'}   exposure ×${(2 ** settings.exposure).toFixed(2)}   ${fps.toFixed(0)} fps`;
+    }
+    renderFrame();
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

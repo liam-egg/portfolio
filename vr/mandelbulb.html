@@ -69,8 +69,10 @@
                         <dd>scrub time</dd>
                         <dt><kbd>right-drag</kbd></dt>
                         <dd>look (or Shift-drag)</dd>
+                        <dt><kbd>scroll</kbd><kbd>+</kbd><kbd>−</kbd></dt>
+                        <dd>grow / shrink · <kbd>0</kbd> resets size</dd>
                         <dt><kbd>Space</kbd><kbd>R</kbd></dt>
-                        <dd>pause · reset</dd>
+                        <dd>pause · reset time</dd>
                         <dt><kbd>H</kbd></dt>
                         <dd>hide help</dd>
                     </dl>
@@ -78,10 +80,12 @@
                     <dl>
                         <dt><kbd>L stick</kbd></dt>
                         <dd>move</dd>
-                        <dt><kbd>R stick ↔</kbd></dt>
-                        <dd>time</dd>
+                        <dt><kbd>R stick</kbd></dt>
+                        <dd>↕ down / up · ↔ time</dd>
+                        <dt><kbd>R grip</kbd><kbd>L grip</kbd></dt>
+                        <dd>grow · shrink</dd>
                         <dt><kbd>A</kbd><kbd>B</kbd></dt>
-                        <dd>pause · reset</dd>
+                        <dd>pause · reset time</dd>
                     </dl>
                 </div>
             </section>
@@ -320,7 +324,26 @@
                 timeAxis: 0,
                 scrub: 0,
                 paused: false,
+                resize: 0,
             };
+
+            // Variable size, so the fractal can be grown to room scale and walked around. It
+            // grows about the spot on the floor beneath it: once it's taller than eye level it
+            // rests on the floor instead of sinking through it.
+            const SIZE_MIN = 0.25,
+                SIZE_MAX = 20;
+            const SIZE_RATE = 1.2; // e-folds per second at full squeeze / key held
+            let size = 1;
+            function setSize(s) {
+                size = THREE.MathUtils.clamp(s, SIZE_MIN, SIZE_MAX);
+                const radius = BOUND_RADIUS * FRACTAL_SCALE * size;
+                fractal.scale.setScalar(FRACTAL_SCALE * size);
+                fractal.position.set(
+                    FRACTAL_CENTER.x,
+                    Math.max(FRACTAL_CENTER.y, radius),
+                    FRACTAL_CENTER.z,
+                );
+            }
 
             const DEADZONE = 0.15;
             const dz = (v) =>
@@ -357,12 +380,15 @@
 
             function pollXRInput() {
                 const [lx, ly] = stick(gamepads.left);
-                const [rx] = stick(gamepads.right);
+                const [rx, ry] = stick(gamepads.right);
 
                 input.moveX = lx;
                 input.moveZ = ly;
-                input.moveY = 0;
+                input.moveY = -ry; // right stick ↕: rise / sink, like Q/E
                 input.timeAxis = rx;
+                // Grips resize: squeeze right to grow the fractal, left to shrink it.
+                const grip = (gp) => gp?.buttons?.[1]?.value ?? 0;
+                input.resize = grip(gamepads.right) - grip(gamepads.left);
                 const btn = gamepads.right?.buttons || [];
                 const a = !!btn[4]?.pressed,
                     b = !!btn[5]?.pressed;
@@ -384,6 +410,7 @@
                     e.preventDefault();
                 }
                 if (e.code === 'KeyR') resetTime();
+                if (e.code === 'Digit0' || e.code === 'Numpad0') setSize(1);
                 if (e.code === 'KeyH')
                     document.getElementById('hud').classList.toggle('hidden');
                 if (e.code.startsWith('Arrow')) e.preventDefault();
@@ -424,6 +451,14 @@
             };
             el.addEventListener('pointerup', endDrag);
             el.addEventListener('pointercancel', endDrag);
+            el.addEventListener(
+                'wheel',
+                (e) => {
+                    e.preventDefault();
+                    setSize(size * Math.exp(-e.deltaY * 0.0015));
+                },
+                { passive: false },
+            );
 
             function pollDesktopInput() {
                 const k = (c) => (keys.has(c) ? 1 : 0);
@@ -431,6 +466,8 @@
                 input.moveZ = k('KeyS') - k('KeyW');
                 input.moveY = k('KeyE') - k('KeyQ');
                 input.timeAxis = k('ArrowRight') - k('ArrowLeft');
+                input.resize =
+                    k('Equal') + k('NumpadAdd') - k('Minus') - k('NumpadSubtract');
             }
 
             let fractalTime = 0;
@@ -459,6 +496,8 @@
                 fractalTime += rate * dt + input.scrub;
                 input.scrub = 0;
 
+                if (input.resize) setSize(size * Math.exp(input.resize * SIZE_RATE * dt));
+
                 uniforms.uTime.value = fractalTime;
                 uniforms.uPhase.value = fractalTime * 0.1;
                 fractal.rotation.y = fractalTime * 0.2;
@@ -475,7 +514,8 @@
                 if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
                 fwd.normalize();
                 right.crossVectors(fwd, up);
-                const step = MOVE_SPEED * dt;
+                // Walk faster around a bigger fractal, so circling it doesn't take forever.
+                const step = MOVE_SPEED * Math.max(1, Math.sqrt(size)) * dt;
                 rig.position.addScaledVector(right, input.moveX * step);
                 rig.position.addScaledVector(fwd, -input.moveZ * step);
                 rig.position.addScaledVector(up, input.moveY * step);
@@ -642,7 +682,7 @@
                 } else if ((statsTimer += dt) > 0.25) {
                     statsTimer = 0;
                     statsEl.textContent =
-                        `${rateLabel()}   ${timeText}\n` +
+                        `${rateLabel()}   ${timeText}   ⌀ ${(2 * BOUND_RADIUS * FRACTAL_SCALE * size).toFixed(1)} m\n` +
                         `${(1 / quality.ema).toFixed(0)} fps   quality ${quality.level}/${quality.max}` +
                         `   steps ${uniforms.uSteps.value}   res ${Math.round((renderer.getPixelRatio() / BASE_PIXEL_RATIO) * 100)}%`;
                 }

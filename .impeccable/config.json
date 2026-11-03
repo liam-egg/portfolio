@@ -35,6 +35,33 @@
         ],
         "createdAt": "2026-10-29T20:13:18.350Z",
         "reason": "HUD button hover glow (vr/vr.css) is the gold version of index.html's button glow (box-shadow #ffffff70); user asked the HUD to match vr/index.html"
+      },
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "vr/universe-vr.html"
+        ],
+        "createdAt": "2026-11-03T08:53:45.137Z",
+        "reason": "Claude: finding comes from the site's existing shared vr/vr.css (gold button hover shadow), already used by root-vr.html; page adds no glow of its own"
+      },
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "vr/field-lines.html"
+        ],
+        "createdAt": "2026-11-03T09:01:04.828Z",
+        "reason": "Claude: finding comes from the site's existing shared vr/vr.css (gold button hover shadow), already used by root-vr.html; page adds no glow of its own"
+      },
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "vr/g4xr.html"
+        ],
+        "createdAt": "2026-11-03T09:09:35.080Z",
+        "reason": "Claude: finding comes from the site's existing shared vr/vr.css (gold button hover shadow), already used by root-vr.html; page adds no glow of its own"
       }
     ]
   }
