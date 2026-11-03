@@ -592,10 +592,11 @@ layersButton.addEventListener('click', () => setDetector(!detector.visible));
 // ─── Hover ──────────────────────────────────────────────────────────────────
 const hoverLabel = (() => {
     const canvas = document.createElement('canvas');
-    canvas.width = 512; canvas.height = 128;
+    canvas.width = 1024; canvas.height = 256;          // twice the label's old pixels, so it stays sharp at its larger size
     const ctx = canvas.getContext('2d');
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.25), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false }));
     mesh.renderOrder = 10;
     mesh.visible = false;
@@ -606,19 +607,21 @@ const hoverLabel = (() => {
         draw(top, bottom, colour) {
             if (top + bottom + colour === last) return;
             last = top + bottom + colour;
-            ctx.clearRect(0, 0, 512, 128);
-            ctx.fillStyle = 'rgba(0,0,0,0.8)';
-            ctx.beginPath(); ctx.roundRect(0, 0, 512, 128, 20); ctx.fill();
+            ctx.clearRect(0, 0, 1024, 256);
+            ctx.fillStyle = 'rgba(0,0,0,0.85)';
+            ctx.beginPath(); ctx.roundRect(0, 0, 1024, 256, 40); ctx.fill();
+            ctx.strokeStyle = colour; ctx.lineWidth = 6;
+            ctx.beginPath(); ctx.roundRect(3, 3, 1018, 250, 38); ctx.stroke();
             ctx.textAlign = 'center';
-            ctx.fillStyle = colour; ctx.font = 'bold 40px "Fira Code", monospace'; ctx.fillText(top, 256, 54);
-            ctx.fillStyle = '#a1a1a1'; ctx.font = '28px "Fira Code", monospace'; ctx.fillText(bottom, 256, 98);
+            ctx.fillStyle = colour; ctx.font = 'bold 84px "Fira Code", monospace'; ctx.fillText(top, 512, 110);
+            ctx.fillStyle = '#d0d0d0'; ctx.font = '60px "Fira Code", monospace'; ctx.fillText(bottom, 512, 200);
             tex.needsUpdate = true;
         },
     };
 })();
 let hovered = null;
 const hoverAt = new THREE.Vector3(), _w = new THREE.Vector3(), _d = new THREE.Vector3();
-const HOVER_RADIANS = 0.025;
+const HOVER_RADIANS = 0.04;                             // how far off an object the pointer can be and still pick it
 function nearestObject(ray) {
     let best = null, bestA = HOVER_RADIANS * HOVER_RADIANS;
     for (const o of state.objects) for (const p of o.points) {
@@ -851,8 +854,8 @@ renderer.setAnimationLoop(now => {
     camera.getWorldPosition(_cam);
     if (hovered) {
         const dist = _cam.distanceTo(hoverAt);
-        hoverLabel.mesh.scale.setScalar(dist * 0.12);
-        hoverLabel.mesh.position.copy(hoverAt).add(new THREE.Vector3(0, dist * 0.035, 0));
+        hoverLabel.mesh.scale.setScalar(dist * 0.26);          // ~15° wide at any distance
+        hoverLabel.mesh.position.copy(hoverAt).add(new THREE.Vector3(0, dist * 0.07, 0));
         hoverLabel.mesh.quaternion.copy(camera.getWorldQuaternion(_q));
     }
 
