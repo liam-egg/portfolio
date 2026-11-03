@@ -53,7 +53,7 @@
                 <dt><kbd>drag</kbd></dt><dd>look around</dd>
                 <dt><kbd>Enter</kbd><kbd>R</kbd></dt><dd>back to the centre</dd>
                 <dt><kbd>G</kbd><kbd>[</kbd><kbd>]</kbd></dt><dd>glow · exposure</dd>
-                <dt><kbd>M</kbd><kbd>Space</kbd></dt><dd>music · hide this panel</dd>
+                <dt><kbd>M</kbd><kbd>H</kbd></dt><dd>music · hide help</dd>
             </dl>
             <span class="command">controls <span>--vr</span></span>
             <dl>
@@ -401,7 +401,7 @@ window.addEventListener('keydown', e => {
     if (e.target.closest?.('input, button') && e.code !== 'Escape') return;
     if (e.repeat) return;
     keys.add(e.code);
-    if (e.code === 'Space') { document.getElementById('hud').classList.toggle('hidden'); e.preventDefault(); }
+    if (e.code === 'Space' || e.code === 'KeyH') { document.getElementById('hud').classList.toggle('hidden'); e.preventDefault(); }
     if (e.code === 'Enter' || e.code === 'KeyR') center();
     if (e.code === 'KeyG') setGlow(!settings.glow);
     if (e.code === 'KeyM') toggleMusic();
