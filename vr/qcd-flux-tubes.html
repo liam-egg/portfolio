@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#050a14">
+    <title>QCD Flux Tubes</title>
+    <meta name="description" content="Pull a quark and antiquark apart in WebXR: the colour field squeezes into a flux tube whose energy grows linearly until the string breaks into new mesons. Compare with an electric dipole, or stretch a baryon's Y-shaped string.">
+    <link rel="stylesheet" href="/vr/vr.css">
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #050a14;
+            color: white;
+            font-family: 'Geist', sans-serif;
+        }
+        canvas { display: block; touch-action: none; }
+        #hud { top: 16px; left: 16px; width: 420px; user-select: none; pointer-events: none; }
+        #controls { top: 16px; right: 16px; width: 360px; }
+        #controls .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        #error { color: #ef5350; font-family: 'Fira Code', monospace; font-size: 13px; white-space: pre-wrap; }
+        #error:empty { display: none; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+<div id="hud" class="hud">
+    <header>
+        <span>/vr/qcd-flux-tubes.html</span>
+        <a href="/vr/"><span>cd </span>..</a>
+    </header>
+    <section>
+        <span class="name">QCD Flux Tubes</span>
+        <div class="stats" id="stats">…</div>
+        <div class="keys">
+            <div class="rule"></div>
+            <span class="command">controls <span>--desktop</span></span>
+            <dl>
+                <dt><kbd>drag</kbd></dt><dd>a quark to move it · elsewhere to look</dd>
+                <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>move</dd>
+                <dt><kbd>Q</kbd><kbd>E</kbd></dt><dd>down / up</dd>
+                <dt><kbd>P</kbd><kbd>F</kbd></dt><dd>pull the pair apart · QCD / QED field</dd>
+                <dt><kbd>1</kbd><kbd>2</kbd></dt><dd>meson · baryon</dd>
+                <dt><kbd>L</kbd><kbd>R</kbd><kbd>H</kbd></dt><dd>field lines · reset · hide help</dd>
+            </dl>
+            <span class="command">controls <span>--vr</span></span>
+            <dl>
+                <dt><kbd>trigger</kbd></dt><dd>grab a quark (one in each hand)</dd>
+                <dt><kbd>L stick</kbd></dt><dd>move</dd>
+                <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>pull apart · reset</dd>
+                <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>meson / baryon · QCD / QED</dd>
+            </dl>
+            <div class="rule"></div>
+            <span class="note">A model, not a lattice simulation: the energy density of a Gaussian flux tube carrying the string
+                tension σ = 0.9 GeV/fm, its width growing as ln r (Lüscher), plus each quark's short-range colour-Coulomb field.
+                The pair energy is the Cornell potential −κ/r + σr; past 1.25 fm making a new quark–antiquark pair is cheaper
+                than more string, so it breaks. QED draws the same pair's electric dipole field, on a scale twelve times more
+                sensitive so its spread-out field shows.</span>
+        </div>
+    </section>
+</div>
+
+<div id="controls" class="hud">
+    <header><span>field</span></header>
+    <section>
+        <div class="row">
+            <button id="meson" aria-pressed="true">Meson</button>
+            <button id="baryon" aria-pressed="false">Baryon</button>
+            <button id="field">QCD field</button>
+        </div>
+        <div class="row">
+            <button id="pull">Pull apart</button>
+            <button id="reset">Reset</button>
+            <button id="lines" aria-pressed="true">Field lines on</button>
+        </div>
+        <div id="error"></div>
+    </section>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+
+// ─── Physics (GeV, fm) ──────────────────────────────────────────────────────
+const SIGMA = 0.9;                                      // string tension, GeV/fm (≈ 0.18 GeV²)
+const KAPPA = 0.1026;                                   // Coulomb strength κ = 0.52 ħc, GeV·fm
+const R_BREAK = 1.25;                                   // string breaking distance for light quarks, fm
+const REST = 0.5;                                       // a relaxed meson's quark separation, fm
+const CORE = 0.1;                                       // softening of the Coulomb cores, fm
+const W0_SQ = 2 * 0.22 ** 2;                            // intrinsic mean-square tube width, fm²
+const LUSCHER = 0.1973 ** 2 / (2 * Math.PI * 0.18);     // 1/(2πσ) in fm²: ⟨d²⟩ grows by this per e-fold of r
+const R0 = 0.25;                                        // where the log broadening starts, fm
+const MAX_Q = 32, MAX_SEG = 16;
+const cornell = r => -KAPPA / r + SIGMA * r;
+const meanSqWidth = L => W0_SQ + LUSCHER * Math.log(Math.max(L, R0) / R0);
+
+// ─── Renderer / rig ─────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050a14);
+scene.add(new THREE.GridHelper(12, 24, 0x1c2a40, 0x111a28));
+const rig = new THREE.Group();
+scene.add(rig);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
+rig.add(camera);
+
+// The lab: femtometres, half a metre to the fermi, at chest height in front of you.
+const lab = new THREE.Group();
+lab.position.set(-0.2, 1.2, -1.0);
+lab.scale.setScalar(0.5);
+scene.add(lab);
+
+let yaw = 0, pitch = 0;
+function resetView() {
+    rig.position.set(0, 0, 0);
+    camera.position.set(0, 1.6, 0.45);
+    const f = new THREE.Vector3(0.2, 1.4, -1.1).sub(camera.position).normalize();     // the lab, with the plot above it
+    yaw = Math.atan2(-f.x, -f.z);
+    pitch = Math.asin(f.y);
+}
+resetView();
+
+// ─── Quarks ─────────────────────────────────────────────────────────────────
+const COLOUR = { r: '#ef5350', g: '#66bb6a', b: '#42a5f5', 'r̄': '#4dd0e1', 'ḡ': '#e57399', 'b̄': '#ffd54f' };
+const quarkGeometry = new THREE.SphereGeometry(0.05, 24, 16);
+const ringGeometry = new THREE.TorusGeometry(0.075, 0.01, 8, 32);
+const state = { mode: 'meson', field: 'qcd', quarks: [], pairs: [], breaks: 0, pulling: null };
+
+function addQuark(pos, colour, anti) {
+    const mesh = new THREE.Mesh(quarkGeometry, new THREE.MeshBasicMaterial({ color: COLOUR[colour] }));
+    // Antiquarks wear a ring, so q and q̄ read apart whatever their colours
+    if (anti) mesh.add(new THREE.Mesh(ringGeometry, new THREE.MeshBasicMaterial({ color: COLOUR[colour] })));
+    mesh.position.copy(pos);
+    mesh.renderOrder = 2;
+    lab.add(mesh);
+    const q = { pos: mesh.position, colour, anti, mesh, held: 0 };
+    state.quarks.push(q);
+    return q;
+}
+function clearQuarks() {
+    for (const q of state.quarks) lab.remove(q.mesh);
+    state.quarks = []; state.pairs = []; state.breaks = 0; state.pulling = null;
+}
+function setup(mode = state.mode, field = state.field) {
+    clearQuarks();
+    for (const g of Object.values(grabs)) g.quark = null;
+    state.mode = mode;
+    state.field = mode === 'baryon' ? 'qcd' : field;
+    if (mode === 'meson') {
+        const a = addQuark(new THREE.Vector3(-REST / 2, 0, 0), 'r', false), b = addQuark(new THREE.Vector3(REST / 2, 0, 0), 'r̄', true);
+        state.pairs.push({ a, b });
+    } else {
+        ['r', 'g', 'b'].forEach((c, i) => {
+            const t = Math.PI / 2 + i * 2 * Math.PI / 3;
+            addQuark(new THREE.Vector3(0.35 * Math.cos(t), 0.35 * Math.sin(t), 0), c, false);
+        });
+    }
+    meson.setAttribute('aria-pressed', mode === 'meson');
+    baryon.setAttribute('aria-pressed', mode === 'baryon');
+    fieldButton.textContent = state.field === 'qcd' ? 'QCD field' : 'QED field';
+    fieldButton.disabled = mode === 'baryon';
+    pullButton.disabled = mode === 'baryon';
+    updatePanel(true);
+}
+
+// String breaking: once a stretched pair's string costs more than a new light pair, a q̄′q′ pops out
+// of the vacuum near each end and the string splits in two. The colours pair up into singlets again.
+const ANTI = { r: 'r̄', g: 'ḡ', b: 'b̄' }, PLAIN = { 'r̄': 'r', 'ḡ': 'g', 'b̄': 'b' };
+function breakStrings() {
+    if (state.field !== 'qcd') return;
+    for (const pair of [...state.pairs]) {
+        const { a, b } = pair;
+        if (a.pos.distanceTo(b.pos) < R_BREAK || state.quarks.length + 2 > MAX_Q) continue;
+        const dir = b.pos.clone().sub(a.pos).normalize();
+        const quark = a.anti ? b : a;                     // the pair's quark and antiquark
+        const anti = a.anti ? a : b;
+        const toward = quark === a ? dir : dir.clone().negate();
+        const nAnti = addQuark(quark.pos.clone().addScaledVector(toward, 0.3), anti.colour, true);
+        const nQuark = addQuark(anti.pos.clone().addScaledVector(toward, -0.3), quark.colour, false);
+        state.pairs.splice(state.pairs.indexOf(pair), 1, { a: quark, b: nAnti }, { a: nQuark, b: anti });
+        state.breaks++;
+    }
+}
+// Mesons nobody is holding settle back to their rest size.
+function relax(dt) {
+    if (state.field !== 'qcd' || state.mode !== 'meson') return;
+    for (const { a, b } of state.pairs) {
+        if (a.held || b.held) continue;
+        const d = a.pos.distanceTo(b.pos);
+        if (d <= REST) continue;
+        const step = Math.min((d - REST) / 2, 0.8 * dt);
+        const dir = b.pos.clone().sub(a.pos).normalize();
+        a.pos.addScaledVector(dir, step);
+        b.pos.addScaledVector(dir, -step);
+    }
+}
+// The Y junction: the Fermat point, unless a corner's angle reaches 120°, when the junction sits on it.
+function junction(p) {
+    for (let i = 0; i < 3; i++) {
+        const u = p[(i + 1) % 3].clone().sub(p[i]), v = p[(i + 2) % 3].clone().sub(p[i]);
+        if (u.lengthSq() < 1e-12 || v.lengthSq() < 1e-12 || u.angleTo(v) >= 2 * Math.PI / 3) return p[i].clone();
+    }
+    const j = p[0].clone().add(p[1]).add(p[2]).divideScalar(3);   // Weiszfeld iteration
+    for (let it = 0; it < 60; it++) {
+        const num = new THREE.Vector3();
+        let den = 0;
+        for (const x of p) { const w = 1 / Math.max(x.distanceTo(j), 1e-6); num.addScaledVector(x, w); den += w; }
+        j.copy(num.divideScalar(den));
+    }
+    return j;
+}
+
+// ─── Field volume ───────────────────────────────────────────────────────────
+// Raymarched in a box round the quarks: energy density (GeV/fm³), log-scaled, through an
+// emission-absorption colour ramp from deep violet to white-hot.
+const fieldUniforms = {
+    uLabInverse: { value: new THREE.Matrix4() },
+    uBoxMin: { value: new THREE.Vector3() }, uBoxMax: { value: new THREE.Vector3() },
+    uMode: { value: 0 },
+    uLow: { value: 0.6 },                               // GeV/fm³ below which nothing is drawn
+    uNSeg: { value: 0 }, uSegA: { value: Array.from({ length: MAX_SEG }, () => new THREE.Vector3()) },
+    uSegB: { value: Array.from({ length: MAX_SEG }, () => new THREE.Vector3()) }, uSegW: { value: new Array(MAX_SEG).fill(0.2) },
+    uNQ: { value: 0 }, uQ: { value: Array.from({ length: MAX_Q }, () => new THREE.Vector4()) },
+};
+const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.ShaderMaterial({
+    uniforms: fieldUniforms,
+    defines: { MAX_SEG, MAX_Q },
+    vertexShader: /* glsl */`
+        uniform mat4 uLabInverse;
+        varying vec3 vLab, vEye;
+        void main() {
+            vec4 world = modelMatrix * vec4(position, 1.0);
+            vLab = (uLabInverse * world).xyz;
+            vEye = (uLabInverse * vec4(cameraPosition, 1.0)).xyz;
+            gl_Position = projectionMatrix * viewMatrix * world;
+        }`,
+    fragmentShader: /* glsl */`
+        uniform vec3 uBoxMin, uBoxMax;
+        uniform int uMode, uNSeg, uNQ;
+        uniform float uLow;
+        uniform vec3 uSegA[MAX_SEG], uSegB[MAX_SEG];
+        uniform float uSegW[MAX_SEG];
+        uniform vec4 uQ[MAX_Q];
+        varying vec3 vLab, vEye;
+        const float SIGMA = ${SIGMA.toFixed(4)}, KAPPA = ${KAPPA.toFixed(4)}, CORE2 = ${(CORE * CORE).toFixed(4)};
+        const float PI = 3.14159265;
+        float density(vec3 p) {
+            float rho = 0.0;
+            if (uMode == 0) {
+                // Flux tubes: a Gaussian profile whose cross-section integrates to σ
+                for (int i = 0; i < MAX_SEG; i++) {
+                    if (i >= uNSeg) break;
+                    vec3 ab = uSegB[i] - uSegA[i];
+                    float l2 = dot(ab, ab);
+                    float t = l2 > 1e-8 ? clamp(dot(p - uSegA[i], ab) / l2, 0.0, 1.0) : 0.0;
+                    vec3 d = p - (uSegA[i] + t * ab);
+                    float w2 = uSegW[i] * uSegW[i];
+                    rho += SIGMA / (2.0 * PI * w2) * exp(-dot(d, d) / (2.0 * w2));
+                }
+                // Each quark's short-range colour-Coulomb field, |E|²/2 ∝ 1/r⁴
+                for (int i = 0; i < MAX_Q; i++) {
+                    if (i >= uNQ) break;
+                    vec3 d = p - uQ[i].xyz;
+                    float r2 = dot(d, d) + CORE2;
+                    rho += KAPPA / (8.0 * PI) / (r2 * r2);
+                }
+            } else {
+                // QED: the dipole's electric field, same strength, free to spread
+                vec3 E = vec3(0.0);
+                for (int i = 0; i < MAX_Q; i++) {
+                    if (i >= uNQ) break;
+                    vec3 d = p - uQ[i].xyz;
+                    float r2 = dot(d, d) + CORE2;
+                    E += uQ[i].w * d / (r2 * sqrt(r2));
+                }
+                rho = KAPPA / (8.0 * PI) * dot(E, E);
+            }
+            return rho;
+        }
+        vec3 ramp(float v) {
+            vec3 c = mix(vec3(0.10, 0.03, 0.30), vec3(0.55, 0.08, 0.60), smoothstep(0.0, 0.18, v));
+            c = mix(c, vec3(0.98, 0.42, 0.20), smoothstep(0.15, 0.42, v));
+            c = mix(c, vec3(1.0, 0.78, 0.35), smoothstep(0.45, 0.72, v));
+            return mix(c, vec3(1.0, 0.97, 0.85), smoothstep(0.75, 1.0, v));
+        }
+        void main() {
+            vec3 dir = normalize(vLab - vEye);
+            vec3 inv = 1.0 / dir;
+            vec3 t0 = (uBoxMin - vEye) * inv, t1 = (uBoxMax - vEye) * inv;
+            float tNear = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
+            float tFar = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
+            tNear = max(tNear, 0.0);
+            if (tFar <= tNear) discard;
+            const int STEPS = 120;
+            float ds = (tFar - tNear) / float(STEPS);
+            // Jitter the start by a fraction of a step so the slices don't band
+            float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+            vec3 col = vec3(0.0);
+            float alpha = 0.0;
+            for (int i = 0; i < STEPS; i++) {
+                vec3 p = vEye + dir * (tNear + (float(i) + jitter) * ds);
+                float rho = density(p);
+                // Log scale from the threshold uLow (drawn as nothing) up to 20× it (white-hot)
+                float v = clamp(log(max(rho, 1e-6) / uLow) / log(20.0), 0.0, 1.0);
+                float a = 1.0 - exp(-v * v * 30.0 * ds);
+                col += (1.0 - alpha) * ramp(v) * a;
+                alpha += (1.0 - alpha) * a;
+                if (alpha > 0.97) break;
+            }
+            gl_FragColor = vec4(col, alpha);
+        }`,
+    side: THREE.BackSide, transparent: true, depthWrite: false, premultipliedAlpha: true,
+}));
+box.frustumCulled = false;
+box.renderOrder = 1;
+lab.add(box);
+
+const _min = new THREE.Vector3(), _max = new THREE.Vector3();
+function updateField() {
+    const qs = state.quarks;
+    const segs = [];
+    if (state.mode === 'meson') for (const { a, b } of state.pairs) segs.push([a.pos, b.pos, a.pos.distanceTo(b.pos), true]);
+    else {
+        state.junction = junction(qs.map(q => q.pos));
+        // Each arm's width follows the string's total length, which sets its broadening
+        const L = qs.reduce((s, q) => s + q.pos.distanceTo(state.junction), 0);
+        for (const q of qs) segs.push([q.pos, state.junction, L, false]);
+    }
+    fieldUniforms.uMode.value = state.field === 'qcd' ? 0 : 1;
+    // The dipole's field is spread thin, so it is drawn from a threshold twelve times lower
+    fieldUniforms.uLow.value = state.field === 'qcd' ? 0.6 : 0.05;
+    fieldUniforms.uNSeg.value = Math.min(segs.length, MAX_SEG);
+    segs.slice(0, MAX_SEG).forEach(([a, b, L], i) => {
+        fieldUniforms.uSegA.value[i].copy(a);
+        fieldUniforms.uSegB.value[i].copy(b);
+        fieldUniforms.uSegW.value[i] = Math.sqrt(meanSqWidth(L) / 2);   // per transverse axis
+    });
+    fieldUniforms.uNQ.value = qs.length;
+    qs.forEach((q, i) => fieldUniforms.uQ.value[i].set(q.pos.x, q.pos.y, q.pos.z, q.anti ? -1 : 1));
+
+    // The box: the quarks plus room for the field round them (a dipole's spreads much further)
+    _min.set(Infinity, Infinity, Infinity); _max.set(-Infinity, -Infinity, -Infinity);
+    for (const q of qs) { _min.min(q.pos); _max.max(q.pos); }
+    const span = _max.distanceTo(_min);
+    const margin = state.field === 'qcd' ? 0.7 : 0.9 + 0.6 * span;
+    _min.subScalar(margin); _max.addScalar(margin);
+    fieldUniforms.uBoxMin.value.copy(_min);
+    fieldUniforms.uBoxMax.value.copy(_max);
+    box.position.copy(_min).add(_max).multiplyScalar(0.5);
+    box.scale.copy(_max).sub(_min);
+    lab.updateMatrixWorld();
+    fieldUniforms.uLabInverse.value.copy(lab.matrixWorld).invert();
+    updateLines(segs);
+}
+
+// ─── Field lines ────────────────────────────────────────────────────────────
+// QED: integrated from the dipole's field, so they bow out through all of space. QCD: drawn, not
+// integrated (the model has no field direction): they leave each quark and squeeze into a parallel
+// bundle the tube's width, meeting at the junction in a baryon.
+const LINE_VERTS = 60000;
+const linePositions = new Float32Array(LINE_VERTS * 3);
+const lineGeometry = new THREE.BufferGeometry();
+lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3).setUsage(THREE.DynamicDrawUsage));
+const fieldLines = new THREE.LineSegments(lineGeometry, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }));
+fieldLines.frustumCulled = false;
+fieldLines.renderOrder = 3;
+lab.add(fieldLines);
+let lineCount = 0;
+function segment(a, b) {
+    if (lineCount + 2 > LINE_VERTS) return;
+    linePositions.set([a.x, a.y, a.z, b.x, b.y, b.z], lineCount * 3);
+    lineCount += 2;
+}
+const _E = new THREE.Vector3(), _d = new THREE.Vector3();
+function dipoleField(p, out) {
+    out.set(0, 0, 0);
+    for (const q of state.quarks) {
+        _d.subVectors(p, q.pos);
+        const r2 = _d.lengthSq() + CORE * CORE;
+        out.addScaledVector(_d, (q.anti ? -1 : 1) / (r2 * Math.sqrt(r2)));
+    }
+    return out;
+}
+function updateLines(segs) {
+    lineCount = 0;
+    if (fieldLines.visible && state.field === 'qcd') {
+        for (const [A, B, L, bothEnds] of segs) {
+            const axis = B.clone().sub(A), len = axis.length();
+            if (len < 1e-4) continue;
+            const dir = axis.clone().divideScalar(len);
+            const u = new THREE.Vector3().crossVectors(dir, Math.abs(dir.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize();
+            const v = new THREE.Vector3().crossVectors(dir, u);
+            const w = Math.sqrt(meanSqWidth(L) / 2);
+            for (let k = 0; k < 12; k++) {
+                const ring = k < 6 ? 0.55 : 1.15, angle = (k % 6) / 6 * 2 * Math.PI + (k < 6 ? 0 : Math.PI / 6);
+                const off = u.clone().multiplyScalar(Math.cos(angle) * ring * w).addScaledVector(v, Math.sin(angle) * ring * w);
+                let prev = null;
+                for (let i = 0; i <= 40; i++) {
+                    const t = i / 40;
+                    const flare = THREE.MathUtils.smoothstep(t, 0, 0.3) * (bothEnds ? THREE.MathUtils.smoothstep(1 - t, 0, 0.3) : 1);
+                    const p = A.clone().addScaledVector(axis, t).addScaledVector(off, Math.sqrt(flare));
+                    if (prev) segment(prev, p);
+                    prev = p;
+                }
+            }
+        }
+    } else if (fieldLines.visible) {
+        // From each positive charge, along E, until a negative charge takes the line or it leaves the scene
+        const centre = new THREE.Vector3();
+        for (const q of state.quarks) centre.add(q.pos);
+        centre.divideScalar(state.quarks.length);
+        const N = 20;
+        for (const q of state.quarks.filter(q => !q.anti)) for (let k = 0; k < N; k++) {
+            const y = 1 - 2 * (k + 0.5) / N, r = Math.sqrt(1 - y * y), phi = k * Math.PI * (3 - Math.sqrt(5));
+            const p = q.pos.clone().add(new THREE.Vector3(r * Math.cos(phi), y, r * Math.sin(phi)).multiplyScalar(0.07));
+            for (let i = 0; i < 600; i++) {
+                const next = p.clone().addScaledVector(dipoleField(p, _E).normalize(), 0.02);
+                segment(p, next);
+                p.copy(next);
+                if (state.quarks.some(o => o.anti && o.pos.distanceTo(p) < 0.06) || p.distanceTo(centre) > 3) break;
+            }
+        }
+    }
+    lineGeometry.setDrawRange(0, lineCount);
+    lineGeometry.getAttribute('position').needsUpdate = true;
+}
+
+// ─── Energies ───────────────────────────────────────────────────────────────
+function energies() {
+    if (state.mode === 'meson') {
+        const seps = state.pairs.map(({ a, b }) => a.pos.distanceTo(b.pos));
+        const longest = Math.max(...seps);
+        if (state.field === 'qed') return { longest, total: -KAPPA / longest, string: 0, seps };
+        return { longest, seps, string: SIGMA * seps.reduce((s, r) => s + r, 0), total: seps.reduce((s, r) => s + cornell(r), 0) };
+    }
+    const p = state.quarks.map(q => q.pos), j = state.junction ?? junction(p);
+    const LY = p.reduce((s, x) => s + x.distanceTo(j), 0);
+    const sides = [0, 1, 2].map(i => p[i].distanceTo(p[(i + 1) % 3]));
+    const coulomb = -0.5 * KAPPA * sides.reduce((s, r) => s + 1 / Math.max(r, 1e-3), 0);
+    return { LY, sides, EY: SIGMA * LY + coulomb, EDelta: 0.5 * SIGMA * sides.reduce((s, r) => s + r, 0) + coulomb };
+}
+
+// ─── Plot panel ─────────────────────────────────────────────────────────────
+const panel = (() => {
+    const W = 1024, H = 640;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.5625), new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide }));
+    // Above and behind the lab, so a long pull stays clear of it
+    mesh.position.set(0.45, 1.8, -1.4);
+    mesh.rotation.y = -0.24;
+    scene.add(mesh);
+    return { ctx, tex, W, H };
+})();
+const fmt = (v, d = 2) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d);
+let panelKey = '';
+function updatePanel(force = false) {
+    const e = energies();
+    const key = state.mode === 'meson' ? `${state.field}${e.longest.toFixed(3)}${state.pairs.length}` : `${e.LY.toFixed(3)}${e.sides.map(s => s.toFixed(3))}`;
+    if (!force && key === panelKey) return;
+    panelKey = key;
+    const { ctx, tex, W, H } = panel;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(5,10,20,0.9)';
+    ctx.beginPath(); ctx.roundRect(4, 4, W - 8, H - 8, 28); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,183,77,0.35)'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#FFB74D'; ctx.font = 'bold 40px "Fira Code", monospace';
+    if (state.mode === 'meson') {
+        ctx.fillText('V(r) between q and q̄', 44, 68);
+        const x0 = 110, x1 = W - 50, y0 = 110, y1 = 540, rMax = 2.0, vMin = -1.2, vMax = 2.0;
+        const X = r => x0 + r / rMax * (x1 - x0), Y = v => y1 - (v - vMin) / (vMax - vMin) * (y1 - y0);
+        ctx.strokeStyle = '#a1a1a1'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.moveTo(x0, Y(0)); ctx.lineTo(x1, Y(0)); ctx.stroke();
+        ctx.fillStyle = '#a1a1a1'; ctx.font = '22px "Fira Code", monospace'; ctx.textAlign = 'center';
+        for (let r = 0.5; r <= rMax; r += 0.5) ctx.fillText(`${r}`, X(r), Y(0) + 28);
+        ctx.fillText('r [fm]', x1 - 30, Y(0) - 14);
+        ctx.textAlign = 'right';
+        for (const v of [-1, 0, 1, 2]) ctx.fillText(`${v}`, x0 - 12, Y(v) + 8);
+        ctx.save(); ctx.translate(36, (y0 + y1) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillText('V [GeV]', 0, 0); ctx.restore();
+        const curve = (f, colour) => {
+            ctx.strokeStyle = colour; ctx.lineWidth = 4; ctx.beginPath();
+            let started = false;
+            for (let r = 0.05; r <= rMax; r += 0.01) {
+                const v = f(r);
+                if (v < vMin) continue;
+                if (!started) { ctx.moveTo(X(r), Y(v)); started = true; } else ctx.lineTo(X(r), Y(v));
+            }
+            ctx.stroke();
+        };
+        curve(cornell, '#FFB74D');
+        curve(r => -KAPPA / r, '#4DB6AC');
+        // Breaking threshold
+        ctx.setLineDash([10, 8]); ctx.strokeStyle = '#ef5350'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x0, Y(cornell(R_BREAK))); ctx.lineTo(x1, Y(cornell(R_BREAK))); ctx.stroke(); ctx.setLineDash([]);
+        ctx.textAlign = 'left'; ctx.font = '22px "Fira Code", monospace';
+        // Above its line at the far right, where the curve has risen well clear and the marker never reaches
+        ctx.fillStyle = '#ef5350'; ctx.textAlign = 'right';
+        ctx.fillText('string breaks', x1, Y(cornell(R_BREAK)) - 10);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#FFB74D'; ctx.fillText('QCD  −κ/r + σr', x0 + 12, y0 + 10);
+        ctx.fillStyle = '#4DB6AC'; ctx.fillText('QED-like  −κ/r', x0 + 12, y0 + 40);
+        // This pair
+        const r = Math.min(e.longest, rMax), v = state.field === 'qcd' ? cornell(r) : -KAPPA / r;
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(X(r), Y(Math.max(v, vMin)), 12, 0, 2 * Math.PI); ctx.fill();
+        ctx.font = 'bold 24px "Fira Code", monospace'; ctx.textAlign = X(r) > W / 2 ? 'right' : 'left';
+        ctx.fillText(`r ${e.longest.toFixed(2)} fm  V ${fmt(state.field === 'qcd' ? cornell(e.longest) : -KAPPA / e.longest)} GeV`, X(r) + (X(r) > W / 2 ? -22 : 22), Y(Math.max(v, vMin)) - 18);
+        ctx.textAlign = 'left'; ctx.fillStyle = '#a1a1a1'; ctx.font = '22px "Geist", sans-serif';
+        ctx.fillText(state.field === 'qcd'
+            ? `Past the red line a new q̄q pair costs less than more string. ${state.pairs.length} meson${state.pairs.length > 1 ? 's' : ''} · ${state.breaks} break${state.breaks === 1 ? '' : 's'}`
+            : 'An electric dipole: the field spreads out, the energy levels off, nothing breaks.', 44, 600);
+    } else {
+        ctx.fillText('Baryon: Y string or Δ?', 44, 68);
+        ctx.font = '24px "Fira Code", monospace'; ctx.fillStyle = '#a1a1a1';
+        ctx.fillText(`quark separations ${e.sides.map(s => s.toFixed(2)).join(' · ')} fm`, 44, 116);
+        const bars = [['Y  σ·L_Y', e.EY, '#FFB74D'], ['Δ  σ/2·Σr', e.EDelta, '#4DB6AC']];
+        const x0 = 330, x1 = W - 60, vMax = Math.max(2, ...bars.map(b => b[1]));
+        bars.forEach(([label, v, colour], i) => {
+            const y = 190 + i * 130;
+            ctx.fillStyle = colour; ctx.font = 'bold 30px "Fira Code", monospace'; ctx.textAlign = 'left';
+            ctx.fillText(label, 44, y + 44);
+            ctx.fillRect(x0, y, Math.max(0, v) / vMax * (x1 - x0), 64);
+            ctx.fillStyle = 'white'; ctx.font = 'bold 26px "Fira Code", monospace';
+            ctx.fillText(`${fmt(v)} GeV`, x0 + 14, y + 42);
+        });
+        ctx.fillStyle = '#a1a1a1'; ctx.font = '22px "Geist", sans-serif';
+        ctx.fillText(`Y string length ${e.LY.toFixed(2)} fm. The junction sits where the three arms meet at 120°;`, 44, 500);
+        ctx.fillText('lattice QCD finds the Y shape at large separations, a Δ-like sum when the quarks are close.', 44, 532);
+        ctx.fillText('Each quark\'s colour is cancelled at the junction: red + green + blue is a colour singlet.', 44, 564);
+    }
+    tex.needsUpdate = true;
+}
+
+// ─── Controls ───────────────────────────────────────────────────────────────
+const meson = document.getElementById('meson'), baryon = document.getElementById('baryon');
+const fieldButton = document.getElementById('field'), pullButton = document.getElementById('pull');
+meson.addEventListener('click', () => setup('meson'));
+baryon.addEventListener('click', () => setup('baryon'));
+fieldButton.addEventListener('click', () => setup('meson', state.field === 'qcd' ? 'qed' : 'qcd'));
+document.getElementById('reset').addEventListener('click', () => setup());
+const linesButton = document.getElementById('lines');
+function toggleLines() {
+    fieldLines.visible = !fieldLines.visible;
+    linesButton.textContent = fieldLines.visible ? 'Field lines on' : 'Field lines off';
+    linesButton.setAttribute('aria-pressed', fieldLines.visible);
+}
+linesButton.addEventListener('click', toggleLines);
+// Pull: the first pair's antiquark is carried off at a steady 0.4 fm/s, its partner held still.
+function pull() {
+    if (state.mode !== 'meson') return;
+    if (state.pulling) { stopPull(); return; }
+    const { a, b } = state.pairs[0];
+    const moving = a.anti ? a : b, anchor = moving === a ? b : a;
+    state.pulling = { moving, anchor, dir: moving.pos.clone().sub(anchor.pos).normalize(), t: 0 };
+    moving.held++; anchor.held++;
+    pullButton.textContent = 'Stop pulling';
+}
+function stopPull() {
+    const p = state.pulling;
+    if (!p) return;
+    p.moving.held--; p.anchor.held--;
+    state.pulling = null;
+    pullButton.textContent = 'Pull apart';
+}
+pullButton.addEventListener('click', pull);
+
+// ─── Grabbing ───────────────────────────────────────────────────────────────
+// Desktop: drag a quark in the plane facing you. VR: trigger picks the quark nearest the controller
+// (or along its ray), which then follows the hand.
+const grabs = { mouse: { quark: null }, left: { quark: null }, right: { quark: null } };
+function grab(slot, quark) {
+    release(slot);
+    if (!quark) return;
+    if (state.pulling && (quark === state.pulling.moving || quark === state.pulling.anchor)) stopPull();
+    grabs[slot].quark = quark;
+    quark.held++;
+    // Holding one end anchors its partner, so the string stretches instead of being dragged along
+    const partner = partnerOf(quark);
+    if (partner) { partner.held++; grabs[slot].partner = partner; }
+}
+function release(slot) {
+    const g = grabs[slot];
+    if (g.quark) g.quark.held--;
+    if (g.partner) g.partner.held--;
+    g.quark = g.partner = null;
+}
+function partnerOf(q) {
+    const p = state.pairs.find(p => p.a === q || p.b === q);
+    return p ? (p.a === q ? p.b : p.a) : null;
+}
+const raycaster = new THREE.Raycaster();
+function quarkOnRay(ray, reach = 0.04) {
+    let best = null, bestT = Infinity;
+    const w = new THREE.Vector3();
+    for (const q of state.quarks) {
+        q.mesh.getWorldPosition(w);
+        const t = w.clone().sub(ray.origin).dot(ray.direction);
+        if (t > 0 && ray.distanceSqToPoint(w) < reach * reach && t < bestT) { bestT = t; best = q; }
+    }
+    return best;
+}
+
+let drag = null;
+const pointer = new THREE.Vector2(), el = renderer.domElement;
+const dragPlane = new THREE.Plane(), _hit = new THREE.Vector3(), _w = new THREE.Vector3();
+el.addEventListener('contextmenu', e => e.preventDefault());
+el.addEventListener('pointerdown', e => {
+    pointer.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    raycaster.setFromCamera(pointer, camera);
+    const q = quarkOnRay(raycaster.ray, 0.05);
+    el.setPointerCapture(e.pointerId);
+    if (q) {
+        grab('mouse', q);
+        dragPlane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), q.mesh.getWorldPosition(_w));
+        drag = { quark: q };
+    } else drag = { x: e.clientX, y: e.clientY };
+});
+el.addEventListener('pointermove', e => {
+    if (!drag) return;
+    if (drag.quark) {
+        pointer.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+        raycaster.setFromCamera(pointer, camera);
+        if (raycaster.ray.intersectPlane(dragPlane, _hit)) drag.quark.pos.copy(lab.worldToLocal(_hit));
+        return;
+    }
+    yaw -= (e.clientX - drag.x) * 0.004;
+    pitch = THREE.MathUtils.clamp(pitch - (e.clientY - drag.y) * 0.004, -1.5, 1.5);
+    drag.x = e.clientX; drag.y = e.clientY;
+});
+const endDrag = () => { if (drag?.quark) release('mouse'); drag = null; };
+el.addEventListener('pointerup', endDrag);
+el.addEventListener('pointercancel', endDrag);
+
+const controllerModels = new XRControllerModelFactory();
+const gamepads = { left: null, right: null };
+const prev = {};
+const controllers = {};
+for (let i = 0; i < 2; i++) {
+    const grip = renderer.xr.getControllerGrip(i);
+    grip.add(controllerModels.createControllerModel(grip));
+    rig.add(grip);
+    const ray = renderer.xr.getController(i);
+    const beam = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
+        new THREE.LineBasicMaterial({ color: 0xffb74d, transparent: true, opacity: 0.5 }));
+    beam.scale.z = 2;
+    beam.visible = false;
+    ray.add(beam);
+    rig.add(ray);
+    grip.addEventListener('connected', e => {
+        const hand = e.data.handedness;
+        gamepads[hand] = e.data.gamepad || null;
+        controllers[hand] = { grip, ray, beam };
+        beam.visible = true;
+        if (hand === 'left') grip.add(vrPanel.mesh);
+    });
+    grip.addEventListener('disconnected', e => {
+        const hand = e.data.handedness;
+        gamepads[hand] = null;
+        release(hand);
+        delete controllers[hand];
+        beam.visible = false;
+        if (hand === 'left') grip.remove(vrPanel.mesh);
+    });
+    ray.addEventListener('selectstart', () => {
+        const hand = Object.keys(controllers).find(h => controllers[h].ray === ray);
+        if (!hand) return;
+        // Nearest quark within 8 cm of the controller, else the first along its ray
+        const at = ray.getWorldPosition(new THREE.Vector3());
+        let best = null, bestD = 0.08;
+        for (const q of state.quarks) { const d = q.mesh.getWorldPosition(_w).distanceTo(at); if (d < bestD) { bestD = d; best = q; } }
+        if (!best) {
+            const m = new THREE.Matrix4().extractRotation(ray.matrixWorld);
+            best = quarkOnRay(new THREE.Ray(at, new THREE.Vector3(0, 0, -1).applyMatrix4(m)), 0.05);
+        }
+        if (!best) return;
+        grab(hand, best);
+        // Keep the quark where it was relative to the hand
+        grabs[hand].offset = ray.worldToLocal(best.mesh.getWorldPosition(new THREE.Vector3()));
+    });
+    ray.addEventListener('selectend', () => {
+        const hand = Object.keys(controllers).find(h => controllers[h].ray === ray);
+        if (hand) release(hand);
+    });
+}
+function followHands() {
+    for (const hand of ['left', 'right']) {
+        const g = grabs[hand], c = controllers[hand];
+        if (!g.quark || !c) continue;
+        g.quark.pos.copy(lab.worldToLocal(c.ray.localToWorld(g.offset.clone())));
+    }
+}
+const DEADZONE = 0.15;
+const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
+const edge = (name, down) => { const e = down && !prev[name]; prev[name] = down; return e; };
+const input = { moveX: 0, moveZ: 0, moveY: 0 };
+function pollXRInput() {
+    const gp = gamepads.left, o = gp && gp.axes.length >= 4 ? 2 : 0;
+    input.moveX = dz(gp?.axes[o] || 0); input.moveZ = dz(gp?.axes[o + 1] || 0); input.moveY = 0;
+    const r = gamepads.right?.buttons || [], l = gamepads.left?.buttons || [];
+    if (edge('a', !!r[4]?.pressed)) pull();
+    if (edge('b', !!r[5]?.pressed)) setup();
+    if (edge('x', !!l[4]?.pressed)) setup(state.mode === 'meson' ? 'baryon' : 'meson');
+    if (edge('y', !!l[5]?.pressed) && state.mode === 'meson') setup('meson', state.field === 'qcd' ? 'qed' : 'qcd');
+}
+
+const keys = new Set();
+window.addEventListener('keydown', e => {
+    if (e.target.closest?.('input, button') && e.code !== 'Escape') return;
+    if (e.repeat) return;
+    keys.add(e.code);
+    if (e.code === 'Digit1') setup('meson');
+    if (e.code === 'Digit2') setup('baryon');
+    if (e.code === 'KeyF' && state.mode === 'meson') setup('meson', state.field === 'qcd' ? 'qed' : 'qcd');
+    if (e.code === 'KeyP') pull();
+    if (e.code === 'KeyL') toggleLines();
+    if (e.code === 'KeyR') { setup(); resetView(); }
+    if (e.code === 'KeyH') document.getElementById('hud').classList.toggle('hidden');
+});
+window.addEventListener('keyup', e => keys.delete(e.code));
+window.addEventListener('blur', () => keys.clear());
+function pollDesktopInput() {
+    const k = c => (keys.has(c) ? 1 : 0);
+    input.moveX = k('KeyD') - k('KeyA');
+    input.moveZ = k('KeyS') - k('KeyW');
+    input.moveY = k('KeyE') - k('KeyQ');
+}
+const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+function applyMovement(dt) {
+    camera.getWorldDirection(fwd);
+    fwd.y = 0;
+    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+    fwd.normalize();
+    right.crossVectors(fwd, up);
+    const step = 1.2 * dt;
+    const target = renderer.xr.isPresenting ? rig.position : camera.position;
+    target.addScaledVector(right, input.moveX * step);
+    target.addScaledVector(fwd, -input.moveZ * step);
+    target.addScaledVector(up, input.moveY * step);
+}
+
+renderer.xr.addEventListener('sessionstart', () => {
+    rig.position.set(0, 0, 0);
+    camera.position.set(0, 0, 0);
+    document.getElementById('hud').style.display = 'none';
+    document.getElementById('controls').style.display = 'none';
+});
+renderer.xr.addEventListener('sessionend', () => {
+    resetView();
+    gamepads.left = gamepads.right = null;
+    document.getElementById('hud').style.display = '';
+    document.getElementById('controls').style.display = '';
+});
+
+// Wrist panel on the left controller
+const vrPanel = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320; canvas.height = 96;
+    const ctx = canvas.getContext('2d');
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.125, 0.0375), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false }));
+    mesh.position.set(0, 0.06, -0.02);
+    mesh.rotation.x = -Math.PI / 4;
+    mesh.renderOrder = 10;
+    let last = '';
+    return {
+        mesh,
+        update(top, bottom) {
+            if (top + bottom === last) return;
+            last = top + bottom;
+            ctx.clearRect(0, 0, 320, 96);
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.beginPath(); ctx.roundRect(0, 0, 320, 96, 18); ctx.fill();
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#FFB74D'; ctx.font = 'bold 28px monospace'; ctx.fillText(top, 160, 42);
+            ctx.fillStyle = '#a1a1a1'; ctx.font = '22px monospace'; ctx.fillText(bottom, 160, 76);
+            tex.needsUpdate = true;
+        },
+    };
+})();
+
+// ─── Loop ───────────────────────────────────────────────────────────────────
+setup('meson', new URLSearchParams(location.search).get('field') === 'qed' ? 'qed' : 'qcd');
+if (new URLSearchParams(location.search).get('mode') === 'baryon') setup('baryon');
+document.fonts?.ready.then(() => updatePanel(true));
+const statsEl = document.getElementById('stats');
+let lastTime = performance.now(), statsTimer = 0, fps = 60;
+
+renderer.setAnimationLoop(now => {
+    const dt = THREE.MathUtils.clamp((now - lastTime) / 1000, 0, 0.1);
+    lastTime = now;
+    fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05;
+
+    if (renderer.xr.isPresenting) { pollXRInput(); followHands(); }
+    else { pollDesktopInput(); camera.rotation.set(pitch, yaw, 0, 'YXZ'); }
+    applyMovement(dt);
+
+    if (state.pulling) {
+        const p = state.pulling;
+        p.moving.pos.addScaledVector(p.dir, 0.4 * dt);
+        if (p.moving.pos.length() > 2.6 || (state.field === 'qed' && p.moving.pos.distanceTo(p.anchor.pos) > 2.2)) stopPull();
+    }
+    breakStrings();
+    relax(dt);
+    updateField();
+    updatePanel();
+
+    const e = energies();
+    const top = state.mode === 'meson'
+        ? `${state.field.toUpperCase()} · r ${e.longest.toFixed(2)} fm`
+        : `Y · L ${e.LY.toFixed(2)} fm`;
+    const bottom = state.mode === 'meson'
+        ? `${state.pairs.length} meson${state.pairs.length > 1 ? 's' : ''} · ${state.breaks} breaks`
+        : `E_Y ${fmt(e.EY)} GeV`;
+    if (renderer.xr.isPresenting) vrPanel.update(top, bottom);
+    else if ((statsTimer += dt) > 0.2) {
+        statsTimer = 0;
+        const width = state.mode === 'meson' ? Math.sqrt(meanSqWidth(e.longest)) : Math.sqrt(meanSqWidth(e.LY));
+        statsEl.textContent = state.mode === 'meson'
+            ? `meson · ${state.field === 'qcd' ? 'QCD flux tube' : 'QED dipole field'}\n` +
+              `r ${e.longest.toFixed(3)} fm   V ${fmt(state.field === 'qcd' ? cornell(e.longest) : -KAPPA / e.longest, 3)} GeV\n` +
+              (state.field === 'qcd'
+                  ? `string ${fmt(e.string, 2)} GeV   rms width ${width.toFixed(2)} fm\n${state.pairs.length} meson${state.pairs.length > 1 ? 's' : ''}   ${state.breaks} break${state.breaks === 1 ? '' : 's'}   ${fps.toFixed(0)} fps`
+                  : `no confinement: the field spreads, nothing breaks\n${fps.toFixed(0)} fps`)
+            : `baryon · Y-shaped string\n` +
+              `L_Y ${e.LY.toFixed(3)} fm   E_Y ${fmt(e.EY, 3)} GeV\n` +
+              `Δ estimate ${fmt(e.EDelta, 3)} GeV   rms width ${width.toFixed(2)} fm\n${fps.toFixed(0)} fps`;
+    }
+    renderer.render(scene, camera);
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

@@ -41,6 +41,12 @@ const SITE_VISUALS = [
         title: 'Relativistic Flythrough',
         description: 'Fly at up to 99.8% of the speed of light. Aberration bends a field of pillars and globes into a cone ahead, the Doppler shift turns it blue in front and amber behind, and beaming floods the view.'
     },
+    {
+        slug: 'qcd-flux-tubes',
+        url: 'vr/qcd-flux-tubes.html',
+        title: 'QCD Flux Tubes',
+        description: "Grab a quark and antiquark and pull them apart. The colour field squeezes into a flux tube whose energy grows with length until the string snaps into new mesons. Compare an electric dipole's spreading field, or stretch a baryon's Y-shaped string."
+    },
 ];
 
 function siteVisualUrl(path, rootPrefix) {
