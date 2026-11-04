@@ -23,7 +23,7 @@
         #controls .row > select { flex: 1; min-width: 0; }
         #controls input[type=range] { flex: 1; min-width: 0; }
         #ev-label { color: var(--gold); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 11ch; text-align: right; }
-        #hover { color: white; font-family: 'Fira Code', monospace; font-size: 13px; line-height: 1.6; white-space: pre; }
+        #hover { color: white; font-family: 'Fira Code', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
         #hover:empty { display: none; }
         #error { color: #ef5350; font-family: 'Fira Code', monospace; font-size: 13px; white-space: pre-wrap; }
         #error:empty { display: none; }
@@ -868,8 +868,8 @@ renderer.setAnimationLoop(now => {
             const nb = ev.j.filter(j => j[4] > BTAG).length;
             statsEl.textContent = `${s.title}   event ${state.index + 1} of ${s.events.length.toLocaleString()}   entry ${ev.i}\n` +
                 `${ev.mu.length} μ   ${ev.el.length} e   ${ev.ph.length} γ   ${ev.j.length} jets (${nb} b)   MET ${f1(Math.hypot(...ev.met))} GeV\n` +
-                `${s.quantity} ${f2(ev.v)} ${s.unit}   ${ev.npv} primary vertices   ${state.hits} chambers crossed\n` +
-                `scale ${state.scale >= 0.995 ? '1:1' : `1:${(1 / state.scale).toPrecision(3)}`}   ${fps.toFixed(0)} fps`;
+                `${s.quantity} ${f2(ev.v)} ${s.unit}   ${ev.npv} primary vertices\n` +
+                `${state.hits} chambers crossed   scale ${state.scale >= 0.995 ? '1:1' : `1:${(1 / state.scale).toPrecision(3)}`}   ${fps.toFixed(0)} fps`;
         }
     }
     renderer.render(scene, camera);
