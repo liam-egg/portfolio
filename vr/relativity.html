@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#000000">
+    <title>Relativistic Flythrough</title>
+    <meta name="description" content="Fly at up to 99.8% of the speed of light, in the browser or a WebXR headset: aberration bends the world into a cone ahead, Doppler shifts its colours and beaming floods the view.">
+    <link rel="stylesheet" href="/vr/vr.css">
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: black;
+            color: white;
+            font-family: 'Geist', sans-serif;
+        }
+        canvas { display: block; touch-action: none; }
+        #hud { top: 16px; left: 16px; width: 420px; user-select: none; pointer-events: none; }
+        #controls { top: 16px; right: 16px; width: 360px; }
+        #controls .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        #controls input[type=range] { flex: 1; min-width: 0; }
+        #controls label { color: var(--secondary); font-family: 'Fira Code', monospace; font-size: 13px; }
+        #controls output { color: var(--gold); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 7ch; text-align: right; }
+        #error { color: #ef5350; font-family: 'Fira Code', monospace; font-size: 13px; white-space: pre-wrap; }
+        #error:empty { display: none; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+<div id="hud" class="hud">
+    <header>
+        <span>/vr/relativity.html</span>
+        <a href="/vr/"><span>cd </span>..</a>
+    </header>
+    <section>
+        <span class="name">Relativistic Flythrough</span>
+        <div class="stats" id="stats">β 0</div>
+        <div class="keys">
+            <div class="rule"></div>
+            <span class="command">controls <span>--desktop</span></span>
+            <dl>
+                <dt><kbd>W</kbd><kbd>S</kbd></dt><dd>speed up · slow down</dd>
+                <dt><kbd>A</kbd><kbd>D</kbd></dt><dd>steer</dd>
+                <dt><kbd>drag</kbd></dt><dd>look around (try looking back)</dd>
+                <dt><kbd>Space</kbd><kbd>Enter</kbd></dt><dd>stop · back to the start</dd>
+                <dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></dt><dd>aberration · Doppler · beaming</dd>
+                <dt><kbd>R</kbd><kbd>H</kbd></dt><dd>look ahead · hide help</dd>
+            </dl>
+            <span class="command">controls <span>--vr</span></span>
+            <dl>
+                <dt><kbd>L stick</kbd></dt><dd>↕ speed · ↔ snap steer</dd>
+                <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>aberration · Doppler</dd>
+                <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>beaming · stop</dd>
+            </dl>
+            <div class="rule"></div>
+            <span class="note">Light here crawls at 20 m/s, so the effects of near-light speed are what you see.
+                Each vertex is drawn where its light appears to come from in your moving frame (aberration);
+                surfaces reflect a 5,800 K sun as real spectra, shifted by the Doppler factor and turned back into
+                colour through the CIE 1931 eye response; brightness scales as D⁵. Stars are blackbodies, seen at D·T.</span>
+        </div>
+    </section>
+</div>
+
+<div id="controls" class="hud">
+    <header><span>ship</span></header>
+    <section>
+        <div class="row">
+            <label for="speed">speed</label>
+            <input id="speed" type="range" min="0" max="3.5" step="0.01" value="0" aria-label="Target speed (rapidity)">
+            <output id="speed-out">0.000c</output>
+        </div>
+        <div class="row">
+            <button id="aberration" aria-pressed="true">Aberration on</button>
+            <button id="doppler" aria-pressed="true">Doppler on</button>
+            <button id="beaming" aria-pressed="false">Beaming off</button>
+            <button id="stop">Stop</button>
+        </div>
+        <div id="error"></div>
+    </section>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+
+// ─── Units ──────────────────────────────────────────────────────────────────
+// Metres and seconds in the station frame S, where everything but the ship is at rest.
+const C = 20;                                           // the speed of light, m/s
+const MAX_RAPIDITY = 3.5;                               // β = tanh 3.5 = 0.998, γ = 16.6
+const CELL = 30;                                        // the field repeats every 30 m
+const CELLS = 7;                                        // ±7 cells drawn round the ship
+const FADE = [160, 215];                                // station-frame distance over which the field fades out
+const ALTITUDE = 7;                                     // the ship's deck above the floor
+
+// ─── Renderer / rig ─────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;    // beaming pushes the view ahead far past 1
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+const rig = new THREE.Group();                          // the ship: at its position in S, turned to its heading
+scene.add(rig);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 4000);
+camera.position.set(0, 1.6, 0);
+rig.add(camera);
+
+// ─── Spectra → colour lookup tables ─────────────────────────────────────────
+// CIE 1931 colour matching, the multi-lobe Gaussian fit of Wyman, Sloan & Shirley (2013)
+const lobe = (l, mu, s1, s2) => { const t = (l - mu) / (l < mu ? s1 : s2); return Math.exp(-0.5 * t * t); };
+const cmf = l => [
+    1.056 * lobe(l, 599.8, 37.9, 31.0) + 0.362 * lobe(l, 442.0, 16.0, 26.7) - 0.065 * lobe(l, 501.1, 20.4, 26.2),
+    0.821 * lobe(l, 568.8, 46.9, 40.5) + 0.286 * lobe(l, 530.9, 16.3, 31.1),
+    1.217 * lobe(l, 437.0, 11.8, 36.0) + 0.681 * lobe(l, 459.0, 26.0, 13.8),
+];
+const xyzToLinearSRGB = ([x, y, z]) => [
+    3.2406 * x - 1.5372 * y - 0.4986 * z, -0.9689 * x + 1.8758 * y + 0.0415 * z, 0.0557 * x - 0.2040 * y + 1.0570 * z,
+];
+// Planck's law per unit wavelength, without its 2hc² prefactor (every use is a ratio)
+const planck = (nm, T) => { const l = nm * 1e-9; return 1 / (l ** 5 * Math.expm1(0.0143877735 / (l * T))); };
+const VISIBLE = []; for (let l = 380; l <= 780; l += 2) VISIBLE.push(l);
+// The eye's response to a spectrum S(λ), as linear sRGB
+function seen(S) {
+    const xyz = [0, 0, 0];
+    for (const l of VISIBLE) { const s = S(l), c = cmf(l); xyz[0] += s * c[0]; xyz[1] += s * c[1]; xyz[2] += s * c[2]; }
+    return xyzToLinearSRGB(xyz);
+}
+const luminance = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+// Surfaces: an albedo (r, g, b) is read as reflectance r·R(λ) + g·G(λ) + b·B(λ), smooth bands that
+// sum to 1 at every wavelength (so white reflects everything, into the infrared and ultraviolet), lit
+// by a 5,800 K sun. Seen with Doppler factor D, light reaching the eye at λ left the surface at λ·D.
+const sigmoid = x => 1 / (1 + Math.exp(-x));
+const BANDS = [
+    l => sigmoid((l - 595) / 18),                                         // R: long wavelengths and all the infrared
+    l => Math.max(0, 1 - sigmoid((l - 595) / 18) - sigmoid((485 - l) / 16)),
+    l => sigmoid((485 - l) / 16),                                         // B: short wavelengths and all the ultraviolet
+];
+const LOG_D = [Math.log(1 / 40), Math.log(40)];
+const LUT_W = 256;
+function inverse3(m) {                                  // m[row][col]
+    const [[a, b, c], [d, e, f], [g, h, i]] = m;
+    const A = e * i - f * h, B = -(d * i - f * g), Cc = d * h - e * g, det = a * A + b * B + c * Cc;
+    return [[A / det, -(b * i - c * h) / det, (b * f - c * e) / det],
+        [B / det, (a * i - c * g) / det, -(a * f - c * d) / det],
+        [Cc / det, -(a * h - b * g) / det, (a * e - b * d) / det]];
+}
+const surfaceLUT = (() => {
+    const raw = D => BANDS.map(band => seen(l => planck(l * D, 5800) * band(l * D)));
+    // Calibrate so each band reads back as pure r, g or b at rest: the lookup is M⁻¹ · raw(D).
+    const atRest = raw(1), M = [0, 1, 2].map(row => [0, 1, 2].map(k => atRest[k][row]));
+    const Minv = inverse3(M);
+    const data = new Uint16Array(LUT_W * 3 * 4);
+    for (let x = 0; x < LUT_W; x++) {
+        const D = Math.exp(LOG_D[0] + (LOG_D[1] - LOG_D[0]) * x / (LUT_W - 1));
+        raw(D).forEach((rgb, k) => {
+            const out = Minv.map(row => row[0] * rgb[0] + row[1] * rgb[1] + row[2] * rgb[2]);
+            data.set([...out, 1].map(v => THREE.DataUtils.toHalfFloat(Number.isFinite(v) ? v : 0)), (k * LUT_W + x) * 4);
+        });
+    }
+    const tex = new THREE.DataTexture(data, LUT_W, 3, THREE.RGBAFormat, THREE.HalfFloatType);
+    tex.minFilter = tex.magFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+    return tex;
+})();
+
+// Stars: blackbodies. A blackbody at T seen with Doppler factor D is exactly a blackbody at D·T,
+// beaming included, so one table of absolute colour against temperature covers them.
+const LOG_T = [Math.log(500), Math.log(2e6)];
+const Y_SUN = luminance(seen(l => planck(l, 5800)));
+const blackbody = T => seen(l => planck(l, T)).map(v => v / Y_SUN);
+const starLUT = (() => {
+    const data = new Uint16Array(LUT_W * 4);
+    for (let x = 0; x < LUT_W; x++) {
+        const rgb = blackbody(Math.exp(LOG_T[0] + (LOG_T[1] - LOG_T[0]) * x / (LUT_W - 1)));
+        data.set([...rgb, 1].map(v => THREE.DataUtils.toHalfFloat(Number.isFinite(v) ? v : 0)), x * 4);
+    }
+    const tex = new THREE.DataTexture(data, LUT_W, 1, THREE.RGBAFormat, THREE.HalfFloatType);
+    tex.minFilter = tex.magFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+    return tex;
+})();
+
+// ─── Relativistic shaders ───────────────────────────────────────────────────
+const uniforms = {
+    uObs: { value: new THREE.Vector3() },               // the eye, in S
+    uDir: { value: new THREE.Vector3(0, 0, -1) },       // the ship's direction of travel, in S
+    uBeta: { value: 0 }, uGamma: { value: 1 },
+    uAberration: { value: 1 }, uDoppler: { value: 1 }, uBeaming: { value: 0 },   // beaming starts off: it darkens all but the view ahead
+    uSurfaceLUT: { value: surfaceLUT }, uStarLUT: { value: starLUT },
+    uSun: { value: new THREE.Vector3(0.45, 0.8, 0.35).normalize() },
+    uPixelRatio: { value: 1 },
+    uExposure: { value: 1 },                            // eye adaptation to the beamed light ahead
+};
+const common = /* glsl */`
+    uniform vec3 uObs, uDir;
+    uniform float uBeta, uGamma, uAberration, uDoppler, uBeaming, uExposure;
+    // Light reaching the eye now from rel (eye → source, in S) left that point at the event
+    // (t, x) = (−|rel|, rel). Boosting that event into the ship's frame gives where it is seen:
+    //   x' = rel + u[(γ − 1)(rel·u) + γβ|rel|],  at distance γ|rel|(1 + β cos θ)
+    vec3 aberrate(vec3 rel) {
+        return rel + uDir * ((uGamma - 1.0) * dot(rel, uDir) + uGamma * uBeta * length(rel));
+    }
+    // Doppler factor: received over emitted frequency, γ(1 + β cos θ), θ from the direction of travel
+    float doppler(vec3 rel) {
+        float r = length(rel);
+        return uGamma * (1.0 + uBeta * (r > 0.0 ? dot(rel, uDir) / r : 0.0));
+    }`;
+const surfaceVertex = /* glsl */`
+    ${common}
+    varying vec3 vRel, vWorld, vNormal, vLocal, vOrigin;
+    void main() {
+        mat4 m = modelMatrix;
+        #ifdef USE_INSTANCING
+            m = m * instanceMatrix;
+        #endif
+        vec4 world = m * vec4(position, 1.0);
+        vWorld = world.xyz;
+        vLocal = position;
+        vOrigin = (m * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        vNormal = normalize(mat3(m) * normal);
+        vRel = world.xyz - uObs;
+        vec3 shown = uAberration > 0.5 ? aberrate(vRel) : vRel;
+        gl_Position = projectionMatrix * viewMatrix * vec4(uObs + shown, 1.0);
+    }`;
+const surfaceFragment = /* glsl */`
+    ${common}
+    uniform sampler2D uSurfaceLUT;
+    uniform vec3 uSun;
+    varying vec3 vRel, vWorld, vNormal, vLocal, vOrigin;
+    const vec3 PALETTE[6] = vec3[6](vec3(0.85, 0.18, 0.15), vec3(0.2, 0.7, 0.25), vec3(0.18, 0.4, 0.9),
+                                    vec3(0.95, 0.65, 0.2), vec3(0.85, 0.85, 0.85), vec3(0.6, 0.25, 0.75));
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    // 1 on a line of the given period and half-width (metres), antialiased
+    float lines(float x, float period, float width) {
+        float d = abs(fract(x / period + 0.5) - 0.5) * period;
+        return 1.0 - smoothstep(width, width + fwidth(x) * 1.5, d);
+    }
+    vec3 albedo() {
+        vec2 cell = floor(vOrigin.xz / ${CELL.toFixed(1)} + 0.5);
+    #if MODE == 0
+        // Floor: dark tiles, a 10 m grid, brighter every 30 m
+        float grid = max(lines(vWorld.x, 10.0, 0.08), lines(vWorld.z, 10.0, 0.08));
+        float major = max(lines(vWorld.x, ${CELL.toFixed(1)}, 0.18), lines(vWorld.z, ${CELL.toFixed(1)}, 0.18));
+        vec2 tile = floor(vWorld.xz / ${CELL.toFixed(1)});
+        vec3 base = mod(tile.x + tile.y, 2.0) < 1.0 ? vec3(0.05, 0.06, 0.08) : vec3(0.08, 0.09, 0.11);
+        return mix(mix(base, vec3(0.5), grid), vec3(0.85), major);
+    #elif MODE == 1
+        // Cubes: one colour each, with dark edges so their apparent rotation reads
+        vec3 a = abs(vLocal) / 1.5;
+        float edge = step(0.88, a.x) * step(0.88, a.y) + step(0.88, a.y) * step(0.88, a.z) + step(0.88, a.x) * step(0.88, a.z);
+        return PALETTE[int(hash(cell) * 6.0)] * (edge > 0.0 ? 0.15 : 1.0);
+    #elif MODE == 2
+        // Spheres: a globe grid every 30°
+        vec3 n = normalize(vLocal);
+        float lon = atan(n.z, n.x) * 57.29578, lat = asin(clamp(n.y, -1.0, 1.0)) * 57.29578;
+        float g = max(lines(lon, 30.0, 1.2), lines(lat, 30.0, 1.2));
+        return mix(PALETTE[int(hash(cell + 17.0) * 6.0)], vec3(0.95), g);
+    #else
+        // Pillars: 2 m bands, so their spacing shows the view stretching and squeezing
+        return mod(floor(vWorld.y / 2.0), 2.0) < 1.0 ? vec3(0.9) : vec3(0.12);
+    #endif
+    }
+    vec3 dopplerShift(vec3 c, float D) {
+        float u = clamp((log(D) - ${LOG_D[0].toFixed(6)}) / ${(LOG_D[1] - LOG_D[0]).toFixed(6)}, 0.0, 1.0);
+        float x = (u * ${(LUT_W - 1).toFixed(1)} + 0.5) / ${LUT_W.toFixed(1)};
+        return max(c.r * texture2D(uSurfaceLUT, vec2(x, 0.5 / 3.0)).rgb
+                 + c.g * texture2D(uSurfaceLUT, vec2(x, 1.5 / 3.0)).rgb
+                 + c.b * texture2D(uSurfaceLUT, vec2(x, 2.5 / 3.0)).rgb, 0.0);
+    }
+    void main() {
+        // Lit in the station frame, where the sun and the surfaces are at rest
+        vec3 c = albedo() * (0.3 + 0.7 * max(dot(normalize(vNormal), uSun), 0.0));
+        float D = doppler(vRel);
+        if (uDoppler > 0.5) c = dopplerShift(c, D);
+        if (uBeaming > 0.5) c *= min(pow(D, 5.0), 1e4);
+        c *= uExposure * (1.0 - smoothstep(${FADE[0].toFixed(1)}, ${FADE[1].toFixed(1)}, length(vRel)));
+        gl_FragColor = vec4(c, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+    }`;
+const surface = mode => new THREE.ShaderMaterial({ uniforms, vertexShader: surfaceVertex, fragmentShader: surfaceFragment, defines: { MODE: mode } });
+
+// ─── The field ──────────────────────────────────────────────────────────────
+// One 30 m cell, repeated: a cube on the floor, a sphere overhead and a striped pillar. The whole
+// field snaps to the cell round the ship, so it never runs out and the snapping is invisible.
+const field = new THREE.Group();
+scene.add(field);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(2 * FADE[1] + 2 * CELL, 2 * FADE[1] + 2 * CELL, 256, 256).rotateX(-Math.PI / 2), surface(0));
+field.add(floor);
+function lattice(geometry, mode, offset) {
+    const n = (2 * CELLS + 1) ** 2;
+    const mesh = new THREE.InstancedMesh(geometry, surface(mode), n);
+    const m = new THREE.Matrix4();
+    let k = 0;
+    for (let i = -CELLS; i <= CELLS; i++) for (let j = -CELLS; j <= CELLS; j++) {
+        mesh.setMatrixAt(k++, m.makeTranslation(i * CELL + offset[0], offset[1], j * CELL + offset[2]));
+    }
+    field.add(mesh);
+}
+lattice(new THREE.BoxGeometry(3, 3, 3, 8, 8, 8), 1, [0, 3.5, 0]);
+lattice(new THREE.SphereGeometry(2, 32, 16), 2, [CELL / 2, 12, 0]);
+lattice(new THREE.BoxGeometry(0.8, 24, 0.8, 1, 48, 1).translate(0, 12, 0), 3, [CELL / 2, 0, CELL / 2]);
+field.traverse(o => { o.frustumCulled = false; });       // the shader moves every vertex
+
+// ─── Stars ──────────────────────────────────────────────────────────────────
+// Directions at infinity: aberration turns them, Doppler moves each along its blackbody curve.
+const stars = (() => {
+    const N = 4000;
+    const dir = new Float32Array(N * 3), temp = new Float32Array(N), base = new Float32Array(N), norm = new Float32Array(N);
+    let seed = 0x5eed;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    for (let i = 0; i < N; i++) {
+        const z = 2 * rnd() - 1, a = 2 * Math.PI * rnd(), r = Math.sqrt(1 - z * z);
+        dir.set([r * Math.cos(a), z, r * Math.sin(a)], i * 3);
+        temp[i] = 2800 * Math.exp(2.4 * rnd() ** 2.2);    // mostly cool, a few hot: 2,800 – 31,000 K
+        base[i] = 2.0 * 10 ** (-0.4 * 6.5 * Math.sqrt(rnd()));  // visual brightness at rest
+        norm[i] = 1 / luminance(blackbody(temp[i]));      // so the colour table reads 1 at rest
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(dir, 3));
+    g.setAttribute('temperature', new THREE.BufferAttribute(temp, 1));
+    g.setAttribute('brightness', new THREE.BufferAttribute(base, 1));
+    g.setAttribute('norm', new THREE.BufferAttribute(norm, 1));
+    const points = new THREE.Points(g, new THREE.ShaderMaterial({
+        uniforms,
+        vertexShader: /* glsl */`
+            ${common}
+            uniform sampler2D uStarLUT;
+            uniform float uPixelRatio;
+            attribute float temperature, brightness, norm;
+            varying vec3 vColor;
+            vec3 bb(float T) {
+                float u = clamp((log(T) - ${LOG_T[0].toFixed(6)}) / ${(LOG_T[1] - LOG_T[0]).toFixed(6)}, 0.0, 1.0);
+                return max(texture2D(uStarLUT, vec2((u * ${(LUT_W - 1).toFixed(1)} + 0.5) / ${LUT_W.toFixed(1)}, 0.5)).rgb, 0.0);
+            }
+            void main() {
+                vec3 shown = uAberration > 0.5 ? aberrate(position) : position;
+                gl_Position = projectionMatrix * viewMatrix * vec4(uObs + normalize(shown) * 3000.0, 1.0);
+                float D = doppler(position);
+                // A blackbody seen at D: B(λ, D·T) with beaming; B(λ, D·T) / D⁵ is the shift alone.
+                vec3 c;
+                if (uDoppler > 0.5) c = bb(temperature * D) * (uBeaming > 0.5 ? 1.0 : pow(D, -5.0));
+                else c = bb(temperature) * (uBeaming > 0.5 ? min(pow(D, 5.0), 1e4) : 1.0);
+                c *= brightness * norm * uExposure;
+                float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+                gl_PointSize = clamp(1.0 + 2.0 * log2(1.0 + 4.0 * lum), 1.0, 14.0) * uPixelRatio;
+                vColor = c;
+            }`,
+        fragmentShader: /* glsl */`
+            varying vec3 vColor;
+            void main() {
+                vec2 p = gl_PointCoord - 0.5;
+                float a = 1.0 - smoothstep(0.2, 0.5, length(p));
+                if (a <= 0.0) discard;
+                gl_FragColor = vec4(vColor * a, 1.0);
+                #include <tonemapping_fragment>
+                #include <colorspace_fragment>
+            }`,
+        blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
+    }));
+    points.frustumCulled = false;
+    points.renderOrder = -1;
+    return points;
+})();
+scene.add(stars);
+
+// ─── Ship ───────────────────────────────────────────────────────────────────
+const ship = { position: new THREE.Vector3(0, ALTITUDE, 0), heading: 0, rapidity: 0, target: 0, t: 0, tau: 0, distance: 0 };
+const ACCEL = 0.8;                                      // rapidity per second: proper acceleration 16 m/s²
+let lookYaw = 0, lookPitch = 0;
+
+const speedInput = document.getElementById('speed'), speedOut = document.getElementById('speed-out');
+function setTarget(r) {
+    ship.target = THREE.MathUtils.clamp(r, 0, MAX_RAPIDITY);
+    speedInput.value = ship.target;
+    speedOut.textContent = `${Math.tanh(ship.target).toFixed(3)}c`;
+}
+function restart() {
+    ship.position.set(0, ALTITUDE, 0);
+    ship.heading = 0; ship.rapidity = 0; ship.t = ship.tau = ship.distance = 0;
+    setTarget(0);
+    lookYaw = lookPitch = 0;
+}
+const toggles = {};
+for (const [key, uniform, name] of [['aberration', 'uAberration', 'Aberration'], ['doppler', 'uDoppler', 'Doppler'], ['beaming', 'uBeaming', 'Beaming']]) {
+    const button = document.getElementById(key);
+    toggles[key] = (on = uniforms[uniform].value < 0.5) => {
+        uniforms[uniform].value = on ? 1 : 0;
+        button.textContent = `${name} ${on ? 'on' : 'off'}`;
+        button.setAttribute('aria-pressed', on);
+    };
+    button.addEventListener('click', () => toggles[key]());
+}
+speedInput.addEventListener('input', () => setTarget(+speedInput.value));
+// ?beta=0.9 starts the ship already at speed
+// ?beta=0.9 starts the ship already at speed; ?look=180 starts looking that many degrees round (desktop)
+const params = new URLSearchParams(location.search);
+const startBeta = parseFloat(params.get('beta'));
+if (startBeta > 0) { ship.rapidity = Math.min(Math.atanh(Math.min(startBeta, 0.999)), MAX_RAPIDITY); setTarget(ship.rapidity); }
+lookYaw = THREE.MathUtils.degToRad(parseFloat(params.get('look')) || 0);
+document.getElementById('stop').addEventListener('click', () => setTarget(0));
+
+// ─── Input ──────────────────────────────────────────────────────────────────
+const DEADZONE = 0.15;
+const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
+const controllerModels = new XRControllerModelFactory();
+const gamepads = { left: null, right: null };
+const prev = {};
+let turnArmed = true;
+for (let i = 0; i < 2; i++) {
+    const grip = renderer.xr.getControllerGrip(i);
+    grip.add(controllerModels.createControllerModel(grip));
+    rig.add(grip);
+    grip.addEventListener('connected', e => {
+        gamepads[e.data.handedness] = e.data.gamepad || null;
+        if (e.data.handedness === 'left') grip.add(vrPanel.mesh);
+    });
+    grip.addEventListener('disconnected', e => {
+        gamepads[e.data.handedness] = null;
+        if (e.data.handedness === 'left') grip.remove(vrPanel.mesh);
+    });
+}
+function stick(gp) {
+    if (!gp) return [0, 0];
+    const o = gp.axes.length >= 4 ? 2 : 0;
+    return [dz(gp.axes[o] || 0), dz(gp.axes[o + 1] || 0)];
+}
+const edge = (name, down) => { const e = down && !prev[name]; prev[name] = down; return e; };
+
+function pollXRInput(dt) {
+    const [lx, ly] = stick(gamepads.left);
+    if (ly) setTarget(ship.target - ly * 1.2 * dt);
+    if (Math.abs(lx) > 0.6) { if (turnArmed) { ship.heading -= Math.sign(lx) * Math.PI / 6; turnArmed = false; } }
+    else turnArmed = true;
+    const r = gamepads.right?.buttons || [], l = gamepads.left?.buttons || [];
+    if (edge('a', !!r[4]?.pressed)) toggles.aberration();
+    if (edge('b', !!r[5]?.pressed)) toggles.doppler();
+    if (edge('x', !!l[4]?.pressed)) toggles.beaming();
+    if (edge('y', !!l[5]?.pressed)) setTarget(0);
+}
+
+const keys = new Set();
+window.addEventListener('keydown', e => {
+    if (e.target.closest?.('input, button') && e.code !== 'Escape') return;
+    if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
+    if (e.repeat) return;
+    keys.add(e.code);
+    if (e.code === 'Space') setTarget(0);
+    if (e.code === 'Enter') restart();
+    if (e.code === 'Digit1') toggles.aberration();
+    if (e.code === 'Digit2') toggles.doppler();
+    if (e.code === 'Digit3') toggles.beaming();
+    if (e.code === 'KeyR') lookYaw = lookPitch = 0;
+    if (e.code === 'KeyH') document.getElementById('hud').classList.toggle('hidden');
+});
+window.addEventListener('keyup', e => keys.delete(e.code));
+window.addEventListener('blur', () => keys.clear());
+function pollDesktopInput(dt) {
+    const k = (...c) => (c.some(x => keys.has(x)) ? 1 : 0);
+    const throttle = k('KeyW', 'ArrowUp') - k('KeyS', 'ArrowDown');
+    if (throttle) setTarget(ship.target + throttle * 0.8 * dt);
+    ship.heading += (k('KeyA', 'ArrowLeft') - k('KeyD', 'ArrowRight')) * 0.7 * dt;
+}
+
+let drag = null;
+const el = renderer.domElement;
+el.addEventListener('contextmenu', e => e.preventDefault());
+el.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; el.setPointerCapture(e.pointerId); });
+el.addEventListener('pointermove', e => {
+    if (!drag) return;
+    lookYaw -= (e.clientX - drag.x) * 0.004;
+    lookPitch = THREE.MathUtils.clamp(lookPitch - (e.clientY - drag.y) * 0.004, -1.5, 1.5);
+    drag.x = e.clientX; drag.y = e.clientY;
+});
+const endDrag = () => { drag = null; };
+el.addEventListener('pointerup', endDrag);
+el.addEventListener('pointercancel', endDrag);
+
+renderer.xr.addEventListener('sessionstart', () => {
+    camera.position.set(0, 0, 0);
+    document.getElementById('hud').style.display = 'none';
+    document.getElementById('controls').style.display = 'none';
+});
+renderer.xr.addEventListener('sessionend', () => {
+    camera.position.set(0, 1.6, 0);
+    gamepads.left = gamepads.right = null;
+    document.getElementById('hud').style.display = '';
+    document.getElementById('controls').style.display = '';
+});
+
+// Wrist panel on the left controller
+const vrPanel = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320; canvas.height = 96;
+    const ctx = canvas.getContext('2d');
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.125, 0.0375), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, toneMapped: false }));
+    mesh.position.set(0, 0.06, -0.02);
+    mesh.rotation.x = -Math.PI / 4;
+    mesh.renderOrder = 10;
+    let last = '';
+    return {
+        mesh,
+        update(top, bottom) {
+            if (top + bottom === last) return;
+            last = top + bottom;
+            ctx.clearRect(0, 0, 320, 96);
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.beginPath(); ctx.roundRect(0, 0, 320, 96, 18); ctx.fill();
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#FFB74D'; ctx.font = 'bold 30px monospace'; ctx.fillText(top, 160, 42);
+            ctx.fillStyle = '#a1a1a1'; ctx.font = '22px monospace'; ctx.fillText(bottom, 160, 76);
+            tex.needsUpdate = true;
+        },
+    };
+})();
+
+// ─── Loop ───────────────────────────────────────────────────────────────────
+const statsEl = document.getElementById('stats');
+const _eye = new THREE.Vector3();
+let lastTime = performance.now(), statsTimer = 0, fps = 60;
+const fmtTime = s => (s >= 60 ? `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}` : `${s.toFixed(1)} s`);
+const fmtDist = m => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${m.toFixed(0)} m`);
+
+renderer.setAnimationLoop(now => {
+    const dt = THREE.MathUtils.clamp((now - lastTime) / 1000, 0, 0.1);   // the first frame can be stamped before load
+    lastTime = now;
+    fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05;
+
+    if (renderer.xr.isPresenting) pollXRInput(dt);
+    else pollDesktopInput(dt);
+
+    // Change speed at a steady proper acceleration (rapidity is additive), then coast in S.
+    ship.rapidity += THREE.MathUtils.clamp(ship.target - ship.rapidity, -ACCEL * dt, ACCEL * dt);
+    const beta = Math.tanh(ship.rapidity), gamma = Math.cosh(ship.rapidity);
+    const dir = uniforms.uDir.value.set(-Math.sin(ship.heading), 0, -Math.cos(ship.heading));
+    ship.position.addScaledVector(dir, beta * C * dt);
+    ship.distance += beta * C * dt;
+    ship.t += dt;                                       // the station's clocks
+    ship.tau += dt / gamma;                             // the ship's clock runs slow by γ
+
+    rig.position.copy(ship.position);
+    rig.rotation.set(0, ship.heading, 0);
+    if (!renderer.xr.isPresenting) camera.rotation.set(lookPitch, lookYaw, 0, 'YXZ');
+    field.position.set(Math.round(ship.position.x / CELL) * CELL, 0, Math.round(ship.position.z / CELL) * CELL);
+
+    uniforms.uObs.value.copy(camera.getWorldPosition(_eye));
+    uniforms.uBeta.value = beta;
+    uniforms.uGamma.value = gamma;
+    uniforms.uPixelRatio.value = renderer.getPixelRatio();
+
+    const ahead = gamma * (1 + beta), behind = gamma * (1 - beta);
+    // With beaming the view ahead brightens as D⁵. The eye stops down as D⁻³ of the forward factor:
+    // the sides stay readable, the forward cone glows overexposed and the view behind goes dark.
+    uniforms.uExposure.value = uniforms.uBeaming.value > 0.5 ? ahead ** -3 : 1;
+    if (renderer.xr.isPresenting) {
+        vrPanel.update(`β ${beta.toFixed(3)}c`, `γ ${gamma.toFixed(2)} · ahead ×${ahead.toFixed(2)}`);
+    } else if ((statsTimer += dt) > 0.2) {
+        statsTimer = 0;
+        statsEl.textContent = `β ${beta.toFixed(4)}c   γ ${gamma.toFixed(3)}   rapidity ${ship.rapidity.toFixed(2)}\n` +
+            `Doppler ahead ×${ahead.toFixed(2)}   behind ×${behind.toFixed(3)}\n` +
+            `station clock ${fmtTime(ship.t)}   ship clock ${fmtTime(ship.tau)}\n` +
+            `travelled ${fmtDist(ship.distance)}   ${fps.toFixed(0)} fps`;
+    }
+    renderer.render(scene, camera);
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

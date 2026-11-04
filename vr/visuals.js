@@ -35,6 +35,12 @@ const SITE_VISUALS = [
         title: 'CMS Events',
         description: 'Real 2011 CMS collisions around a life-size CMS detector. Watch muons bend out through the drift tubes and cathode strip chambers, and find the Z, the W and the top quark in the mass plots.'
     },
+    {
+        slug: 'relativity',
+        url: 'vr/relativity.html',
+        title: 'Relativistic Flythrough',
+        description: 'Fly at up to 99.8% of the speed of light. Aberration bends a field of pillars and globes into a cone ahead, the Doppler shift turns it blue in front and amber behind, and beaming floods the view.'
+    },
 ];
 
 function siteVisualUrl(path, rootPrefix) {
