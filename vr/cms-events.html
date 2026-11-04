@@ -306,10 +306,11 @@ function toECAL(d) {
 
 const COLOUR = { mu: '#ef5350', el: '#66bb6a', ph: '#ffd54f', jet: '#FFB74D', bjet: '#42a5f5', met: '#ce93d8' };
 const MATERIAL = {
-    mu: new THREE.MeshBasicMaterial({ color: COLOUR.mu }),
-    el: new THREE.MeshBasicMaterial({ color: COLOUR.el }),
+    // Track tubes are open-ended: both sides drawn, so an end reads as solid rather than hollow
+    mu: new THREE.MeshBasicMaterial({ color: COLOUR.mu, side: THREE.DoubleSide }),
+    el: new THREE.MeshBasicMaterial({ color: COLOUR.el, side: THREE.DoubleSide }),
     elTower: new THREE.MeshBasicMaterial({ color: COLOUR.el, transparent: true, opacity: 0.85 }),
-    ph: new THREE.MeshBasicMaterial({ color: COLOUR.ph, transparent: true, opacity: 0.6 }),
+    ph: new THREE.MeshBasicMaterial({ color: COLOUR.ph, transparent: true, opacity: 0.6, side: THREE.DoubleSide }),
     phTower: new THREE.MeshBasicMaterial({ color: COLOUR.ph, transparent: true, opacity: 0.85 }),
     jet: new THREE.MeshBasicMaterial({ color: COLOUR.jet, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false }),
     jetTower: new THREE.MeshBasicMaterial({ color: COLOUR.jet, transparent: true, opacity: 0.85 }),
@@ -378,7 +379,8 @@ function clearEvent() {
 function buildEvent(ev) {
     clearEvent();
     const objects = state.objects;
-    const vertex = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    // The vertex: wider than any track or the MET shaft, so it caps the point where they all start
+    const vertex = new THREE.Mesh(new THREE.SphereGeometry(0.11, 24, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
     eventGroup.add(vertex);
 
     // Muons: through the field to the edge of the muon system, lighting the chambers they cross
