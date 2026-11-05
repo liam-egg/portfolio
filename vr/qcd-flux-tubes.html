@@ -234,7 +234,7 @@ const fieldUniforms = {
     uLabInverse: { value: new THREE.Matrix4() },
     uBoxMin: { value: new THREE.Vector3() }, uBoxMax: { value: new THREE.Vector3() },
     uMode: { value: 0 },
-    uLow: { value: 0.6 },                               // GeV/fm³ below which nothing is drawn
+    uScale: { value: 3.5 },                             // GeV/fm³ drawn at full strength: a tube peaks at about half this
     uNSeg: { value: 0 }, uSegA: { value: Array.from({ length: MAX_SEG }, () => new THREE.Vector3()) },
     uSegB: { value: Array.from({ length: MAX_SEG }, () => new THREE.Vector3()) }, uSegW: { value: new Array(MAX_SEG).fill(0.2) },
     uNQ: { value: 0 }, uQ: { value: Array.from({ length: MAX_Q }, () => new THREE.Vector4()) },
@@ -254,7 +254,7 @@ const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.ShaderMater
     fragmentShader: /* glsl */`
         uniform vec3 uBoxMin, uBoxMax;
         uniform int uMode, uNSeg, uNQ;
-        uniform float uLow;
+        uniform float uScale;
         uniform vec3 uSegA[MAX_SEG], uSegB[MAX_SEG];
         uniform float uSegW[MAX_SEG];
         uniform vec4 uQ[MAX_Q];
@@ -317,9 +317,10 @@ const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.ShaderMater
             for (int i = 0; i < STEPS; i++) {
                 vec3 p = vEye + dir * (tNear + (float(i) + jitter) * ds);
                 float rho = density(p);
-                // Log scale from the threshold uLow (drawn as nothing) up to 20× it (white-hot)
-                float v = clamp(log(max(rho, 1e-6) / uLow) / log(20.0), 0.0, 1.0);
-                float a = 1.0 - exp(-v * v * 30.0 * ds);
+                // Linear in energy density, so the glow's edge is the tube's: a Gaussian falls to 0.6 of
+                // its peak at one width, and opacity goes as v², so little shows beyond about 1.5 widths.
+                float v = clamp(rho / uScale, 0.0, 1.0);
+                float a = 1.0 - exp(-v * v * 10.0 * ds);
                 col += (1.0 - alpha) * ramp(v) * a;
                 alpha += (1.0 - alpha) * a;
                 if (alpha > 0.97) break;
@@ -344,8 +345,8 @@ function updateField() {
         for (const q of qs) segs.push([q.pos, state.junction, L, false]);
     }
     fieldUniforms.uMode.value = state.field === 'qcd' ? 0 : 1;
-    // The dipole's field is spread thin, so it is drawn from a threshold twelve times lower
-    fieldUniforms.uLow.value = state.field === 'qcd' ? 0.6 : 0.05;
+    // The dipole's field is spread thin, so it is drawn twelve times more sensitively
+    fieldUniforms.uScale.value = state.field === 'qcd' ? 3.5 : 3.5 / 12;
     fieldUniforms.uNSeg.value = Math.min(segs.length, MAX_SEG);
     segs.slice(0, MAX_SEG).forEach(([a, b, L], i) => {
         fieldUniforms.uSegA.value[i].copy(a);
