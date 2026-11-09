@@ -1,0 +1,47 @@
+# Rebuilds the VR bundles from the lab repositories in vr/sources.json and opens a pull request when
+# something the site uses has changed. Merging it publishes the update. See tools/sync-vr-sources.mjs.
+#
+# Setup:
+#   - Add a repository secret VR_SOURCES_TOKEN that can read the lab repositories.
+#   - Settings > Actions > General > Workflow permissions: allow GitHub Actions to create pull requests.
+name: Sync VR visuals
+
+on:
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-vr
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Rebuild bundles
+        id: sync
+        env:
+          VR_SOURCES_TOKEN: ${{ secrets.VR_SOURCES_TOKEN }}
+        run: node tools/sync-vr-sources.mjs --pr-body "$RUNNER_TEMP/vr-sync-pr.md"
+
+      # Still runs when one source failed, so the others are not held back; the job stays red.
+      - name: Open or update the pull request
+        if: ${{ !cancelled() && steps.sync.outputs.changed == 'true' }}
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: vr-sync
+          delete-branch: true
+          title: ${{ steps.sync.outputs.title }}
+          commit-message: ${{ steps.sync.outputs.title }}
+          body-path: ${{ runner.temp }}/vr-sync-pr.md

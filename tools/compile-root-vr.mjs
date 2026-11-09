@@ -4,6 +4,12 @@
  * bundle that root.html renders with three.js + WebXR.
  *
  *   node tools/compile-root-vr.mjs <unity-project-dir> [out.json] [--scene Assets/Scenes/X.unity] [--data dump.txt ...]
+ *                                  [--strict] [--source-commit <sha>] [--source-ref <branch-or-tag>]
+ *
+ * --strict turns every warning into a failure and leaves out.json untouched; tools/sync-vr-sources.mjs
+ * uses it so a shader the translator can't handle never reaches the site. The --source-* flags record
+ * which upstream commit the bundle came from. Output depends only on the inputs, so unchanged sources
+ * produce an identical file.
  *
  * What gets compiled:
  *   - every custom ShaderLab shader under Assets/ (Cg/HLSL -> GLSL ES 3.0)
@@ -24,6 +30,9 @@ const positional = [];
 for (let i = 0; i < args.length; i++) {
     if (args[i] === '--scene') flags.scene = args[++i];
     else if (args[i] === '--data') flags.data.push(args[++i]);
+    else if (args[i] === '--strict') flags.strict = true;
+    else if (args[i] === '--source-commit') flags.sourceCommit = args[++i];
+    else if (args[i] === '--source-ref') flags.sourceRef = args[++i];
     else positional.push(args[i]);
 }
 if (!positional[0]) {
@@ -48,13 +57,16 @@ const assets = path.join(root, 'Assets');
 const projectName = path.basename(inputDir);
 const outFile = path.resolve(positional[1] || path.join('root-vr', `${projectName}.json`));
 
-const warn = msg => console.warn(`  ! ${msg}`);
+const warnings = [];
+const warn = msg => { warnings.push(msg); console.warn(`  ! ${msg}`); };
 
 // Third-party packages vendored into Assets/ — their shaders target URP/Meta internals we can't translate.
 const VENDOR_DIRS = new Set(['Oculus', 'MetaXR', 'TextMesh Pro', 'Samples', 'XR', 'XRI', 'CompositionLayers', 'Plugins', '_Recovery']);
 
+// Sorted by code unit: readdir order differs between filesystems, and it decides the default scene.
 function walk(dir, exts, out = [], top = true) {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const e of entries) {
         if (top && VENDOR_DIRS.has(e.name)) continue;
         const p = path.join(dir, e.name);
         if (e.isDirectory()) walk(p, exts, out, false);
@@ -690,9 +702,13 @@ const bundle = {
     version: readme.match(/Version\s+([\w.-]+)/)?.[1] ?? null,
     colorSpace: /m_ActiveColorSpace:\s*1/.test(fs.readFileSync(path.join(root, 'ProjectSettings', 'ProjectSettings.asset'), 'utf8')) ? 'linear' : 'gamma',
     unity: fs.readFileSync(path.join(root, 'ProjectSettings', 'ProjectVersion.txt'), 'utf8').match(/m_EditorVersion:\s*(\S+)/)?.[1] ?? null,
-    compiledAt: new Date().toISOString(),
+    source: flags.sourceCommit ? { ref: flags.sourceRef ?? null, commit: flags.sourceCommit } : null,
     shaders, materials, scene, examples,
 };
+if (flags.strict && warnings.length) {
+    console.error(`--strict: ${warnings.length} warning(s), not writing ${path.basename(outFile)}`);
+    process.exit(1);
+}
 fs.mkdirSync(path.dirname(outFile), { recursive: true });
 fs.writeFileSync(outFile, JSON.stringify(bundle));
 console.log(`Wrote ${path.relative(process.cwd(), outFile)} (${(fs.statSync(outFile).size / 1024).toFixed(1)} KB)`);
