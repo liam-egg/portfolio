@@ -1,0 +1,18 @@
+{
+  "sources": [
+    {
+      "id": "root-vr",
+      "title": "ROOT VR",
+      "repo": "https://github.com/AryanMP16/ROOT_VR.git",
+      "ref": "3DGraph",
+      "scene": "Assets/Scenes/2D_Plot.unity",
+      "output": "vr/root-vr/ROOT_VR-3DGraph.json",
+      "handPorted": [
+        { "file": "Assets/ROOT_pipe_client.cs", "port": "vr/root-vr.html, ROOT VR server payload" },
+        { "file": "Assets/gpu_inst_indir/gpu_inst_script.cs", "port": "vr/root-vr.html, data visual and hover" },
+        { "file": "Assets/custom_grid_shader/axis_handler.cs", "port": "vr/root-vr.html, axis labels" },
+        { "file": "Assets/vertical_motion.cs", "port": "vr/root-vr.html, raising and lowering the rig" }
+      ]
+    }
+  ]
+}
