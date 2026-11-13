@@ -57,7 +57,8 @@
             </dl>
             <span class="command">controls <span>--vr</span></span>
             <dl>
-                <dt><kbd>L stick</kbd></dt><dd>↕ speed · ↔ snap steer</dd>
+                <dt><kbd>stick</kbd></dt><dd>↕ speed (either stick) · ↔ snap steer (left)</dd>
+                <dt><kbd>R trigger</kbd><kbd>L trigger</kbd></dt><dd>speed up · slow down (or pinch)</dd>
                 <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>aberration · Doppler</dd>
                 <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>beaming · stop</dd>
             </dl>
@@ -420,21 +421,32 @@ document.getElementById('stop').addEventListener('click', () => setTarget(0));
 const DEADZONE = 0.15;
 const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
 const controllerModels = new XRControllerModelFactory();
-const gamepads = { left: null, right: null };
 const prev = {};
+const selecting = { left: false, right: false };        // trigger held, or a pinch with hand tracking
 let turnArmed = true;
 for (let i = 0; i < 2; i++) {
     const grip = renderer.xr.getControllerGrip(i);
     grip.add(controllerModels.createControllerModel(grip));
     rig.add(grip);
-    grip.addEventListener('connected', e => {
-        gamepads[e.data.handedness] = e.data.gamepad || null;
-        if (e.data.handedness === 'left') grip.add(vrPanel.mesh);
-    });
-    grip.addEventListener('disconnected', e => {
-        gamepads[e.data.handedness] = null;
-        if (e.data.handedness === 'left') grip.remove(vrPanel.mesh);
-    });
+    grip.addEventListener('connected', e => { if (e.data.handedness === 'left') grip.add(vrPanel.mesh); });
+    grip.addEventListener('disconnected', e => { if (e.data.handedness === 'left') grip.remove(vrPanel.mesh); });
+    // Select (trigger, or pinch with hands) is the one input every headset and hand-tracking mode has
+    const ray = renderer.xr.getController(i);
+    rig.add(ray);
+    let hand = null;
+    ray.addEventListener('connected', e => { hand = e.data.handedness; });
+    ray.addEventListener('disconnected', () => { if (hand in selecting) selecting[hand] = false; hand = null; });
+    ray.addEventListener('selectstart', () => { if (hand in selecting) selecting[hand] = true; });
+    ray.addEventListener('selectend', () => { if (hand in selecting) selecting[hand] = false; });
+}
+// The controllers' gamepads, read from the session each frame rather than kept from the 'connected'
+// event, so a controller that wakes, reconnects or swaps in for hand tracking is always the live one.
+function xrGamepads() {
+    const pads = { left: null, right: null };
+    for (const src of renderer.xr.getSession()?.inputSources ?? []) {
+        if (src.gamepad && src.handedness in pads) pads[src.handedness] = src.gamepad;
+    }
+    return pads;
 }
 function stick(gp) {
     if (!gp) return [0, 0];
@@ -444,11 +456,15 @@ function stick(gp) {
 const edge = (name, down) => { const e = down && !prev[name]; prev[name] = down; return e; };
 
 function pollXRInput(dt) {
-    const [lx, ly] = stick(gamepads.left);
-    if (ly) setTarget(ship.target - ly * 1.2 * dt);
+    const pads = xrGamepads();
+    const [lx, ly] = stick(pads.left), [, ry] = stick(pads.right);
+    // Speed: either stick forward to speed up, back to slow down; or hold the right trigger (pinch)
+    // to speed up and the left to slow down.
+    const throttle = -(ly || ry) + (selecting.right ? 1 : 0) - (selecting.left ? 1 : 0);
+    if (throttle) setTarget(ship.target + THREE.MathUtils.clamp(throttle, -1, 1) * 1.2 * dt);
     if (Math.abs(lx) > 0.6) { if (turnArmed) { ship.heading -= Math.sign(lx) * Math.PI / 6; turnArmed = false; } }
     else turnArmed = true;
-    const r = gamepads.right?.buttons || [], l = gamepads.left?.buttons || [];
+    const r = pads.right?.buttons || [], l = pads.left?.buttons || [];
     if (edge('a', !!r[4]?.pressed)) toggles.aberration();
     if (edge('b', !!r[5]?.pressed)) toggles.doppler();
     if (edge('x', !!l[4]?.pressed)) toggles.beaming();
@@ -499,7 +515,7 @@ renderer.xr.addEventListener('sessionstart', () => {
 });
 renderer.xr.addEventListener('sessionend', () => {
     camera.position.set(0, 1.6, 0);
-    gamepads.left = gamepads.right = null;
+    selecting.left = selecting.right = false;
     document.getElementById('hud').style.display = '';
     document.getElementById('controls').style.display = '';
 });
