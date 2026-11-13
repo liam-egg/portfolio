@@ -94,12 +94,18 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
 // ─── Scale ──────────────────────────────────────────────────────────────────
-// galaxies.bin is the simulation box in [-0.5, 0.5]^3. UniverseVR's billboards are 0.14 wide and
-// fade in between 0.30 and 0.55 from the eye, so the box has to be tens of metres across for the
-// cosmic web to read as filaments rather than fog.
+// galaxies.bin is the simulation box in [-0.5, 0.5]^3. UniverseVR's billboards are 0.14 wide, so the
+// box has to be tens of metres across for the cosmic web to read as filaments rather than fog.
 const BOX = 50;                         // metres across the whole box
 const HALF_WIDTH = 0.07;                // GS_Billboard: float halfWidth = 0.07f
-const FADE_START = 0.30, FADE_RATE = 4; // saturate((distance - 0.30) * 4)
+// A galaxy keeps its full brightness until the eye passes inside its glow (HALF_WIDTH from its
+// centre), then fades out by FADE_END. (UniverseVR faded them from 0.55 m, which read as galaxies
+// turning transparent as you flew up to them.)
+const FADE_END = 0.02;
+// Galaxies nearer than this are drawn as quads instead of point sprites: points stop growing at the
+// GPU's size limit (often 1,024 px, about 0.13 m away in a headset) and vanish whole once their
+// centre leaves the view, which shows on a sprite filling half the screen.
+const NEAR = 0.6, NEAR_CELL = 1, MAX_NEAR = 4096;
 const BLUR_SCALE = 0.12;                // blur kernel: ±0.028 × blurScale of the view height
 
 // ─── Renderer / rig ─────────────────────────────────────────────────────────
@@ -116,7 +122,7 @@ const galaxyScene = new THREE.Scene();     // drawn into the intensity buffer
 const overlayScene = new THREE.Scene();    // controllers and wrist panel, drawn after the colour map
 const rig = new THREE.Group();
 overlayScene.add(rig);
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 200);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 200);   // near enough to fly into a galaxy
 rig.add(camera);
 
 let yaw = 0, pitch = 0;
@@ -143,10 +149,38 @@ const [buf, sprite, gradient] = await Promise.all([
     loadTex('universe-vr/gradient.png'),
 ]).catch(e => { fail(e.message); throw e; });
 
+// sprite.png is a soft radial glow with a dozen pinpoint "stars" painted on it. Painted on a flat
+// billboard, those dots show round every galaxy you get near, turn with the screen and have no depth
+// in a headset, so keep only the glow: the median of each ring about the centre, which the dots
+// (and the 2-pixel nucleus) barely touch.
+const glow = (() => {
+    const img = sprite.image, W = img.width, H = img.height;
+    const src = Object.assign(document.createElement('canvas'), { width: W, height: H }).getContext('2d', { willReadFrequently: true });
+    src.drawImage(img, 0, 0);
+    const px = src.getImageData(0, 0, W, H).data;
+    const rings = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const r = Math.round(Math.hypot(x + 0.5 - W / 2, y + 0.5 - H / 2));
+        (rings[r] ||= []).push(px[(y * W + x) * 4]);
+    }
+    const profile = rings.map(a => a.sort((p, q) => p - q)[a.length >> 1]);
+    for (let r = 0; r < 4; r++) profile[r] = profile[4];     // the nucleus is one more dot
+    const out = Object.assign(document.createElement('canvas'), { width: W, height: H });
+    const ctx = out.getContext('2d'), data = ctx.createImageData(W, H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const r = Math.hypot(x + 0.5 - W / 2, y + 0.5 - H / 2), i = Math.min(Math.floor(r), profile.length - 2), f = Math.min(r - i, 1);
+        const v = profile[i] * (1 - f) + profile[i + 1] * f;
+        data.data.set([v, v, v, 255], (y * W + x) * 4);
+    }
+    ctx.putImageData(data, 0, 0);
+    sprite.dispose();
+    return new THREE.CanvasTexture(out);
+})();
+
 // Both textures hold display values: the DK2 build sampled them as plain UNORM, so no colour conversion.
-for (const t of [sprite, gradient]) t.colorSpace = THREE.NoColorSpace;
-sprite.generateMipmaps = true;
-sprite.minFilter = THREE.LinearMipmapLinearFilter;
+for (const t of [glow, gradient]) t.colorSpace = THREE.NoColorSpace;
+glow.generateMipmaps = true;
+glow.minFilter = THREE.LinearMipmapLinearFilter;
 gradient.wrapS = gradient.wrapT = THREE.ClampToEdgeWrapping;
 gradient.generateMipmaps = false;
 gradient.minFilter = THREE.LinearFilter;
@@ -167,44 +201,106 @@ geometry.setAttribute('weight', new THREE.BufferAttribute(weight, 1));
 geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), BOX);
 
 // The billboard pass: each galaxy a camera-facing sprite 2 × halfWidth across, tinted by its weight
-// and faded out right in front of the eye, summed additively into a single intensity channel.
-const galaxyMaterial = new THREE.ShaderMaterial({
+// and summed additively into a single intensity channel. Far galaxies are point sprites; the few
+// within NEAR of the eye are the same sprite drawn as a quad (see NEAR). Each shader skips the
+// galaxies the other draws, measured from the same eye, so every galaxy is drawn exactly once.
+const galaxyUniforms = {
+    uSprite: { value: glow },
+    uViewHeight: { value: 1 },
+    uGain: { value: 1 },
+};
+const galaxyShader = (near, attrs) => /* glsl */`
+    ${attrs}
+    uniform float uViewHeight;
+    out float vIntensity;
+    out vec2 vUv;
+    void main() {
+        vec4 view = modelViewMatrix * vec4(centre, 1.0);
+        float distance = length(view.xyz);
+        // Full brightness until the eye is inside the glow, then fading out towards the centre
+        vIntensity = weight * smoothstep(${FADE_END.toFixed(3)}, ${HALF_WIDTH.toFixed(3)}, distance);
+        if (vIntensity <= 0.0 || (distance < ${NEAR.toFixed(2)}) != ${near}) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);         // outside the clip volume: not drawn
+            gl_PointSize = 0.0;
+            return;
+        }
+        ${near ? /* glsl */`
+        vUv = corner * 0.5 + 0.5;
+        view.xy += corner * ${HALF_WIDTH.toFixed(3)};
+        gl_Position = projectionMatrix * view;` : /* glsl */`
+        gl_Position = projectionMatrix * view;
+        // pixels across = world width × focal length (in pixels) / depth
+        gl_PointSize = ${(2 * HALF_WIDTH).toFixed(2)} * projectionMatrix[1][1] * 0.5 * uViewHeight / max(-view.z, 1e-3);`}
+    }`;
+const galaxyFragment = near => /* glsl */`
+    uniform sampler2D uSprite;
+    uniform float uGain;
+    in float vIntensity;
+    in vec2 vUv;
+    out vec4 fragColor;
+    void main() {
+        float s = texture(uSprite, ${near ? 'vUv' : 'gl_PointCoord'}).r;
+        if (s <= 0.02) discard;
+        fragColor = vec4(vec3(s * vIntensity * uGain), 1.0);
+    }`;
+const galaxyMaterial = near => new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3,
-    uniforms: {
-        uSprite: { value: sprite },
-        uViewHeight: { value: 1 },
-        uGain: { value: 1 },
-    },
-    vertexShader: /* glsl */`
-        in float weight;
-        uniform float uViewHeight;
-        out float vIntensity;
-        void main() {
-            vec4 view = modelViewMatrix * vec4(position, 1.0);
-            float distance = length(view.xyz);
-            vIntensity = weight * clamp((distance - ${FADE_START.toFixed(2)}) * ${FADE_RATE.toFixed(1)}, 0.0, 1.0);
-            gl_Position = projectionMatrix * view;
-            // pixels across = world width × focal length (in pixels) / depth
-            gl_PointSize = vIntensity > 0.0 ? ${(2 * HALF_WIDTH).toFixed(2)} * projectionMatrix[1][1] * 0.5 * uViewHeight / max(-view.z, 1e-3) : 0.0;
-        }`,
-    fragmentShader: /* glsl */`
-        uniform sampler2D uSprite;
-        uniform float uGain;
-        in float vIntensity;
-        out vec4 fragColor;
-        void main() {
-            float s = texture(uSprite, gl_PointCoord).r;
-            if (s <= 0.02) discard;
-            fragColor = vec4(vec3(s * vIntensity * uGain), 1.0);
-        }`,
+    uniforms: galaxyUniforms,
+    vertexShader: galaxyShader(near, near ? 'in vec3 centre;\n    in float weight;\n    #define corner position.xy' : 'in float weight;\n    #define centre position'),
+    fragmentShader: galaxyFragment(near),
     blending: THREE.AdditiveBlending,
     depthTest: false,
     depthWrite: false,
     transparent: true,
 });
-const galaxies = new THREE.Points(geometry, galaxyMaterial);
+const galaxies = new THREE.Points(geometry, galaxyMaterial(false));
 galaxies.frustumCulled = false;
 galaxyScene.add(galaxies);
+
+// The near galaxies, found each frame through a coarse grid of the box: galaxies sorted by cell.
+const GRID = Math.ceil(BOX / NEAR_CELL);
+const cellIndex = (x, y, z) => {
+    const c = v => Math.min(GRID - 1, Math.max(0, Math.floor((v + BOX / 2) / NEAR_CELL)));
+    return (c(x) * GRID + c(y)) * GRID + c(z);
+};
+const cellStart = new Uint32Array(GRID ** 3 + 1), byCell = new Uint32Array(count);
+for (let i = 0; i < count; i++) cellStart[cellIndex(position[i * 3], position[i * 3 + 1], position[i * 3 + 2]) + 1]++;
+for (let c = 0; c < GRID ** 3; c++) cellStart[c + 1] += cellStart[c];
+{
+    const fill = cellStart.slice(0, -1);
+    for (let i = 0; i < count; i++) byCell[fill[cellIndex(position[i * 3], position[i * 3 + 1], position[i * 3 + 2])]++] = i;
+}
+const nearGeometry = new THREE.InstancedBufferGeometry();
+nearGeometry.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));   // the quad's corners
+nearGeometry.setIndex([0, 1, 2, 0, 2, 3]);
+const nearCentre = new THREE.InstancedBufferAttribute(new Float32Array(MAX_NEAR * 3), 3).setUsage(THREE.DynamicDrawUsage);
+const nearWeight = new THREE.InstancedBufferAttribute(new Float32Array(MAX_NEAR), 1).setUsage(THREE.DynamicDrawUsage);
+nearGeometry.setAttribute('centre', nearCentre);
+nearGeometry.setAttribute('weight', nearWeight);
+nearGeometry.instanceCount = 0;
+const nearGalaxies = new THREE.Mesh(nearGeometry, galaxyMaterial(true));
+nearGalaxies.frustumCulled = false;
+galaxyScene.add(nearGalaxies);
+// Everything within NEAR of the head plus a margin, so neither eye (a few cm off the head) nor a
+// frame's flight (the head pose lags a frame) can carry a galaxy past the edge of the selection.
+const NEAR_REACH = NEAR + 0.4;
+function selectNearGalaxies(eye) {
+    let n = 0;
+    const ci = Math.floor((eye.x + BOX / 2) / NEAR_CELL), cj = Math.floor((eye.y + BOX / 2) / NEAR_CELL), ck = Math.floor((eye.z + BOX / 2) / NEAR_CELL);
+    for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 1; j <= cj + 1; j++) for (let k = ck - 1; k <= ck + 1; k++) {
+        if (i < 0 || j < 0 || k < 0 || i >= GRID || j >= GRID || k >= GRID) continue;
+        const c = (i * GRID + j) * GRID + k;
+        for (let s = cellStart[c]; s < cellStart[c + 1] && n < MAX_NEAR; s++) {
+            const g = byCell[s];
+            const dx = position[g * 3] - eye.x, dy = position[g * 3 + 1] - eye.y, dz = position[g * 3 + 2] - eye.z;
+            if (dx * dx + dy * dy + dz * dz > NEAR_REACH * NEAR_REACH) continue;
+            nearCentre.array.set([position[g * 3], position[g * 3 + 1], position[g * 3 + 2]], n * 3);
+            nearWeight.array[n++] = weight[g];
+        }
+    }
+    nearGeometry.instanceCount = n;
+    nearCentre.needsUpdate = nearWeight.needsUpdate = true;
+}
 
 // ─── Offscreen passes ───────────────────────────────────────────────────────
 // UniverseVR renders the sprites into an offscreen intensity buffer, blurs it with a 15-tap
@@ -285,7 +381,7 @@ function renderFrame() {
         intensityTarget.setSize(_size.x, _size.y);
         blurTarget.setSize(_size.x, _size.y);
     }
-    galaxyMaterial.uniforms.uViewHeight.value = _size.y;
+    galaxyUniforms.uViewHeight.value = _size.y;
     const tap = 0.004 * BLUR_SCALE * _size.y;           // taps every 0.004 × blurScale
     for (const p of [blurH, blurVGradient, sharpGradient]) p.uniforms.uSize.value.copy(_size);
     blurH.uniforms.uDirection.value.set(tap, 0);
@@ -318,7 +414,7 @@ function setGlow(on) {
 }
 function setExposure(stops) {
     settings.exposure = THREE.MathUtils.clamp(stops, -2, 2);
-    galaxyMaterial.uniforms.uGain.value = 2 ** settings.exposure;
+    galaxyUniforms.uGain.value = 2 ** settings.exposure;
     exposureInput.value = settings.exposure;
     exposureOut.textContent = `×${(2 ** settings.exposure).toFixed(2)}`;
 }
@@ -522,6 +618,7 @@ renderer.setAnimationLoop(now => {
     applyMovement(dt);
 
     camera.getWorldPosition(_pos);
+    selectNearGalaxies(_pos);
     // Position in box units (the simulation box spans -0.5 … 0.5), back in the data's handedness.
     const bx = _pos.x / BOX, by = _pos.y / BOX, bz = -_pos.z / BOX;
     const inside = Math.max(Math.abs(bx), Math.abs(by), Math.abs(bz)) <= 0.5;

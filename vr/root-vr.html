@@ -532,7 +532,9 @@ function computeInstances() {
         xf.set([scale[0], 0, 0, 0, 0, scale[1], 0, 0, 0, 0, scale[2], 0, pos[0], pos[1], -pos[2], 1], i * 16);
         if (d.type === 'PointCloud') {
             _rgb.setRGB(...d.stars[i].rgb, THREE.SRGBColorSpace);   // catalogue colours are sRGB
-            colors.set([_rgb.r, _rgb.g, _rgb.b, 0.9], i * 4);
+            // Stars are solid. At 0.9 alpha (the bars' look) every star you flew up to showed the
+            // stars behind it as faint dots inside it, sliding about as you moved.
+            colors.set([_rgb.r, _rgb.g, _rgb.b, 1], i * 4);
         } else colors.set([y, y / d.max, 0.5, 0.85], i * 4);
     });
     state.transforms = xf;
