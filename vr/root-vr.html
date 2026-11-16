@@ -446,6 +446,20 @@ const dataMesh = new THREE.Mesh(new THREE.InstancedBufferGeometry(), dataMateria
 dataMesh.frustumCulled = false;
 dataMesh.visible = false;
 scene.add(dataMesh);
+// Depth pre-pass for the translucent bars. They write depth, so in a single pass any bar drawn
+// after a nearer one fails the depth test and vanishes; up close (where no back-to-front order of
+// whole boxes is right) whole faces dropped out and the bars looked more see-through the nearer
+// you came. Laying down every bar's depth first (in the opaque pass, colour off) and then shading
+// with LessEqual leaves exactly the nearest surface, blended once — the same at every distance.
+const dataDepth = dataMaterial?.isShaderMaterial
+    ? new THREE.Mesh(dataMesh.geometry, Object.assign(dataMaterial.clone(), { colorWrite: false, transparent: false, depthWrite: true }))
+    : null;
+if (dataDepth) {
+    dataDepth.material.uniforms = dataMaterial.uniforms;
+    dataDepth.frustumCulled = false;
+    dataDepth.visible = false;
+    scene.add(dataDepth);
+}
 
 const state = { data: null, points: [], colors: null, wAxis: [], wIndex: 0, hover: -1, playing: null, zoom: 1, absolute: false };
 
@@ -455,6 +469,9 @@ const hoverLabel = new Label({
 });
 hoverLabel.mesh.matrixAutoUpdate = true;
 hoverLabel.mesh.visible = false;
+// Drawn over everything: taller neighbouring bars would otherwise hide the readout you asked for.
+hoverLabel.mesh.material.depthTest = false;
+hoverLabel.mesh.renderOrder = 5;
 scene.add(hoverLabel.mesh);
 
 // A point cloud's focus (Earth, for the star catalogue) sits at the centre of the frame cube.
@@ -555,13 +572,14 @@ function uploadPoints() {
     dataMesh.geometry.dispose();
     dataMesh.geometry = geometry;
     dataMesh.visible = n > 0;
+    if (dataDepth) { dataDepth.geometry = geometry; dataDepth.visible = n > 0; }
     state.hover = -1;
     state.sortedFrom = null;
     hoverLabel.mesh.visible = false;
 }
 
-// The bars are translucent but write depth, so they're drawn back to front (re-sorted as the
-// camera moves) — otherwise a bar drawn after a nearer one fails the depth test and vanishes.
+// Instances are kept sorted back to front (re-sorted as the camera moves). The depth pre-pass
+// above is what keeps the bars correct up close; the order still helps the point cloud's dots.
 // Sort key is the distance to the nearest point of each box, which orders a short bar in front
 // of a tall neighbour correctly where centre distances would not.
 const _eye = new THREE.Vector3();
@@ -969,7 +987,8 @@ function applyMovement(dt) {
 }
 
 // Grid zoom scripts (x_zoom / vert_zoom / z_zoom): layer opacity follows the camera.
-const _camPos = new THREE.Vector3();
+const _camPos = new THREE.Vector3(), _viewer = new THREE.Vector3();
+const EYE_HEIGHT = 1.6;
 function applyZoom() {
     camera.getWorldPosition(_camPos);
     const unity = { x: _camPos.x, y: _camPos.y, z: -_camPos.z };
@@ -1081,10 +1100,15 @@ renderer.setAnimationLoop(now => {
     if (state.labelsDirty && now - state.labelsAt > 100) updateAxisLabels();   // relabel ~10×/s while zooming
     applyZoom();
     sortInstances();
-    hoverLabel.mesh.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion()));
-    focusLabel.mesh.quaternion.copy(hoverLabel.mesh.quaternion);
+    // Labels face where you are, not where you look: in VR that's your body (the rig, moved by the
+    // sticks) at standing eye height, so turning or tilting your head leaves the text still and it
+    // only turns as you travel. On desktop the camera only moves with WASD, so it is used as is.
+    if (renderer.xr.isPresenting) _viewer.copy(rig.position).y += EYE_HEIGHT;
+    else camera.getWorldPosition(_viewer);
+    hoverLabel.mesh.lookAt(_viewer);
+    focusLabel.mesh.lookAt(_viewer);
+    for (const m of valueAxisLabels) m.rotation.y = Math.atan2(_viewer.x - m.position.x, _viewer.z - m.position.z);
     camera.getWorldPosition(_camPos);
-    for (const m of valueAxisLabels) m.rotation.y = Math.atan2(_camPos.x - m.position.x, _camPos.z - m.position.z);
 
     const d = state.data;
     const wText = state.wAxis.length ? `W = ${fmtW(state.wAxis[state.wIndex])}  (${state.wIndex + 1}/${state.wAxis.length})` : '';
