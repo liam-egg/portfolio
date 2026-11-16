@@ -57,12 +57,10 @@
             </dl>
             <span class="command">controls <span>--vr</span></span>
             <dl>
-                <dt><kbd>stick</kbd></dt><dd>↕ speed (either stick) · ↔ snap steer (left)</dd>
+                <dt><kbd>stick</kbd></dt><dd>↕ speed (either stick) · ↔ steer (left)</dd>
                 <dt><kbd>R trigger</kbd><kbd>L trigger</kbd></dt><dd>speed up · slow down (or pinch)</dd>
                 <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>aberration · Doppler</dd>
-                <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>beaming · stop</dd>
-                <dt><kbd>R stick click</kbd></dt><dd>hide or show the speed panel</dd>
-            </dl>
+                <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>beaming · stop</dd>            </dl>
             <div class="rule"></div>
             <span class="note">Light here crawls at 20 m/s, so the effects of near-light speed are what you see.
                 Each vertex is drawn where its light appears to come from in your moving frame (aberration);
@@ -424,7 +422,7 @@ const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1
 const controllerModels = new XRControllerModelFactory();
 const prev = {};
 const selecting = { left: false, right: false };        // trigger held, or a pinch with hand tracking
-let turnArmed = true;
+const TURN_RATE = 0.9;                                  // rad/s at full left-stick deflection
 for (let i = 0; i < 2; i++) {
     const grip = renderer.xr.getControllerGrip(i);
     grip.add(controllerModels.createControllerModel(grip));
@@ -463,14 +461,13 @@ function pollXRInput(dt) {
     // to speed up and the left to slow down.
     const throttle = -(ly || ry) + (selecting.right ? 1 : 0) - (selecting.left ? 1 : 0);
     if (throttle) setTarget(ship.target + THREE.MathUtils.clamp(throttle, -1, 1) * 1.2 * dt);
-    if (Math.abs(lx) > 0.6) { if (turnArmed) { ship.heading -= Math.sign(lx) * Math.PI / 6; turnArmed = false; } }
-    else turnArmed = true;
+    // Continuous steering on the left stick, faster the further it's pushed
+    ship.heading -= lx * TURN_RATE * dt;
     const r = pads.right?.buttons || [], l = pads.left?.buttons || [];
     if (edge('a', !!r[4]?.pressed)) toggles.aberration();
     if (edge('b', !!r[5]?.pressed)) toggles.doppler();
     if (edge('x', !!l[4]?.pressed)) toggles.beaming();
     if (edge('y', !!l[5]?.pressed)) setTarget(0);
-    if (edge('rstick', !!r[3]?.pressed)) vrHud.toggle();
 }
 
 const keys = new Set();
@@ -540,12 +537,13 @@ const vrHud = (() => {
     wrist.rotation.x = -Math.PI / 4;
     wrist.renderOrder = 10;
 
-    const DIST = 0.8, DROP = 0.32, WIDTH = 0.34;          // metres in front of and below the eyes
+    const DIST = 0.8, DROP = 0.25, WIDTH = 0.36;          // metres in front of and below the eyes
     const view = new THREE.Mesh(new THREE.PlaneGeometry(WIDTH, WIDTH * H / W), material);
     view.renderOrder = 10;
+    view.frustumCulled = false;
     view.visible = false;
     rig.add(view);
-    let shown = true, yaw = null, following = false;
+    let yaw = null, following = false;
     const _euler = new THREE.Euler();
 
     const GOLD = '#FFB74D', GREY = '#8a8a8a';
@@ -585,8 +583,7 @@ const vrHud = (() => {
     // Keep the view panel below the line of sight; it swings round once the head turns well away
     // from it, rather than being glued to the face.
     function follow(dt) {
-        view.visible = shown;
-        if (!shown) return;
+        view.visible = true;
         const headYaw = _euler.setFromQuaternion(camera.quaternion, 'YXZ').y;   // camera pose is rig-local in XR
         if (yaw === null) yaw = headYaw;
         const diff = Math.atan2(Math.sin(headYaw - yaw), Math.cos(headYaw - yaw));
@@ -601,7 +598,6 @@ const vrHud = (() => {
 
     return {
         wrist, draw, follow,
-        toggle() { shown = !shown; },
         reset() { yaw = null; following = false; view.visible = false; },
     };
 })();
