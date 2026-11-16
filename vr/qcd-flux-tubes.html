@@ -56,6 +56,7 @@
             <dl>
                 <dt><kbd>trigger</kbd></dt><dd>grab a quark (one in each hand)</dd>
                 <dt><kbd>L stick</kbd></dt><dd>move</dd>
+                <dt><kbd>R stick</kbd></dt><dd>↔ turn</dd>
                 <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>pull apart · reset</dd>
                 <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>meson / baryon · QCD / QED</dd>
             </dl>
@@ -130,6 +131,7 @@ scene.add(lab);
 let yaw = 0, pitch = 0;
 function resetView() {
     rig.position.set(0, 0, 0);
+    rig.rotation.set(0, 0, 0);
     camera.position.set(0, 1.6, 0.45);
     const f = new THREE.Vector3(0.2, 1.4, -1.1).sub(camera.position).normalize();     // the lab, with the plot above it
     yaw = Math.atan2(-f.x, -f.z);
@@ -716,9 +718,19 @@ const DEADZONE = 0.15;
 const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
 const edge = (name, down) => { const e = down && !prev[name]; prev[name] = down; return e; };
 const input = { moveX: 0, moveZ: 0, moveY: 0 };
-function pollXRInput() {
+const TURN_RATE = 0.9;                                  // rad/s at full right-stick deflection
+const _head = new THREE.Vector3(), _yAxis = new THREE.Vector3(0, 1, 0);
+function pollXRInput(dt) {
     const gp = gamepads.left, o = gp && gp.axes.length >= 4 ? 2 : 0;
     input.moveX = dz(gp?.axes[o] || 0); input.moveZ = dz(gp?.axes[o + 1] || 0); input.moveY = 0;
+    // Right stick ↔ turns continuously, pivoting about the head so the view turns in place
+    const rp = gamepads.right, ro = rp && rp.axes.length >= 4 ? 2 : 0;
+    const turn = -dz(rp?.axes[ro] || 0) * TURN_RATE * dt;
+    if (turn) {
+        camera.getWorldPosition(_head);
+        rig.position.sub(_head).applyAxisAngle(_yAxis, turn).add(_head);
+        rig.rotation.y += turn;
+    }
     const r = gamepads.right?.buttons || [], l = gamepads.left?.buttons || [];
     if (edge('a', !!r[4]?.pressed)) pull();
     if (edge('b', !!r[5]?.pressed)) setup();
@@ -814,7 +826,7 @@ renderer.setAnimationLoop(now => {
     lastTime = now;
     fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05;
 
-    if (renderer.xr.isPresenting) { pollXRInput(); followHands(); }
+    if (renderer.xr.isPresenting) { pollXRInput(dt); followHands(); }
     else { pollDesktopInput(); camera.rotation.set(pitch, yaw, 0, 'YXZ'); }
     applyMovement(dt);
 

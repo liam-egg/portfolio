@@ -847,12 +847,14 @@ for (let i = 0; i < 2; i++) {
     grip.addEventListener('connected', e => {
         const hand = e.data.handedness;
         gamepads[hand] = e.data.gamepad || null;
-        if (hand === 'right') { grip.add(vrPanel.mesh); rightRay = ray; beam.visible = true; }
+        if (hand === 'left') grip.add(vrPanel.mesh);
+        if (hand === 'right') { rightRay = ray; beam.visible = true; }
     });
     grip.addEventListener('disconnected', e => {
         const hand = e.data.handedness;
         gamepads[hand] = null;
-        if (hand === 'right') { grip.remove(vrPanel.mesh); rightRay = null; beam.visible = false; }
+        if (hand === 'left') grip.remove(vrPanel.mesh);
+        if (hand === 'right') { rightRay = null; beam.visible = false; }
     });
 }
 
@@ -993,41 +995,72 @@ renderer.xr.addEventListener('sessionend', () => {
     document.getElementById('controls').style.display = '';
 });
 
-// Wrist panel on the right controller
+// Wrist panel on the left controller (the right one carries the hover ray). Each line is squeezed
+// to the panel's width rather than allowed to run past its edge.
 const vrPanel = (() => {
+    const W = 512, H = 168, PAD = 22;
     const canvas = document.createElement('canvas');
-    canvas.width = 320; canvas.height = 96;
+    canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.125, 0.0375),
+        new THREE.PlaneGeometry(0.15, 0.15 * H / W),
         new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false })
     );
-    mesh.position.set(0, 0.06, -0.02);
+    mesh.position.set(0, 0.07, -0.02);
     mesh.rotation.x = -Math.PI / 4;
     mesh.renderOrder = 10;
     let last = '';
     return {
         mesh,
-        update(top, bottom) {
-            const key = top + bottom;
+        update(top, middle, bottom) {
+            const key = [top, middle, bottom].join('\n');
             if (key === last) return;
             last = key;
-            ctx.clearRect(0, 0, 320, 96);
+            ctx.clearRect(0, 0, W, H);
             ctx.fillStyle = 'rgba(8,14,26,0.8)';
-            ctx.beginPath(); ctx.roundRect(0, 0, 320, 96, 18); ctx.fill();
-            ctx.fillStyle = '#8ccfff';
-            ctx.font = 'bold 34px monospace';
+            ctx.beginPath(); ctx.roundRect(0, 0, W, H, 20); ctx.fill();
             ctx.textAlign = 'center';
-            ctx.fillText(top, 160, 44);
-            ctx.fillStyle = '#8a9ab0';
-            ctx.font = '22px monospace';
-            ctx.fillText(bottom, 160, 78);
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#8ccfff'; ctx.font = 'bold 38px monospace';
+            ctx.fillText(top, W / 2, 40, W - 2 * PAD);
+            ctx.fillStyle = '#c8d4e3'; ctx.font = '26px monospace';
+            ctx.fillText(middle, W / 2, 92, W - 2 * PAD);
+            ctx.fillStyle = '#8a9ab0'; ctx.font = '24px monospace';
+            ctx.fillText(bottom, W / 2, 136, W - 2 * PAD);
             tex.needsUpdate = true;
         },
     };
 })();
+
+// Where the viewer's head is, in the dataset's own coordinates: for a point cloud the inverse of
+// cloudPoint (so parsecs from Earth for the star catalogue), for a plot the axes' values under it.
+const _head = new THREE.Vector3();
+// Coordinates shown together share one number of decimals, set by the largest (3 significant figures)
+function fmtCoords(...vs) {
+    const scale = Math.max(...vs.map(Math.abs), 1e-9);
+    const decimals = THREE.MathUtils.clamp(2 - Math.floor(Math.log10(scale)), 0, 6);
+    return vs.map(v => { const s = v.toFixed(decimals); return /^-0\.?0*$/.test(s) ? s.slice(1) : s; });
+}
+function headPosition(d) {
+    camera.getWorldPosition(_head);
+    const ux = _head.x, uy = _head.y, uz = -_head.z;    // back to the bundle's (Unity) axes
+    if (d.type === 'PointCloud') {
+        const s = HALF * state.zoom / d.reach, [fx, fy, fz] = d.focus;
+        const x = fx + ux / s, y = fy + uz / s, z = fz + (uy - HALF) / s;
+        const unit = d.titleX.match(/\[(.+)\]/)?.[1] ?? '';
+        const from = Math.hypot(x - fx, y - fy, z - fz);
+        return { at: `at ${fmtCoords(x, y, z).join(', ')} ${unit}`.trim(), from: `${fmtDistance(from)} ${unit} from ${d.focusLabel || 'focus'}` };
+    }
+    const G = GRID_WIDTH;
+    const x = d.xmin + (ux / G + 0.5) * (d.xmax - d.xmin);
+    const y = d.ymin + (uz / G + 0.5) * (d.ymax - d.ymin);
+    const [h] = fmtCoords(uy / VERTICAL_SCALE * d.max);
+    if (d.type === 'TH1') return { at: `at x ${fmtCoords(x)[0]} · height ${h}` };
+    const [fx, fy] = fmtCoords(x, y);
+    return { at: `at x ${fx}, y ${fy} · height ${h}` };
+}
 
 // ─── Loop ───────────────────────────────────────────────────────────────────
 const statsEl = document.getElementById('stats');
@@ -1058,8 +1091,10 @@ renderer.setAnimationLoop(now => {
     const cloud = d?.type === 'PointCloud';
     const viewText = cloud ? `±${fmtDistance(d.reach / state.zoom)} ${d.titleX.match(/\[(.+)\]/)?.[1] ?? ''}`.trim() : '';
     if (renderer.xr.isPresenting) {
-        vrPanel.update(d ? `${d.type} · ${cloud ? state.drawn : state.points.length}` : '—',
-            viewText || wText || datasets[state.datasetIndex]?.name || '');
+        const shown = cloud ? state.drawn : state.points.length, where = d ? headPosition(d) : { at: '' };
+        vrPanel.update(d ? `${d.type} · ${shown.toLocaleString()} ${cloud ? 'in view' : 'points'}` : '—',
+            [viewText, wText, where.from].filter(Boolean).join(' · ') || datasets[state.datasetIndex]?.name || '',
+            where.at);
     } else if ((statsTimer += dt) > 0.25 && d) {
         statsTimer = 0;
         let body;

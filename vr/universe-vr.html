@@ -58,7 +58,7 @@
             <span class="command">controls <span>--vr</span></span>
             <dl>
                 <dt><kbd>L stick</kbd></dt><dd>fly where you look</dd>
-                <dt><kbd>R stick</kbd></dt><dd>↕ height · ↔ snap turn</dd>
+                <dt><kbd>R stick</kbd></dt><dd>↕ height · ↔ turn</dd>
                 <dt><kbd>R trigger</kbd></dt><dd>faster</dd>
                 <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>glow · back to the centre</dd>
                 <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>music · exposure</dd>
@@ -441,7 +441,7 @@ const input = { moveX: 0, moveZ: 0, moveY: 0, fast: false };
 const controllerModels = new XRControllerModelFactory();
 const gamepads = { left: null, right: null };
 const prev = {};
-let turnArmed = true;
+const TURN_RATE = 0.9;                                  // rad/s at full right-stick deflection
 for (let i = 0; i < 2; i++) {
     const grip = renderer.xr.getControllerGrip(i);
     grip.add(controllerModels.createControllerModel(grip));
@@ -466,16 +466,14 @@ function pressed(name, isDown) {
     return edge;
 }
 
-function pollXRInput() {
+function pollXRInput(dt) {
     const [lx, ly] = stick(gamepads.left);
     const [rx, ry] = stick(gamepads.right);
     input.moveX = lx;
     input.moveZ = ly;
     input.moveY = -ry;
     input.fast = (gamepads.right?.buttons?.[0]?.value ?? 0) > 0.5;
-    if (Math.abs(rx) > 0.6) {
-        if (turnArmed) { snapTurn(-Math.sign(rx) * Math.PI / 6); turnArmed = false; }
-    } else turnArmed = true;
+    if (rx) turnAboutHead(-rx * TURN_RATE * dt);        // continuous, faster the further it's pushed
 
     const r = gamepads.right?.buttons || [], l = gamepads.left?.buttons || [];
     if (pressed('a', !!r[4]?.pressed)) setGlow(!settings.glow);
@@ -486,7 +484,7 @@ function pollXRInput() {
 
 // Turn the rig about the head, so the view pivots in place.
 const _head = new THREE.Vector3();
-function snapTurn(angle) {
+function turnAboutHead(angle) {
     camera.getWorldPosition(_head);
     rig.position.sub(_head).applyAxisAngle(new THREE.Vector3(0, 1, 0), angle).add(_head);
     rig.rotation.y += angle;
@@ -589,10 +587,10 @@ const vrPanel = (() => {
             ctx.fillStyle = '#FFB74D';
             ctx.font = 'bold 30px monospace';
             ctx.textAlign = 'center';
-            ctx.fillText(top, 160, 42);
+            ctx.fillText(top, 160, 42, 296);              // maxWidth squeezes long text to fit the panel
             ctx.fillStyle = '#a1a1a1';
             ctx.font = '22px monospace';
-            ctx.fillText(bottom, 160, 76);
+            ctx.fillText(bottom, 160, 76, 296);
             tex.needsUpdate = true;
         },
     };
@@ -610,7 +608,7 @@ renderer.setAnimationLoop(now => {
     lastTime = now;
     fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05;
 
-    if (renderer.xr.isPresenting) pollXRInput();
+    if (renderer.xr.isPresenting) pollXRInput(dt);
     else {
         pollDesktopInput();
         camera.rotation.set(pitch, yaw, 0, 'YXZ');

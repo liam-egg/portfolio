@@ -515,14 +515,12 @@ renderer.xr.addEventListener('sessionstart', () => {
 renderer.xr.addEventListener('sessionend', () => {
     camera.position.set(0, 1.6, 0);
     selecting.left = selecting.right = false;
-    vrHud.reset();
     document.getElementById('hud').style.display = '';
     document.getElementById('controls').style.display = '';
 });
 
-// VR readout: speed and which effects are on, drawn into the scene (HTML overlays don't reach the
-// headset). One canvas feeds two panels: one floating low in the view that trails the head's yaw,
-// so it is there with controllers or hands, and one on the left controller.
+// VR readout on the left controller: speed and which effects are on, drawn into the scene (HTML
+// overlays don't reach the headset). Every line is squeezed to fit the panel rather than overflow it.
 const vrHud = (() => {
     const W = 512, H = 224;
     const canvas = document.createElement('canvas');
@@ -537,15 +535,6 @@ const vrHud = (() => {
     wrist.rotation.x = -Math.PI / 4;
     wrist.renderOrder = 10;
 
-    const DIST = 0.8, DROP = 0.25, WIDTH = 0.36;          // metres in front of and below the eyes
-    const view = new THREE.Mesh(new THREE.PlaneGeometry(WIDTH, WIDTH * H / W), material);
-    view.renderOrder = 10;
-    view.frustumCulled = false;
-    view.visible = false;
-    rig.add(view);
-    let yaw = null, following = false;
-    const _euler = new THREE.Euler();
-
     const GOLD = '#FFB74D', GREY = '#8a8a8a';
     let last = '';
     function draw(beta, gamma, target, ahead, effects) {
@@ -558,13 +547,13 @@ const vrHud = (() => {
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'left';
         ctx.fillStyle = GOLD; ctx.font = 'bold 46px monospace';
-        ctx.fillText(`β ${beta.toFixed(3)}c`, 24, 46);
+        ctx.fillText(`β ${beta.toFixed(3)}c`, 24, 46, 300);
         ctx.textAlign = 'right';
         ctx.fillStyle = '#e0e0e0'; ctx.font = '30px monospace';
-        ctx.fillText(`γ ${gamma.toFixed(2)}`, W - 24, 48);
+        ctx.fillText(`γ ${gamma.toFixed(2)}`, W - 24, 48, W - 48 - 310);
         ctx.textAlign = 'left';
         ctx.fillStyle = GREY; ctx.font = '24px monospace';
-        ctx.fillText(`target ${target.toFixed(3)}c · ahead ×${ahead.toFixed(2)}`, 24, 100);
+        ctx.fillText(`target ${target.toFixed(3)}c · ahead ×${ahead.toFixed(2)}`, 24, 100, W - 48);
         // effect chips: filled gold when on, grey outline when off
         const cw = (W - 48 - 2 * 12) / 3;
         effects.forEach(({ label, button, on }, i) => {
@@ -574,32 +563,13 @@ const vrHud = (() => {
             else { ctx.strokeStyle = '#555'; ctx.lineWidth = 3; ctx.stroke(); }
             ctx.textAlign = 'center';
             ctx.fillStyle = on ? '#000' : GREY;
-            ctx.font = 'bold 22px monospace'; ctx.fillText(label, x + cw / 2, y + 22);
-            ctx.font = '18px monospace'; ctx.fillText(`${on ? 'on' : 'off'} · ${button}`, x + cw / 2, y + 46);
+            ctx.font = 'bold 22px monospace'; ctx.fillText(label, x + cw / 2, y + 22, cw - 12);
+            ctx.font = '18px monospace'; ctx.fillText(`${on ? 'on' : 'off'} · ${button}`, x + cw / 2, y + 46, cw - 12);
         });
         tex.needsUpdate = true;
     }
 
-    // Keep the view panel below the line of sight; it swings round once the head turns well away
-    // from it, rather than being glued to the face.
-    function follow(dt) {
-        view.visible = true;
-        const headYaw = _euler.setFromQuaternion(camera.quaternion, 'YXZ').y;   // camera pose is rig-local in XR
-        if (yaw === null) yaw = headYaw;
-        const diff = Math.atan2(Math.sin(headYaw - yaw), Math.cos(headYaw - yaw));
-        if (Math.abs(diff) > 0.45) following = true;
-        if (following) {
-            yaw += diff * (1 - Math.exp(-6 * dt));
-            if (Math.abs(diff) < 0.03) following = false;
-        }
-        view.position.set(camera.position.x - Math.sin(yaw) * DIST, camera.position.y - DROP, camera.position.z - Math.cos(yaw) * DIST);
-        view.rotation.set(-Math.atan2(DROP, DIST), yaw, 0, 'YXZ');               // tilted up to face the eyes
-    }
-
-    return {
-        wrist, draw, follow,
-        reset() { yaw = null; following = false; view.visible = false; },
-    };
+    return { wrist, draw };
 })();
 
 // ─── Loop ───────────────────────────────────────────────────────────────────
@@ -646,7 +616,6 @@ renderer.setAnimationLoop(now => {
             { label: 'Doppler', button: 'B', on: uniforms.uDoppler.value > 0.5 },
             { label: 'Beaming', button: 'X', on: uniforms.uBeaming.value > 0.5 },
         ]);
-        vrHud.follow(dt);
     } else if ((statsTimer += dt) > 0.2) {
         statsTimer = 0;
         statsEl.textContent = `β ${beta.toFixed(4)}c   γ ${gamma.toFixed(3)}   rapidity ${ship.rapidity.toFixed(2)}\n` +
