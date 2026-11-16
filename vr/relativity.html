@@ -57,10 +57,10 @@
             </dl>
             <span class="command">controls <span>--vr</span></span>
             <dl>
-                <dt><kbd>L stick</kbd></dt><dd>↕ speed · ↔ snap steer</dd>
+                <dt><kbd>stick</kbd></dt><dd>↕ speed (either stick) · ↔ steer (left)</dd>
+                <dt><kbd>R trigger</kbd><kbd>L trigger</kbd></dt><dd>speed up · slow down (or pinch)</dd>
                 <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>aberration · Doppler</dd>
-                <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>beaming · stop</dd>
-            </dl>
+                <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>beaming · stop</dd>            </dl>
             <div class="rule"></div>
             <span class="note">Light here crawls at 20 m/s, so the effects of near-light speed are what you see.
                 Each vertex is drawn where its light appears to come from in your moving frame (aberration);
@@ -420,21 +420,32 @@ document.getElementById('stop').addEventListener('click', () => setTarget(0));
 const DEADZONE = 0.15;
 const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
 const controllerModels = new XRControllerModelFactory();
-const gamepads = { left: null, right: null };
 const prev = {};
-let turnArmed = true;
+const selecting = { left: false, right: false };        // trigger held, or a pinch with hand tracking
+const TURN_RATE = 0.9;                                  // rad/s at full left-stick deflection
 for (let i = 0; i < 2; i++) {
     const grip = renderer.xr.getControllerGrip(i);
     grip.add(controllerModels.createControllerModel(grip));
     rig.add(grip);
-    grip.addEventListener('connected', e => {
-        gamepads[e.data.handedness] = e.data.gamepad || null;
-        if (e.data.handedness === 'left') grip.add(vrPanel.mesh);
-    });
-    grip.addEventListener('disconnected', e => {
-        gamepads[e.data.handedness] = null;
-        if (e.data.handedness === 'left') grip.remove(vrPanel.mesh);
-    });
+    grip.addEventListener('connected', e => { if (e.data.handedness === 'left') grip.add(vrHud.wrist); });
+    grip.addEventListener('disconnected', e => { if (e.data.handedness === 'left') grip.remove(vrHud.wrist); });
+    // Select (trigger, or pinch with hands) is the one input every headset and hand-tracking mode has
+    const ray = renderer.xr.getController(i);
+    rig.add(ray);
+    let hand = null;
+    ray.addEventListener('connected', e => { hand = e.data.handedness; });
+    ray.addEventListener('disconnected', () => { if (hand in selecting) selecting[hand] = false; hand = null; });
+    ray.addEventListener('selectstart', () => { if (hand in selecting) selecting[hand] = true; });
+    ray.addEventListener('selectend', () => { if (hand in selecting) selecting[hand] = false; });
+}
+// The controllers' gamepads, read from the session each frame rather than kept from the 'connected'
+// event, so a controller that wakes, reconnects or swaps in for hand tracking is always the live one.
+function xrGamepads() {
+    const pads = { left: null, right: null };
+    for (const src of renderer.xr.getSession()?.inputSources ?? []) {
+        if (src.gamepad && src.handedness in pads) pads[src.handedness] = src.gamepad;
+    }
+    return pads;
 }
 function stick(gp) {
     if (!gp) return [0, 0];
@@ -444,11 +455,15 @@ function stick(gp) {
 const edge = (name, down) => { const e = down && !prev[name]; prev[name] = down; return e; };
 
 function pollXRInput(dt) {
-    const [lx, ly] = stick(gamepads.left);
-    if (ly) setTarget(ship.target - ly * 1.2 * dt);
-    if (Math.abs(lx) > 0.6) { if (turnArmed) { ship.heading -= Math.sign(lx) * Math.PI / 6; turnArmed = false; } }
-    else turnArmed = true;
-    const r = gamepads.right?.buttons || [], l = gamepads.left?.buttons || [];
+    const pads = xrGamepads();
+    const [lx, ly] = stick(pads.left), [, ry] = stick(pads.right);
+    // Speed: either stick forward to speed up, back to slow down; or hold the right trigger (pinch)
+    // to speed up and the left to slow down.
+    const throttle = -(ly || ry) + (selecting.right ? 1 : 0) - (selecting.left ? 1 : 0);
+    if (throttle) setTarget(ship.target + THREE.MathUtils.clamp(throttle, -1, 1) * 1.2 * dt);
+    // Continuous steering on the left stick, faster the further it's pushed
+    ship.heading -= lx * TURN_RATE * dt;
+    const r = pads.right?.buttons || [], l = pads.left?.buttons || [];
     if (edge('a', !!r[4]?.pressed)) toggles.aberration();
     if (edge('b', !!r[5]?.pressed)) toggles.doppler();
     if (edge('x', !!l[4]?.pressed)) toggles.beaming();
@@ -499,36 +514,91 @@ renderer.xr.addEventListener('sessionstart', () => {
 });
 renderer.xr.addEventListener('sessionend', () => {
     camera.position.set(0, 1.6, 0);
-    gamepads.left = gamepads.right = null;
+    selecting.left = selecting.right = false;
+    vrHud.reset();
     document.getElementById('hud').style.display = '';
     document.getElementById('controls').style.display = '';
 });
 
-// Wrist panel on the left controller
-const vrPanel = (() => {
+// VR readout: speed and which effects are on, drawn into the scene (HTML overlays don't reach the
+// headset). One canvas feeds two panels: one floating low in the view that trails the head's yaw,
+// so it is there with controllers or hands, and one on the left controller.
+const vrHud = (() => {
+    const W = 512, H = 224;
     const canvas = document.createElement('canvas');
-    canvas.width = 320; canvas.height = 96;
+    canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.125, 0.0375), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, toneMapped: false }));
-    mesh.position.set(0, 0.06, -0.02);
-    mesh.rotation.x = -Math.PI / 4;
-    mesh.renderOrder = 10;
+    const material = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
+
+    const wrist = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.14 * H / W), material);
+    wrist.position.set(0, 0.07, -0.02);
+    wrist.rotation.x = -Math.PI / 4;
+    wrist.renderOrder = 10;
+
+    const DIST = 0.8, DROP = 0.25, WIDTH = 0.36;          // metres in front of and below the eyes
+    const view = new THREE.Mesh(new THREE.PlaneGeometry(WIDTH, WIDTH * H / W), material);
+    view.renderOrder = 10;
+    view.frustumCulled = false;
+    view.visible = false;
+    rig.add(view);
+    let yaw = null, following = false;
+    const _euler = new THREE.Euler();
+
+    const GOLD = '#FFB74D', GREY = '#8a8a8a';
     let last = '';
-    return {
-        mesh,
-        update(top, bottom) {
-            if (top + bottom === last) return;
-            last = top + bottom;
-            ctx.clearRect(0, 0, 320, 96);
-            ctx.fillStyle = 'rgba(0,0,0,0.8)';
-            ctx.beginPath(); ctx.roundRect(0, 0, 320, 96, 18); ctx.fill();
+    function draw(beta, gamma, target, ahead, effects) {
+        const key = [beta.toFixed(3), gamma.toFixed(2), target.toFixed(3), ahead.toFixed(2), ...effects.map(e => e.on)].join();
+        if (key === last) return;
+        last = key;
+        ctx.clearRect(0, 0, W, H);
+        ctx.fillStyle = 'rgba(0,0,0,0.78)';
+        ctx.beginPath(); ctx.roundRect(0, 0, W, H, 22); ctx.fill();
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = GOLD; ctx.font = 'bold 46px monospace';
+        ctx.fillText(`β ${beta.toFixed(3)}c`, 24, 46);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#e0e0e0'; ctx.font = '30px monospace';
+        ctx.fillText(`γ ${gamma.toFixed(2)}`, W - 24, 48);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = GREY; ctx.font = '24px monospace';
+        ctx.fillText(`target ${target.toFixed(3)}c · ahead ×${ahead.toFixed(2)}`, 24, 100);
+        // effect chips: filled gold when on, grey outline when off
+        const cw = (W - 48 - 2 * 12) / 3;
+        effects.forEach(({ label, button, on }, i) => {
+            const x = 24 + i * (cw + 12), y = 136;
+            ctx.beginPath(); ctx.roundRect(x, y, cw, 64, 12);
+            if (on) { ctx.fillStyle = GOLD; ctx.fill(); }
+            else { ctx.strokeStyle = '#555'; ctx.lineWidth = 3; ctx.stroke(); }
             ctx.textAlign = 'center';
-            ctx.fillStyle = '#FFB74D'; ctx.font = 'bold 30px monospace'; ctx.fillText(top, 160, 42);
-            ctx.fillStyle = '#a1a1a1'; ctx.font = '22px monospace'; ctx.fillText(bottom, 160, 76);
-            tex.needsUpdate = true;
-        },
+            ctx.fillStyle = on ? '#000' : GREY;
+            ctx.font = 'bold 22px monospace'; ctx.fillText(label, x + cw / 2, y + 22);
+            ctx.font = '18px monospace'; ctx.fillText(`${on ? 'on' : 'off'} · ${button}`, x + cw / 2, y + 46);
+        });
+        tex.needsUpdate = true;
+    }
+
+    // Keep the view panel below the line of sight; it swings round once the head turns well away
+    // from it, rather than being glued to the face.
+    function follow(dt) {
+        view.visible = true;
+        const headYaw = _euler.setFromQuaternion(camera.quaternion, 'YXZ').y;   // camera pose is rig-local in XR
+        if (yaw === null) yaw = headYaw;
+        const diff = Math.atan2(Math.sin(headYaw - yaw), Math.cos(headYaw - yaw));
+        if (Math.abs(diff) > 0.45) following = true;
+        if (following) {
+            yaw += diff * (1 - Math.exp(-6 * dt));
+            if (Math.abs(diff) < 0.03) following = false;
+        }
+        view.position.set(camera.position.x - Math.sin(yaw) * DIST, camera.position.y - DROP, camera.position.z - Math.cos(yaw) * DIST);
+        view.rotation.set(-Math.atan2(DROP, DIST), yaw, 0, 'YXZ');               // tilted up to face the eyes
+    }
+
+    return {
+        wrist, draw, follow,
+        reset() { yaw = null; following = false; view.visible = false; },
     };
 })();
 
@@ -571,7 +641,12 @@ renderer.setAnimationLoop(now => {
     // the sides stay readable, the forward cone glows overexposed and the view behind goes dark.
     uniforms.uExposure.value = uniforms.uBeaming.value > 0.5 ? ahead ** -3 : 1;
     if (renderer.xr.isPresenting) {
-        vrPanel.update(`β ${beta.toFixed(3)}c`, `γ ${gamma.toFixed(2)} · ahead ×${ahead.toFixed(2)}`);
+        vrHud.draw(beta, gamma, Math.tanh(ship.target), ahead, [
+            { label: 'Aberration', button: 'A', on: uniforms.uAberration.value > 0.5 },
+            { label: 'Doppler', button: 'B', on: uniforms.uDoppler.value > 0.5 },
+            { label: 'Beaming', button: 'X', on: uniforms.uBeaming.value > 0.5 },
+        ]);
+        vrHud.follow(dt);
     } else if ((statsTimer += dt) > 0.2) {
         statsTimer = 0;
         statsEl.textContent = `β ${beta.toFixed(4)}c   γ ${gamma.toFixed(3)}   rapidity ${ship.rapidity.toFixed(2)}\n` +
