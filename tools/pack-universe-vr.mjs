@@ -6,7 +6,7 @@
  *   node tools/pack-universe-vr.mjs "vr/UniverseVR beta" [out-dir = vr/universe-vr]
  *
  * What gets packed:
- *   - galaxies.bin  849,274 Millennium Simulation galaxies as float32 {x, y, z, w}, the box in
+ *   - galaxies.bin  -> datasets/millennium.u16: 849,274 Millennium Simulation galaxies as float32 {x, y, z, w}, the box in
  *                   [-0.5, 0.5]^3 and w (0.05–1) the brightness the sprites are tinted by.
  *                   Re-quantised to uint16 × 4 (8 bytes a galaxy, half the size; error ≈ 1.5e-5 box).
  *   - sprite.DDS    512² BGRA galaxy sprite (mip 0)      -> sprite.png
@@ -34,8 +34,9 @@ for (let i = 0; i < n * 4; i++) {
     const v = (i & 3) === 3 ? f[i] : f[i] + 0.5;           // positions shift to [0, 1]; w already is
     q[i] = Math.round(Math.min(1, Math.max(0, v)) * 65535);
 }
-fs.writeFileSync(path.join(out, 'galaxies.u16'), Buffer.from(q.buffer));
-console.log(`galaxies.u16  ${n} galaxies`);
+fs.mkdirSync(path.join(out, 'datasets'), { recursive: true });
+fs.writeFileSync(path.join(out, 'datasets', 'millennium.u16'), Buffer.from(q.buffer));
+console.log(`datasets/millennium.u16  ${n} galaxies (then run tools/pack-universe-datasets.mjs to rebuild datasets.json)`);
 
 // ─── DDS (uncompressed 32-bit BGRA only — what UniverseVR ships) -> PNG ─────
 function readDDS(file) {

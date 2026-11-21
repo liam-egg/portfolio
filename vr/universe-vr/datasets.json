@@ -1,0 +1,94 @@
+{
+  "format": "universe-datasets@1",
+  "scale": 0.1,
+  "units": "Mpc/h",
+  "cosmology": {
+    "omegaM": 0.25,
+    "omegaL": 0.75
+  },
+  "datasets": [
+    {
+      "id": "millennium",
+      "title": "Millennium Simulation",
+      "kind": "simulation",
+      "description": "A 500 Mpc/h cube of simulated galaxies, as UniverseVR showed it",
+      "file": "datasets/millennium.u16",
+      "count": 849274,
+      "min": [
+        -250,
+        -250,
+        -250
+      ],
+      "max": [
+        250,
+        250,
+        250
+      ],
+      "mirrorZ": true,
+      "credit": "Millennium Simulation, Max Planck Institute for Astrophysics (Springel et al. 2005; Lemson & Virgo Consortium 2006), as packaged in UniverseVR by Markus Lipp"
+    },
+    {
+      "id": "cfa1",
+      "title": "CfA1 survey",
+      "kind": "survey",
+      "description": "The first CfA redshift survey: the northern sky to m ≈ 14.5, 1977–82",
+      "file": "datasets/cfa1.u16",
+      "count": 1832,
+      "min": [
+        -120,
+        -4,
+        -83
+      ],
+      "max": [
+        173,
+        104,
+        96
+      ],
+      "zMax": 0.061,
+      "mirrorZ": false,
+      "credit": "CfA Redshift Survey (Davis, Huchra, Latham & Tonry 1982; Huchra et al. 1983), via the CfA Redshift Catalog (ZCAT)"
+    },
+    {
+      "id": "cfa2",
+      "title": "CfA2 survey",
+      "kind": "survey",
+      "description": "The second CfA survey, which found the Great Wall: to m ≈ 15.5, 1985–95",
+      "file": "datasets/cfa2.u16",
+      "count": 17315,
+      "min": [
+        -234,
+        -12,
+        -209
+      ],
+      "max": [
+        253,
+        345,
+        199
+      ],
+      "zMax": 0.129,
+      "mirrorZ": false,
+      "credit": "CfA2 Redshift Survey (Geller & Huchra 1989; Huchra et al. 1990, 1995), via the CfA Redshift Catalog (ZCAT)"
+    },
+    {
+      "id": "2dfgrs",
+      "title": "2dF Galaxy Redshift Survey",
+      "kind": "survey",
+      "description": "Two thin wedges of sky to z ≈ 0.3, 1997–2002",
+      "file": "datasets/2dfgrs.u16",
+      "count": 221410,
+      "min": [
+        -1237,
+        -942,
+        -882
+      ],
+      "max": [
+        1114,
+        41,
+        603
+      ],
+      "zMax": 0.485,
+      "mirrorZ": false,
+      "credit": "2dF Galaxy Redshift Survey final data release (Colless et al. 2001, 2003), Anglo-Australian Observatory"
+    }
+  ]
+}

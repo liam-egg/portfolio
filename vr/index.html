@@ -96,20 +96,10 @@
     #visuals {
         position: relative;
         margin-bottom: 50px;
-        padding-bottom: 30px;
 
         display: flex;
         flex-direction: column;
         gap: 10px;
-    }
-    #visuals::after {
-        content: '';
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        height: 2px;
-        background: linear-gradient(to right, transparent, color-mix(in srgb, var(--gold) 45%, transparent) 15%, color-mix(in srgb, var(--gold) 45%, transparent) 85%, transparent);
     }
     #visuals > a {
         display: block;
@@ -129,8 +119,7 @@
         grid-template: auto auto / 200px 1fr;
         gap: 8px 41px;
     }
-    /* A thin vertical rule between the path column and the title + description, faded at both ends
-       like the gold rule under the list */
+    /* A thin solid grey rule between the path column and the title + description */
     #visuals > a > article::before {
         content: '';
         position: absolute;
@@ -138,12 +127,7 @@
         bottom: 15px;
         left: 220px;
         width: 1px;
-        background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--gold) 35%, transparent) 20%, color-mix(in srgb, var(--gold) 35%, transparent) 80%, transparent);
-        transition: background 0.2s ease;
-    }
-    #visuals > a:hover > article::before,
-    #visuals > a:focus-visible > article::before {
-        background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--gold) 70%, transparent) 20%, color-mix(in srgb, var(--gold) 70%, transparent) 80%, transparent);
+        background: #333;
     }
     #visuals > a:hover > article { scale: 1.01; }
     #visuals > a > article > span.meta {
@@ -222,7 +206,8 @@
             <span class="header">vr<span>_</span></span>
             <span class="lede">Navigate to this link in the browser on a WebXR headset and press <em>Enter VR</em> to step inside.
                 Scenes marked <em>original</em> are mine; the <em>ports</em> rebuild other people's VR projects for the
-                browser, most from Jay Hauser's VR for Physics lab at UCLA, and name who made the original.</span>
+                browser, most from Jay Hauser's VR for Physics lab at UCLA, and name who made the original. Those
+                <em>based on</em> someone's project go further than it did.</span>
             <nav id="visuals"></nav>
             <a class="back" href="/">Back home</a>
         </section>

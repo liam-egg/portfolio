@@ -1,5 +1,10 @@
-/* Every visual on /vr, in the order vr/index.html lists them. `author` names whoever made a ported
-   project; visuals without one are original to this site. */
+/* Every visual on /vr, in the order vr/index.html lists them. Credit, as the hub shows it:
+     no `author`                  "original": made for this site
+     `author`                     "port · <author>": someone else's VR project rebuilt for the browser
+     `author` + `extended: true`  "based on · <author>": a port grown well past the original (new data,
+                                  new modes); the page itself credits what was added
+   Data credits (catalogues, simulations, music) belong on the scene's own page, next to the data, not
+   here: universe-vr.html reads each dataset's credit from vr/universe-vr/datasets.json. */
 const SITE_VISUALS = [
     {
         slug: 'fractals',
@@ -12,7 +17,8 @@ const SITE_VISUALS = [
         url: 'vr/universe-vr.html',
         title: 'UniverseVR',
         author: 'Markus Lipp',
-        description: "An Oculus DK2 demo, rebuilt for WebXR from its shaders. Fly through 849,274 galaxies from the Millennium Simulation, rendered as glowing sprites and colour-mapped as the original did."
+        extended: true,
+        description: "An Oculus DK2 demo, rebuilt for WebXR from its shaders. Fly through 849,274 galaxies from the Millennium Simulation, or switch to the real sky: the CfA surveys that found the Great Wall and 221,410 galaxies of the 2dF survey, all drawn to one scale."
     },
     {
         slug: 'root',
@@ -78,7 +84,7 @@ function renderVisualList(containerSelector, rootPrefix) {
         path.textContent = '/' + visual.url;
         const origin = document.createElement('span');
         origin.className = visual.author ? 'origin port' : 'origin';
-        origin.textContent = visual.author ? `port · ${visual.author}` : 'original';
+        origin.textContent = !visual.author ? 'original' : `${visual.extended ? 'based on' : 'port'} · ${visual.author}`;
         meta.append(path, origin);
         article.appendChild(meta);
 
