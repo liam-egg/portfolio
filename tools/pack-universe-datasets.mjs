@@ -18,6 +18,8 @@
  *               B1950 RA/Dec, Zwicky magnitude, heliocentric velocity in km/s).
  *   2dfgrs      the 2dF Galaxy Redshift Survey final release (raw/2dfgrs.idz, the best-observation
  *               catalogue: one object line, then one line per spectrum). Redshifts of quality ≥ 3.
+ *   sdss, boss  SDSS DR17 spectroscopic galaxies (raw/sdss_sample.csv, raw/boss_eboss_100k.csv), ~100k
+ *               each, downloaded from SkyServer with the queries in SDSS_QUERIES below.
  *
  * Surveys are placed as we see them: the Milky Way at the origin, celestial north up (+y), RA 0 along
  * +x and RA 6h along −z, at the comoving distance of each redshift in the Millennium cosmology
@@ -42,7 +44,7 @@ const OMEGA_M = 0.25, OMEGA_L = 0.75;                   // the Millennium Simula
 
 // ─── Cosmology ──────────────────────────────────────────────────────────────
 // Comoving distance D_C(z) = (c/H0) ∫ dz' / E(z'), tabulated once (Simpson's rule) and interpolated.
-const Z_MAX = 0.6, Z_STEPS = 6000;
+const Z_MAX = 1.3, Z_STEPS = 13000;                     // eBOSS reaches z ≈ 1.1
 const comovingTable = (() => {
     const E = z => Math.sqrt(OMEGA_M * (1 + z) ** 3 + OMEGA_L);
     const t = new Float64Array(Z_STEPS + 1), dz = Z_MAX / Z_STEPS;
@@ -144,6 +146,29 @@ function read2dF(file) {
     return galaxies;
 }
 
+// ─── SDSS (SkyServer CSV) ───────────────────────────────────────────────────
+// A "#Table1" line, then a header "ra,dec,z,mag" (J2000 degrees, redshift, a magnitude); see SDSS_QUERIES.
+function readSDSS(file) {
+    const galaxies = [];
+    let bad = 0;
+    const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+    if (lines[1] !== 'ra,dec,z,mag') throw new Error(`${file}: expected SkyServer CSV with ra,dec,z,mag (got "${lines[0].slice(0, 60)}")`);
+    for (const line of lines.slice(2)) {
+        if (!line) continue;
+        const [ra, dec, z, m] = line.split(',').map(Number);
+        if (!(z > 0 && z < Z_MAX) || ![ra, dec, m].every(Number.isFinite) || m <= 0) { bad++; continue; }
+        galaxies.push({ p: place(ra / 15, dec, comoving(z)), z, m });
+    }
+    console.log(`  ${path.basename(file)}: ${galaxies.length.toLocaleString()} rows, ${bad} without a usable redshift or magnitude skipped`);
+    return galaxies;
+}
+// How the two SDSS files were made: SkyServer DR17 SQL search (skyserver.sdss.org/dr17, Search → SQL,
+// output CSV). Every 6th / 17th fibre keeps about 100k galaxies spread evenly over each survey's sky.
+export const SDSS_QUERIES = {
+    sdss: "SELECT ra, dec, z, petroMag_r AS mag FROM SpecPhoto WHERE survey='sdss' AND class='GALAXY' AND zWarning=0 AND z BETWEEN 0.002 AND 0.4 AND petroMag_r < 17.77 AND fiberID % 6 = 0",
+    boss: "SELECT ra, dec, z, cModelMag_i AS mag FROM SpecPhoto WHERE survey IN ('boss','eboss') AND class='GALAXY' AND zWarning=0 AND z BETWEEN 0.05 AND 1.2 AND fiberID % 17 = 0",
+};
+
 // ─── Manifest ───────────────────────────────────────────────────────────────
 // The page lists datasets in this order; credit is shown in its HUD while the dataset is on screen.
 const datasets = [{
@@ -166,9 +191,15 @@ const surveys = [
     { id: '2dfgrs', title: '2dF Galaxy Redshift Survey', read: () => read2dF(path.join(rawDir, '2dfgrs.idz')),
         description: 'Two thin wedges of sky to z ≈ 0.3, 1997–2002',
         credit: '2dF Galaxy Redshift Survey final data release (Colless et al. 2001, 2003), Anglo-Australian Observatory' },
+    { id: 'sdss', title: 'SDSS main galaxy sample', file: 'sdss_sample.csv', read: () => readSDSS(path.join(rawDir, 'sdss_sample.csv')),
+        description: 'A sixth of the Sloan survey’s flux-limited galaxies (r < 17.77) to z ≈ 0.3, 2000–08',
+        credit: 'Sloan Digital Sky Survey DR17 (Abdurro’uf et al. 2022), main galaxy sample (Strauss et al. 2002); SDSS is funded by the Alfred P. Sloan Foundation, the participating institutions and the US DOE Office of Science' },
+    { id: 'boss', title: 'SDSS BOSS / eBOSS', file: 'boss_eboss_100k.csv', read: () => readSDSS(path.join(rawDir, 'boss_eboss_100k.csv')),
+        description: 'Luminous red and emission-line galaxies from BOSS and eBOSS, out to z ≈ 1.1, 2009–19',
+        credit: 'Sloan Digital Sky Survey DR17 (Abdurro’uf et al. 2022): BOSS (Dawson et al. 2013) and eBOSS (Dawson et al. 2016); SDSS is funded by the Alfred P. Sloan Foundation, the participating institutions and the US DOE Office of Science' },
 ];
 for (const s of surveys) {
-    const file = path.join(rawDir, s.id === '2dfgrs' ? '2dfgrs.idz' : `${s.id}.txt`);
+    const file = path.join(rawDir, s.file ?? (s.id === '2dfgrs' ? '2dfgrs.idz' : `${s.id}.txt`));
     if (!fs.existsSync(file)) { console.warn(`${s.id}: ${file} missing, left out of the manifest`); continue; }
     const packed = writeSurvey(s.id, s.read());
     datasets.push({ id: s.id, title: s.title, kind: 'survey', description: s.description, file: `datasets/${s.id}.u16`, ...packed, mirrorZ: false, credit: s.credit });

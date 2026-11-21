@@ -335,9 +335,9 @@ function selectNearGalaxies(eye) {
 }
 
 // Redshift at a comoving distance (Mpc/h), for the readout: D_C(z) in the manifest's flat cosmology,
-// tabulated to z = 1 and inverted by interpolation.
+// tabulated to z = 2 (eBOSS reaches 1.2) and inverted by interpolation.
 const redshiftAt = (() => {
-    const { omegaM, omegaL } = manifest.cosmology, N = 2000, Z = 1, dz = Z / N;
+    const { omegaM, omegaL } = manifest.cosmology, N = 4000, Z = 2, dz = Z / N;
     const D = new Float64Array(N + 1);
     for (let i = 1; i <= N; i++) {
         const z = (i - 0.5) * dz;

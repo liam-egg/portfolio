@@ -89,6 +89,48 @@
       "zMax": 0.485,
       "mirrorZ": false,
       "credit": "2dF Galaxy Redshift Survey final data release (Colless et al. 2001, 2003), Anglo-Australian Observatory"
+    },
+    {
+      "id": "sdss",
+      "title": "SDSS main galaxy sample",
+      "kind": "survey",
+      "description": "A sixth of the Sloan survey’s flux-limited galaxies (r < 17.77) to z ≈ 0.3, 2000–08",
+      "file": "datasets/sdss.u16",
+      "count": 101290,
+      "min": [
+        -1047,
+        -159,
+        -704
+      ],
+      "max": [
+        1002,
+        954,
+        871
+      ],
+      "zMax": 0.391,
+      "mirrorZ": false,
+      "credit": "Sloan Digital Sky Survey DR17 (Abdurro’uf et al. 2022), main galaxy sample (Strauss et al. 2002); SDSS is funded by the Alfred P. Sloan Foundation, the participating institutions and the US DOE Office of Science"
+    },
+    {
+      "id": "boss",
+      "title": "SDSS BOSS / eBOSS",
+      "kind": "survey",
+      "description": "Luminous red and emission-line galaxies from BOSS and eBOSS, out to z ≈ 1.1, 2009–19",
+      "file": "datasets/boss.u16",
+      "count": 101027,
+      "min": [
+        -2353,
+        -443,
+        -2025
+      ],
+      "max": [
+        2723,
+        2247,
+        2153
+      ],
+      "zMax": 1.2,
+      "mirrorZ": false,
+      "credit": "Sloan Digital Sky Survey DR17 (Abdurro’uf et al. 2022): BOSS (Dawson et al. 2013) and eBOSS (Dawson et al. 2016); SDSS is funded by the Alfred P. Sloan Foundation, the participating institutions and the US DOE Office of Science"
     }
   ]
 }
