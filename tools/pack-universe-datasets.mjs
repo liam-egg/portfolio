@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /*
- * Packs the galaxy datasets universe-vr.html can switch between into one format, and writes the
- * manifest the page reads (vr/universe-vr/datasets.json).
+ * Packs the galaxy datasets universe.html can switch between into one format, and writes the
+ * manifest the page reads (vr/universe/datasets.json).
  *
- *   node tools/pack-universe-datasets.mjs [raw-dir = vr/universe-vr/raw] [out-dir = vr/universe-vr]
+ *   node tools/pack-universe-datasets.mjs [raw-dir = vr/universe/raw] [out-dir = vr/universe]
  *
  * Every dataset is <out>/datasets/<id>.u16: uint16 × 4 per galaxy, {x, y, z, w}. Positions are quantised
  * over the per-axis range the manifest gives (Mpc/h); w (0.05–1) is how brightly the galaxy's sprite is
@@ -33,7 +33,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const [rawDir = 'vr/universe-vr/raw', outDir = 'vr/universe-vr'] = process.argv.slice(2);
+const [rawDir = 'vr/universe/raw', outDir = 'vr/universe'] = process.argv.slice(2);
 const datasetsDir = path.join(outDir, 'datasets');
 fs.mkdirSync(datasetsDir, { recursive: true });
 

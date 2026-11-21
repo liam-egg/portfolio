@@ -4,7 +4,7 @@
      `author` + `extended: true`  "based on · <author>": a port grown well past the original (new data,
                                   new modes); the page itself credits what was added
    Data credits (catalogues, simulations, music) belong on the scene's own page, next to the data, not
-   here: universe-vr.html reads each dataset's credit from vr/universe-vr/datasets.json. */
+   here: universe.html reads each dataset's credit from vr/universe/datasets.json. */
 const SITE_VISUALS = [
     {
         slug: 'fractals',
@@ -13,12 +13,12 @@ const SITE_VISUALS = [
         description: 'Raymarched, time-mutating 3D fractals: the Mandelbulb, a quaternion Julia set and a 3D Burning Ship. Scrub, rewind and fast-forward their evolution from inside them.'
     },
     {
-        slug: 'universe-vr',
-        url: 'vr/universe-vr.html',
-        title: 'UniverseVR',
+        slug: 'universe',
+        url: 'vr/universe.html',
+        title: 'Universe',
         author: 'Markus Lipp',
         extended: true,
-        description: "An Oculus DK2 demo, rebuilt for WebXR from its shaders. Fly through 849,274 galaxies from the Millennium Simulation, or switch to the real sky: the CfA surveys that found the Great Wall and 221,410 galaxies of the 2dF survey, all drawn to one scale."
+        description: "Markus Lipp's UniverseVR, an Oculus DK2 demo, rebuilt for WebXR from its shaders and opened up to more data. Fly through 849,274 galaxies from the Millennium Simulation, or switch to the real sky: the CfA surveys that found the Great Wall, the 2dF survey and SDSS out to z ≈ 1, all drawn to one scale and seen from the Milky Way."
     },
     {
         slug: 'root',

@@ -40,7 +40,7 @@
         "rule": "dark-glow",
         "value": "*",
         "files": [
-          "vr/universe-vr.html"
+          "vr/universe.html"
         ],
         "createdAt": "2026-11-03T08:53:45.137Z",
         "reason": "Claude: finding comes from the site's existing shared vr/vr.css (gold button hover shadow), already used by root-vr.html; page adds no glow of its own"

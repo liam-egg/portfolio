@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#000000">
-    <title>UniverseVR</title>
-    <meta name="description" content="Markus Lipp's UniverseVR in the browser: fly through 849,274 galaxies from the Millennium Simulation on a laptop or a WebXR headset.">
+    <title>Universe</title>
+    <meta name="description" content="Fly through the large-scale structure of the universe in the browser or a WebXR headset: the Millennium Simulation from Markus Lipp's UniverseVR, and the CfA, 2dF and SDSS galaxy redshift surveys, all at one scale.">
     <link rel="stylesheet" href="/vr/vr.css">
     <style>
         html, body {
@@ -39,11 +39,11 @@
 <body>
 <div id="hud" class="hud">
     <header>
-        <span>/vr/universe-vr.html</span>
+        <span>/vr/universe.html</span>
         <a href="/vr/"><span>cd </span>..</a>
     </header>
     <section>
-        <span class="name">UniverseVR</span>
+        <span class="name">Universe</span>
         <div class="stats" id="stats">loading galaxies…</div>
         <div class="keys">
             <div class="rule"></div>
@@ -52,7 +52,7 @@
                 <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>fly · arrow keys too</dd>
                 <dt><kbd>Q</kbd><kbd>E</kbd><kbd>Shift</kbd></dt><dd>down / up · faster</dd>
                 <dt><kbd>drag</kbd></dt><dd>look around</dd>
-                <dt><kbd>Enter</kbd><kbd>R</kbd></dt><dd>back to the centre</dd>
+                <dt><kbd>Enter</kbd><kbd>R</kbd></dt><dd>back to the start (a survey's overview)</dd>
                 <dt><kbd>G</kbd><kbd>[</kbd><kbd>]</kbd></dt><dd>glow · exposure</dd>
                 <dt><kbd>N</kbd></dt><dd>next dataset</dd>
                 <dt><kbd>M</kbd><kbd>H</kbd></dt><dd>music · hide help</dd>
@@ -62,7 +62,7 @@
                 <dt><kbd>L stick</kbd></dt><dd>fly where you look</dd>
                 <dt><kbd>R stick</kbd></dt><dd>↕ height · ↔ turn</dd>
                 <dt><kbd>R trigger</kbd></dt><dd>faster</dd>
-                <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>glow · back to the centre</dd>
+                <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>glow · back to the start (a survey's overview)</dd>
                 <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>exposure · next dataset</dd>
                 <dt><kbd>L stick</kbd></dt><dd>press: music</dd>
             </dl>
@@ -128,14 +128,17 @@ const galaxyScene = new THREE.Scene();     // drawn into the intensity buffer
 const overlayScene = new THREE.Scene();    // controllers and wrist panel, drawn after the colour map
 const rig = new THREE.Group();
 overlayScene.add(rig);
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 200);   // near enough to fly into a galaxy
+// Near enough to fly into a galaxy; far enough to take in a whole survey (eBOSS spans ~500 m) from outside
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 6000);
 rig.add(camera);
 
-let yaw = 0, pitch = 0;
+// Home for the current dataset: the simulation's centre, or a survey's overview, `home` metres back along
+// +z looking at the Milky Way (see surveyView).
+let yaw = 0, pitch = 0, home = 0;
 function center() {
-    rig.position.set(0, 0, 0);
+    rig.position.set(0, 0, renderer.xr.isPresenting ? home : 0);
     rig.rotation.set(0, 0, 0);
-    camera.position.set(0, 0, 0);
+    camera.position.set(0, 0, renderer.xr.isPresenting ? 0 : home);
     yaw = 0; pitch = 0;
 }
 center();
@@ -147,12 +150,12 @@ const fail = msg => { errorEl.textContent = msg; document.getElementById('stats'
 const loadTex = url => new Promise((res, rej) => new THREE.TextureLoader().load(url, res, undefined, () => rej(new Error(`${url}: failed to load`))));
 // datasets.json (tools/pack-universe-datasets.mjs) lists every dataset, its range, scale and credit.
 const [manifest, sprite, gradient] = await Promise.all([
-    fetch('universe-vr/datasets.json').then(r => {
-        if (!r.ok) throw new Error(`universe-vr/datasets.json: HTTP ${r.status}`);
+    fetch('universe/datasets.json').then(r => {
+        if (!r.ok) throw new Error(`universe/datasets.json: HTTP ${r.status}`);
         return r.json();
     }),
-    loadTex('universe-vr/sprite.png'),
-    loadTex('universe-vr/gradient.png'),
+    loadTex('universe/sprite.png'),
+    loadTex('universe/gradient.png'),
 ]).catch(e => { fail(e.message); throw e; });
 const SCALE = manifest.scale;                           // metres per Mpc/h
 
@@ -247,7 +250,11 @@ const galaxyMaterial = near => new THREE.ShaderMaterial({
 });
 const galaxies = new THREE.Points(new THREE.BufferGeometry(), galaxyMaterial(false));
 galaxies.frustumCulled = false;
-galaxyScene.add(galaxies);
+// Both galaxy meshes sit in a group that turns a survey to face its overview (identity for the simulation),
+// so the controls never need to roll or tilt the camera.
+const galaxyGroup = new THREE.Group();
+galaxyScene.add(galaxyGroup);
+galaxyGroup.add(galaxies);
 
 const nearGeometry = new THREE.InstancedBufferGeometry();
 nearGeometry.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));   // the quad's corners
@@ -259,7 +266,7 @@ nearGeometry.setAttribute('weight', nearWeight);
 nearGeometry.instanceCount = 0;
 const nearGalaxies = new THREE.Mesh(nearGeometry, galaxyMaterial(true));
 nearGalaxies.frustumCulled = false;
-galaxyScene.add(nearGalaxies);
+galaxyGroup.add(nearGalaxies);
 // Everything within NEAR of the head plus a margin, so neither eye (a few cm off the head) nor a
 // frame's flight (the head pose lags a frame) can carry a galaxy past the edge of the selection.
 const NEAR_REACH = NEAR + 0.4;
@@ -292,10 +299,53 @@ function buildGrid(position, count) {
     return { min, cell, dims, start, byCell, sphere: new THREE.Sphere(centre, Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2) };
 }
 
+// Eigenvalues and unit eigenvectors of a symmetric 3×3 matrix (cyclic Jacobi), largest first.
+function eigenSymmetric3(m) {
+    const a = m.map(r => r.slice()), v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    for (let sweep = 0; sweep < 32; sweep++) {
+        for (const [p, q] of [[0, 1], [0, 2], [1, 2]]) {
+            if (Math.abs(a[p][q]) <= 1e-14 * (Math.abs(a[p][p]) + Math.abs(a[q][q]))) continue;
+            const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+            const t = (theta >= 0 ? 1 : -1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+            const c = 1 / Math.sqrt(t * t + 1), s = t * c;
+            for (let k = 0; k < 3; k++) { const x = a[k][p], y = a[k][q]; a[k][p] = c * x - s * y; a[k][q] = s * x + c * y; }
+            for (let k = 0; k < 3; k++) { const x = a[p][k], y = a[q][k]; a[p][k] = c * x - s * y; a[q][k] = s * x + c * y; }
+            for (let k = 0; k < 3; k++) { const x = v[k][p], y = v[k][q]; v[k][p] = c * x - s * y; v[k][q] = s * x + c * y; }
+        }
+    }
+    return [0, 1, 2].map(i => ({ value: a[i][i], vector: new THREE.Vector3(v[0][i], v[1][i], v[2][i]).normalize() }))
+        .sort((x, y) => y.value - x.value);
+}
+
+// A survey's overview. Its principal axes about the Milky Way (eigenvectors of Σ p pᵀ, about us rather than
+// the mean, so the view stays centred on us) give its thinnest direction, which the overview looks along,
+// and its longest, which lies across the view: a pair of wedges then reads as the familiar hourglass. The
+// group turns the survey so those axes are z and x (a rotation, never a mirror), keeping celestial north
+// upward on screen where it can be, and the camera stands back far enough to fit almost all of it.
+const FIT = Math.tan(THREE.MathUtils.degToRad(35));   // half the 70° vertical field of view
+function surveyView(position, count) {
+    const m = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    for (let i = 0; i < count; i++) for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) m[r][c] += position[i * 3 + r] * position[i * 3 + c];
+    const [long, mid] = eigenSymmetric3(m).map(e => e.vector);
+    if (long.x < 0) long.negate();
+    if (mid.y < 0) mid.negate();
+    const thin = new THREE.Vector3().crossVectors(long, mid);
+    const rotation = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(long, mid, thin).transpose());
+    // Reach along each axis: the 99.5th percentile, so a handful of outliers don't push the view back
+    const reach = axis => {
+        const d = new Float32Array(count);
+        for (let i = 0; i < count; i++) d[i] = Math.abs(position[i * 3] * axis.x + position[i * 3 + 1] * axis.y + position[i * 3 + 2] * axis.z);
+        return d.sort()[Math.floor(0.995 * (count - 1))];
+    };
+    // A wide screen gives the long axis more room than the vertical field of view alone
+    const distance = reach(thin) + 1.15 * Math.max(reach(mid), reach(long) / 1.4) / FIT;
+    return { rotation, distance, speed: Math.max(1, distance / 25) };   // fly proportionally faster round a big survey
+}
+
 async function fetchDataset(meta) {
     if (loaded.has(meta.id)) return loaded.get(meta.id);
-    const buf = await fetch(`universe-vr/${meta.file}`).then(r => {
-        if (!r.ok) throw new Error(`universe-vr/${meta.file}: HTTP ${r.status}`);
+    const buf = await fetch(`universe/${meta.file}`).then(r => {
+        if (!r.ok) throw new Error(`universe/${meta.file}: HTTP ${r.status}`);
         return r.arrayBuffer();
     });
     // uint16 × 4 per galaxy: x, y, z quantised over the manifest's range (Mpc/h), and the weight
@@ -309,7 +359,8 @@ async function fetchDataset(meta) {
         position[i * 3 + 2] = flip * (lo[2] + q[i * 4 + 2] * step[2]);
         weight[i] = q[i * 4 + 3] / 65535;
     }
-    const d = { meta, count, position, weight, grid: buildGrid(position, count) };
+    const view = meta.kind === 'survey' ? surveyView(position, count) : { rotation: new THREE.Quaternion(), distance: 0, speed: 1 };
+    const d = { meta, count, position, weight, grid: buildGrid(position, count), view };
     loaded.set(meta.id, d);
     return d;
 }
@@ -335,9 +386,10 @@ function selectNearGalaxies(eye) {
 }
 
 // Redshift at a comoving distance (Mpc/h), for the readout: D_C(z) in the manifest's flat cosmology,
-// tabulated to z = 2 (eBOSS reaches 1.2) and inverted by interpolation.
+// tabulated to z = 8 (eBOSS reaches 1.2, but its overview stands ~4,000 Mpc/h out, z ≈ 2.8) and inverted
+// by interpolation.
 const redshiftAt = (() => {
-    const { omegaM, omegaL } = manifest.cosmology, N = 4000, Z = 2, dz = Z / N;
+    const { omegaM, omegaL } = manifest.cosmology, N = 8000, Z = 8, dz = Z / N;
     const D = new Float64Array(N + 1);
     for (let i = 1; i <= N; i++) {
         const z = (i - 0.5) * dz;
@@ -369,6 +421,9 @@ async function setDataset(id) {
         nearGeometry.instanceCount = 0;
         data = d;
         loading = null;
+        galaxyGroup.quaternion.copy(d.view.rotation);
+        home = d.view.distance;
+        center();                                       // every dataset opens on its own home view
         errorEl.textContent = '';
         document.getElementById('dataset-note').textContent = `${meta.description}. ${d.count.toLocaleString()} galaxies.`;
         document.getElementById('data-credit').textContent = meta.credit;
@@ -503,7 +558,7 @@ glowButton.addEventListener('click', () => setGlow(!settings.glow));
 exposureInput.addEventListener('input', () => setExposure(+exposureInput.value));
 document.getElementById('center').addEventListener('click', center);
 
-const music = new Audio('universe-vr/music.mp3');
+const music = new Audio('universe/music.mp3');
 music.loop = true;
 music.volume = 0.6;
 function toggleMusic() {
@@ -618,7 +673,7 @@ let speed = 0;
 function applyMovement(dt) {
     camera.getWorldDirection(fwd);
     right.crossVectors(fwd, up).normalize();
-    const v = MOVE_SPEED * (input.fast ? 5 : 1);
+    const v = MOVE_SPEED * (data?.view.speed ?? 1) * (input.fast ? 5 : 1);
     const target = renderer.xr.isPresenting ? rig.position : camera.position;
     const before = target.clone();
     target.addScaledVector(right, input.moveX * v * dt);
@@ -683,7 +738,7 @@ const vrPanel = (() => {
 setExposure(0);
 setDataset(new URLSearchParams(location.search).get('dataset') ?? manifest.datasets[0].id);   // ?dataset=2dfgrs
 const statsEl = document.getElementById('stats');
-const _pos = new THREE.Vector3();
+const _pos = new THREE.Vector3(), _local = new THREE.Vector3(), _toData = new THREE.Quaternion();
 let lastTime = performance.now(), statsTimer = 0, fps = 60;
 const fmt = v => (v >= 0 ? ' ' : '') + v.toFixed(0);
 
@@ -691,7 +746,7 @@ const fmt = v => (v >= 0 ? ' ' : '') + v.toFixed(0);
 // redshift a galaxy there would show, and the sky direction (equatorial: +x RA 0h, −z RA 6h, +y north).
 // The simulation: position in its box (Mpc/h, the box spanning ±250), back in the data's handedness.
 function whereabouts() {
-    const x = _pos.x / SCALE, y = _pos.y / SCALE, z = _pos.z / SCALE;
+    const x = _local.x / SCALE, y = _local.y / SCALE, z = _local.z / SCALE;
     const meta = data.meta;
     if (meta.kind === 'survey') {
         const r = Math.hypot(x, y, z);
@@ -723,7 +778,9 @@ renderer.setAnimationLoop(now => {
     applyMovement(dt);
 
     camera.getWorldPosition(_pos);
-    selectNearGalaxies(_pos);
+    // The eye in the dataset's own frame (undoing the survey's turn), for the near galaxies and the readout
+    _local.copy(_pos).applyQuaternion(_toData.copy(galaxyGroup.quaternion).invert());
+    selectNearGalaxies(_local);
     const where = data ? whereabouts() : null;
     const title = loading ? `loading ${loading.title}…` : data?.meta.title ?? '';
     if (renderer.xr.isPresenting) {

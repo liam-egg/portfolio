@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /*
  * Packs Markus Lipp's UniverseVR beta (a Windows / Oculus DK2 build) into web assets that
- * universe-vr.html renders with three.js + WebXR.
+ * universe.html renders with three.js + WebXR.
  *
- *   node tools/pack-universe-vr.mjs "vr/UniverseVR beta" [out-dir = vr/universe-vr]
+ *   node tools/pack-universe-vr.mjs "vr/UniverseVR beta" [out-dir = vr/universe]
  *
  * What gets packed:
  *   - galaxies.bin  -> datasets/millennium.u16: 849,274 Millennium Simulation galaxies as float32 {x, y, z, w}, the box in
@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 
-const [src, out = 'vr/universe-vr'] = process.argv.slice(2);
+const [src, out = 'vr/universe'] = process.argv.slice(2);
 if (!src) {
     console.error('usage: node tools/pack-universe-vr.mjs <UniverseVR dir> [out-dir]');
     process.exit(1);

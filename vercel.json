@@ -1,6 +1,7 @@
 {
   "redirects": [
-    { "source": "/vr/mandelbulb.html", "destination": "/vr/fractals.html", "permanent": true }
+    { "source": "/vr/mandelbulb.html", "destination": "/vr/fractals.html", "permanent": true },
+    { "source": "/vr/universe-vr.html", "destination": "/vr/universe.html", "permanent": true }
   ],
   "headers": [
     {
