@@ -119,6 +119,7 @@
     }
     #visuals > a:focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
     #visuals > a > article {
+        position: relative;
         padding: 15px 0;
         font-size: 18px;
         color: var(--secondary);
@@ -126,19 +127,44 @@
 
         display: grid;
         grid-template: auto auto / 200px 1fr;
-        gap: 8px;
+        gap: 8px 41px;
+    }
+    /* A thin vertical rule between the path column and the title + description, faded at both ends
+       like the gold rule under the list */
+    #visuals > a > article::before {
+        content: '';
+        position: absolute;
+        top: 15px;
+        bottom: 15px;
+        left: 220px;
+        width: 1px;
+        background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--gold) 35%, transparent) 20%, color-mix(in srgb, var(--gold) 35%, transparent) 80%, transparent);
+        transition: background 0.2s ease;
+    }
+    #visuals > a:hover > article::before,
+    #visuals > a:focus-visible > article::before {
+        background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--gold) 70%, transparent) 20%, color-mix(in srgb, var(--gold) 70%, transparent) 80%, transparent);
     }
     #visuals > a:hover > article { scale: 1.01; }
-    #visuals > a > article > span.path {
+    #visuals > a > article > span.meta {
         grid-area: span 2;
+        padding-top: 8px;
         font-family: 'Fira Code', monospace;
         font-size: 14px;
-        padding-top: 8px;
+
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    #visuals > a > article > span.meta > span.path {
         color: color-mix(in srgb, var(--gold) 70%, transparent);
         transition: color 0.2s ease;
     }
-    #visuals > a:hover > article > span.path,
-    #visuals > a:focus-visible > article > span.path { color: var(--gold); }
+    #visuals > a:hover > article > span.meta > span.path,
+    #visuals > a:focus-visible > article > span.meta > span.path { color: var(--gold); }
+    /* Who made it: "original" or "port · <author>" */
+    #visuals > a > article > span.meta > span.origin { font-size: 12px; color: var(--secondary); }
+    #visuals > a > article > span.meta > span.origin.port { color: var(--teal); }
     /* Titles set in the blackletter of the header's name */
     #visuals > a > article > span.title {
         font-family: 'Aktura', serif;
@@ -174,9 +200,9 @@
         body > header > a.hide-narrow { display: none; }
         main > section > span.header { margin-top: 50px; font-size: 64px; }
         main > section > span.header > span { font-size: 44px; }
-        #visuals > a > article > span.path { padding-top: 0; }
+        #visuals > a > article > span.meta { padding-top: 0; grid-area: auto; flex-direction: row; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
         #visuals > a > article { grid-template: auto / 1fr; }
-        #visuals > a > article > span.path { grid-area: auto; }
+        #visuals > a > article::before { display: none; }      /* one column: nothing to separate */
     }
     @media (prefers-reduced-motion: reduce) {
         main > section > span.header > span { animation: none; }
@@ -194,7 +220,9 @@
     <main>
         <section>
             <span class="header">vr<span>_</span></span>
-            <span class="lede">Navigate to this link in the browser on a WebXR headset and press <em>Enter VR</em> to step inside.</span>
+            <span class="lede">Navigate to this link in the browser on a WebXR headset and press <em>Enter VR</em> to step inside.
+                Scenes marked <em>original</em> are mine; the <em>ports</em> rebuild other people's VR projects for the
+                browser, most from Jay Hauser's VR for Physics lab at UCLA, and name who made the original.</span>
             <nav id="visuals"></nav>
             <a class="back" href="/">Back home</a>
         </section>

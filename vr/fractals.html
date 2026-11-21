@@ -7,10 +7,10 @@
             content="width=device-width, initial-scale=1.0, user-scalable=no"
         />
         <meta name="theme-color" content="#000000" />
-        <title>Mandelbulb VR</title>
+        <title>3D Fractals</title>
         <meta
             name="description"
-            content="A raymarched, time-mutating Mandelbulb fractal you can step inside with WebXR."
+            content="Raymarched, time-mutating 3D fractals you can step inside with WebXR: the Mandelbulb, a quaternion Julia set and a 3D Burning Ship."
         />
         <link rel="stylesheet" href="/vr/vr.css" />
         <style>
@@ -34,6 +34,14 @@
                 user-select: none;
                 pointer-events: none;
             }
+            #controls {
+                bottom: 16px;
+                left: 16px;
+                width: 380px;
+            }
+            #controls select {
+                width: 100%;
+            }
         </style>
         <script type="importmap">
             {
@@ -47,11 +55,11 @@
     <body>
         <div id="hud" class="hud">
             <header>
-                <span>/vr/mandelbulb.html</span>
+                <span>/vr/fractals.html</span>
                 <a href="/vr/"><span>cd </span>..</a>
             </header>
             <section>
-                <span class="name">Mandelbulb</span>
+                <span class="name">3D Fractals</span>
                 <div class="stats" id="stats">loading…</div>
                 <div class="keys">
                     <div class="rule"></div>
@@ -73,8 +81,8 @@
                         <dd>grow / shrink · <kbd>0</kbd> resets size</dd>
                         <dt><kbd>Space</kbd><kbd>R</kbd></dt>
                         <dd>pause · reset time</dd>
-                        <dt><kbd>H</kbd></dt>
-                        <dd>hide help</dd>
+                        <dt><kbd>F</kbd><kbd>H</kbd></dt>
+                        <dd>next fractal · hide help</dd>
                     </dl>
                     <span class="command">controls <span>--vr</span></span>
                     <dl>
@@ -86,8 +94,20 @@
                         <dd>grow · shrink</dd>
                         <dt><kbd>A</kbd><kbd>B</kbd></dt>
                         <dd>pause · reset time</dd>
+                        <dt><kbd>X</kbd></dt>
+                        <dd>next fractal</dd>
                     </dl>
                 </div>
+            </section>
+        </div>
+
+        <div id="controls" class="hud">
+            <header>
+                <span>fractal</span>
+            </header>
+            <section>
+                <select id="fractal" aria-label="Fractal"></select>
+                <span class="note" id="fractal-note"></span>
             </section>
         </div>
 
@@ -127,7 +147,7 @@
             const FRACTAL_CENTER = new THREE.Vector3(0, 1.3, -1.2);
             const FRACTAL_SCALE = 0.4;
             const BOUND_RADIUS = 1.25;
-            const MAX_STEPS_CAP = 96;
+            const MAX_STEPS_CAP = 128;   // the proximity ramp below can push the march this far
             const MAX_SHADOW_CAP = 48;
 
             const SUN_DIR = new THREE.Vector3(0.1, 0.8, 0.6).normalize();
@@ -140,6 +160,7 @@
                 uSteps: { value: 48 },
                 uShadow: { value: 16 },
                 uIter: { value: 7 },
+                uJuliaC: { value: new THREE.Vector4() },
                 uPixel: { value: 0.0008 },
                 uInvModel: { value: new THREE.Matrix4() },
                 uCenter: { value: FRACTAL_CENTER.clone() },
@@ -187,18 +208,17 @@
     }
 `;
 
-            const fractalFragment = `
-    precision highp float;
-    ${commonGLSL}
-    #define BOUND ${BOUND_RADIUS.toFixed(3)}
-
-    uniform float uPhase, uPixel;
-    uniform int uSteps, uShadow, uIter;
-    uniform mat4 uInvModel;
-    uniform vec3 uSunL, uBacL, uUpL;
-    varying vec3 vWorld;
-
-            vec2 mb(vec3 p) {
+            // ─── Fractals ───────────────────────────────────────────────────────
+            // Each is a distance estimator de(p) → (distance to the surface, orbit trap in [0, 1]) in the
+            // bounding sphere's units, compiled into its own material. Time mutates each one: uPhase twists
+            // the bulb and the ship's latitude, uJuliaC walks the Julia constant round a loop in 4D.
+            const FRACTALS = {
+                mandelbulb: {
+                    title: 'Mandelbulb',
+                    note: 'z → zⁿ + c in spherical coordinates, n = 8 (White and Nylander’s power-8 bulb)',
+                    iterations: 7,
+                    glsl: `
+    vec2 de(vec3 p) {
         p = p.xzy;
         vec3 z = p;
         float dr = 1.0, r = 0.0, t0 = 1.0;
@@ -208,12 +228,76 @@
             if (r > 2.0) break;
             float theta = atan(z.y, z.x) * 8.0;
             float phi = (asin(clamp(z.z / r, -1.0, 1.0)) + uPhase) * 8.0;
-            float r2 = r * r, r4 = r2 * r2, r8 = r4 * r4;               dr = 8.0 * (r8 / r) * dr + 1.0;
+            float r2 = r * r, r4 = r2 * r2, r8 = r4 * r4;
+            dr = 8.0 * (r8 / r) * dr + 1.0;
             z = r8 * vec3(cos(theta) * cos(phi), sin(theta) * cos(phi), sin(phi)) + p;
             t0 = min(t0, r8);
         }
         return vec2(0.5 * log(r) * r / dr, t0);
-    }
+    }`,
+                },
+                julia: {
+                    title: 'Quaternion Julia',
+                    note: 'z → z² + c over the quaternions, c fixed; the slice w = 0 of a 4D Julia set',
+                    iterations: 11,
+                    // The set reaches about 1.5 from the origin: shrink it into the sphere.
+                    glsl: `
+    uniform vec4 uJuliaC;
+    vec2 de(vec3 p) {
+        const float S = 1.2;
+        vec4 z = vec4(p.xzy * S, 0.0);
+        float dz2 = 1.0, m2 = dot(z, z), t0 = 1.0;   // |dz/dz₀|², |z|²
+        for (int i = 0; i < 12; i++) {
+            if (i >= uIter) break;
+            dz2 *= 4.0 * m2;                          // dz → 2 z dz
+            z = vec4(z.x * z.x - dot(z.yzw, z.yzw), 2.0 * z.x * z.yzw) + uJuliaC;
+            m2 = dot(z, z);
+            t0 = min(t0, m2);
+            if (m2 > 16.0) break;
+        }
+        // Hubbard–Douady potential estimate: |z| log|z| / |dz|
+        return vec2(0.25 * log(m2) * sqrt(m2 / dz2) / S, t0);
+    }`,
+                },
+                ship: {
+                    title: 'Burning Ship',
+                    note: 'z → (|x|, |y|, |z|)² + c in the bulb’s spherical squaring; its z = 0 slice is the 2D Burning Ship',
+                    iterations: 14,
+                    // The 2D ship spans Re c ≈ −1.8 … 0.6: centre that and scale it into the sphere.
+                    glsl: `
+    vec2 de(vec3 p) {
+        const float S = 1.6;
+        const vec3 CENTRE = vec3(-0.5, -0.2, 0.0);
+        vec3 c = p.xzy * S + CENTRE;
+        vec3 z = c;
+        float dr = 1.0, r = length(z), t0 = 1.0;
+        for (int i = 0; i < 16; i++) {
+            if (i >= uIter) break;
+            r = length(z);
+            if (r > 8.0) break;                       // a wide bailout: a power-2 estimate needs it
+            z = abs(z);                               // the fold that makes it a burning ship
+            float theta = atan(z.y, z.x) * 2.0;
+            float phi = (asin(clamp(z.z / r, -1.0, 1.0)) + uPhase) * 2.0;
+            dr = 2.0 * r * dr + 1.0;
+            z = r * r * vec3(cos(theta) * cos(phi), sin(theta) * cos(phi), sin(phi)) + c;
+            t0 = min(t0, r * r);
+        }
+        return vec2(0.5 * log(r) * r / dr / S, t0);
+    }`,
+                },
+            };
+
+            const fractalFragment = (kind) => `
+    precision highp float;
+    ${commonGLSL}
+    #define BOUND ${BOUND_RADIUS.toFixed(3)}
+
+    uniform float uPhase, uPixel;
+    uniform int uSteps, uShadow, uIter;
+    uniform mat4 uInvModel;
+    uniform vec3 uSunL, uBacL, uUpL;
+    varying vec3 vWorld;
+    ${FRACTALS[kind].glsl}
 
     float softshadow(vec3 ro, vec3 rd, float k) {
         float res = 1.0, t = 0.01;
@@ -221,7 +305,7 @@
             if (i >= uShadow) break;
             vec3 p = ro + rd * t;
             if (dot(p, p) > BOUND * BOUND) break;
-            float h = mb(p).x;
+            float h = de(p).x;
             if (h < 0.001) return 0.02;
             res = min(res, k * h / t);
             t += clamp(h, 0.01, 2.0);
@@ -231,8 +315,8 @@
 
         vec3 nor(vec3 p, float e) {
         const vec2 k = vec2(1.0, -1.0);
-        return normalize(k.xyy * mb(p + k.xyy * e).x + k.yyx * mb(p + k.yyx * e).x +
-                         k.yxy * mb(p + k.yxy * e).x + k.xxx * mb(p + k.xxx * e).x);
+        return normalize(k.xyy * de(p + k.xyy * e).x + k.yyx * de(p + k.yyx * e).x +
+                         k.yxy * de(p + k.yxy * e).x + k.xxx * de(p + k.xxx * e).x);
     }
 
     void main() {
@@ -251,7 +335,7 @@
         float resT = -1.0, resTrap = 0.0;
         for (int i = 0; i < ${MAX_STEPS_CAP}; i++) {
             if (i >= uSteps) break;
-            vec2 c = mb(ro + rd * t);
+            vec2 c = de(ro + rd * t);
             float d = c.x, stp;
             if (d > os) {
                 if (t + d > tFar) { resT = -1.0; break; }                   os = 0.4 * d * d / pd;
@@ -303,21 +387,46 @@
             skyDome.frustumCulled = false;
             scene.add(skyDome);
 
-            const fractal = new THREE.Mesh(
-                new THREE.SphereGeometry(BOUND_RADIUS, 48, 24),
-                new THREE.ShaderMaterial({
+            // One material per fractal, compiled the first time it is shown.
+            const fractalMaterials = {};
+            const fractalMaterial = (kind) =>
+                (fractalMaterials[kind] ??= new THREE.ShaderMaterial({
                     uniforms,
                     vertexShader,
-                    fragmentShader: fractalFragment,
+                    fragmentShader: fractalFragment(kind),
                     side: THREE.BackSide,
                     depthWrite: false,
-                }),
+                }));
+
+            const params = new URLSearchParams(location.search);
+            let fractalKind = params.get('fractal') in FRACTALS ? params.get('fractal') : 'mandelbulb';
+            const fractal = new THREE.Mesh(
+                new THREE.SphereGeometry(BOUND_RADIUS, 48, 24),
+                fractalMaterial(fractalKind),
             );
             fractal.position.copy(FRACTAL_CENTER);
             fractal.scale.setScalar(FRACTAL_SCALE);
             fractal.renderOrder = -1;
             fractal.frustumCulled = false;
             scene.add(fractal);
+
+            const fractalSelect = document.getElementById('fractal');
+            fractalSelect.replaceChildren(
+                ...Object.entries(FRACTALS).map(([k, f]) => new Option(f.title, k)),
+            );
+            function setFractal(kind) {
+                fractalKind = kind;
+                fractal.material = fractalMaterial(kind);
+                uniforms.uIter.value = FRACTALS[kind].iterations;
+                fractalSelect.value = kind;
+                document.getElementById('fractal-note').textContent = FRACTALS[kind].note;
+            }
+            const nextFractal = () => {
+                const kinds = Object.keys(FRACTALS);
+                setFractal(kinds[(kinds.indexOf(fractalKind) + 1) % kinds.length]);
+            };
+            fractalSelect.addEventListener('change', () => setFractal(fractalSelect.value));
+            setFractal(fractalKind);
 
             const input = {
                 moveX: 0,
@@ -355,7 +464,7 @@
 
             const controllerModels = new XRControllerModelFactory();
             const gamepads = { left: null, right: null };
-            const prevButtons = { a: false, b: false };
+            const prevButtons = { a: false, b: false, x: false };
 
             for (let i = 0; i < 2; i++) {
                 const grip = renderer.xr.getControllerGrip(i);
@@ -398,6 +507,9 @@
                 if (b && !prevButtons.b) resetTime();
                 prevButtons.a = a;
                 prevButtons.b = b;
+                const x = !!gamepads.left?.buttons?.[4]?.pressed;
+                if (x && !prevButtons.x) nextFractal();
+                prevButtons.x = x;
             }
 
             const keys = new Set();
@@ -405,7 +517,9 @@
                 pitch = 0;
 
             window.addEventListener('keydown', (e) => {
+                if (e.target.closest?.('select') && e.code !== 'Escape') return;
                 if (e.repeat) return;
+                if (e.code === 'KeyF') nextFractal();
                 keys.add(e.code);
                 if (e.code === 'Space') {
                     input.paused = !input.paused;
@@ -502,6 +616,15 @@
 
                 uniforms.uTime.value = fractalTime;
                 uniforms.uPhase.value = fractalTime * 0.1;
+                // The Julia constant circles Paul Bourke's c = −0.291 − 0.399i + 0.339j + 0.437k on a small
+                // closed loop in 4D, near the edge of the connected sets, where they are most intricate
+                const jt = fractalTime * 0.15;
+                uniforms.uJuliaC.value.set(
+                    -0.291 + 0.08 * Math.sin(jt * 1.2),
+                    -0.399 + 0.08 * Math.sin(jt * 1.7 + 1.0),
+                    0.339 + 0.08 * Math.sin(jt * 1.3 + 2.0),
+                    0.437 + 0.08 * Math.sin(jt * 2.5 + 3.0),
+                );
                 fractal.rotation.y = fractalTime * 0.2;
                 fractal.updateMatrixWorld();
                 uniforms.uInvModel.value.copy(fractal.matrixWorld).invert();
@@ -524,10 +647,9 @@
             }
 
             // Quality levels trade march steps and (on desktop) render resolution for frame rate. Shadow
-            // steps and fractal iterations stay fixed: dropping them changed the lighting, so close-ups,
-            // which fill the screen and slow the frame, came out flat and over-lit.
+            // steps and fractal iterations stay fixed (iterations per fractal): dropping them changed the
+            // lighting, so close-ups, which fill the screen and slow the frame, came out flat and over-lit.
             const SHADOW_STEPS = 32;
-            const ITERATIONS = 7;
             const LEVELS = [
                 // [march steps, desktop resolution scale]
                 [40, 0.5],
@@ -547,12 +669,28 @@
                 lastChange: 0,
             };
             uniforms.uShadow.value = SHADOW_STEPS;
-            uniforms.uIter.value = ITERATIONS;
+
+            // More march steps as you close in. Near the surface the hit tolerance (uPixel × distance)
+            // shrinks and more rays graze the fractal, so a fixed budget runs out on exactly the rays that
+            // make up a close-up: they miss, and show as holes and speckle against the black. The march
+            // stops at its first hit, so a higher cap costs only the rays that need it; the frame-time
+            // controller still lowers the level (and with it the base) if a close-up gets too slow.
+            const PROXIMITY = { far: 2.5, near: 0.6, boost: 0.75 };   // bounding radii from the centre; extra steps at the surface
+            const _eyeWorld = new THREE.Vector3();
+            function proximity() {
+                camera.getWorldPosition(_eyeWorld);
+                const radii = _eyeWorld.distanceTo(fractal.position) / (BOUND_RADIUS * fractal.scale.x);
+                return THREE.MathUtils.clamp((PROXIMITY.far - radii) / (PROXIMITY.far - PROXIMITY.near), 0, 1);
+            }
+            function updateSteps() {
+                const base = LEVELS[quality.level][0];
+                uniforms.uSteps.value = Math.min(MAX_STEPS_CAP, Math.round(base * (1 + PROXIMITY.boost * proximity())));
+            }
 
             function setLevel(l) {
                 quality.level = THREE.MathUtils.clamp(l, 0, quality.max);
-                const [steps, scale] = LEVELS[quality.level];
-                uniforms.uSteps.value = steps;
+                const [, scale] = LEVELS[quality.level];
+                updateSteps();
                 // The XR framebuffer size is fixed for a session, so resolution only adapts on desktop.
                 if (
                     !renderer.xr.isPresenting &&
@@ -600,6 +738,7 @@
                 setLevel(3);
                 uniforms.uPixel.value = 0.0008;
                 document.getElementById('hud').style.display = 'none';
+                document.getElementById('controls').style.display = 'none';
             });
             renderer.xr.addEventListener('sessionend', () => {
                 camera.position.set(0, 1.6, 0);
@@ -609,6 +748,7 @@
                 uniforms.uPixel.value = desktopPixel();
                 gamepads.left = gamepads.right = null;
                 document.getElementById('hud').style.display = '';
+                document.getElementById('controls').style.display = '';
             });
 
             const vrPanel = (() => {
@@ -647,7 +787,7 @@
                         ctx.fillText(rateText, 128, 46);
                         ctx.fillStyle = '#8a9ab0';
                         ctx.font = '24px monospace';
-                        ctx.fillText(timeText, 128, 80);
+                        ctx.fillText(timeText, 128, 80, 236); // squeezed to fit, like the other panels
                         tex.needsUpdate = true;
                     },
                 };
@@ -677,8 +817,9 @@
                 }
                 applyInput(dt);
                 adaptQuality(dt, now);
+                updateSteps();
 
-                const timeText = `t ${fractalTime.toFixed(1)}`;
+                const timeText = `${FRACTALS[fractalKind].title} · t ${fractalTime.toFixed(1)}`;
                 if (renderer.xr.isPresenting) {
                     vrPanel.update(rateLabel(), timeText);
                 } else if ((statsTimer += dt) > 0.25) {

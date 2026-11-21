@@ -64,7 +64,9 @@ function resolveRef(repo, ref, cwd) {
 }
 
 const readJson = text => { try { return JSON.parse(text); } catch { return null; } };
-const withoutSource = bundle => JSON.stringify({ ...bundle, source: undefined });
+// Build metadata, not output: `source` is the commit a bundle came from, and `compiledAt` is a timestamp
+// that bundles from before source tracking still carry (the compiler no longer writes it).
+const withoutSource = bundle => JSON.stringify({ ...bundle, source: undefined, compiledAt: undefined });
 const changedKeys = (a = {}, b = {}) => [...new Set([...Object.keys(a), ...Object.keys(b)])]
     .filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k])).sort();
 const short = sha => sha.slice(0, 8);
@@ -75,7 +77,7 @@ function compareUrl(repo, from, to) {
 }
 
 function describeBundleChanges(before, after) {
-    if (!before) return ['First build recorded from this repository.'];
+    if (!before) return ['First build from this repository.'];
     const lines = [];
     const add = (label, names) => { if (names.length) lines.push(`${label}: ${names.map(n => `\`${n}\``).join(', ')}`); };
     add('Shaders', changedKeys(before.shaders, after.shaders));
@@ -133,7 +135,12 @@ function syncSource(source, tmp) {
 
     const version = after.version ? `${after.version} ` : '';
     const compare = last && changedFiles ? compareUrl(source.repo, last, head.commit) : null;
-    const span = commitCount === null ? 'no earlier build to compare with' : `${commitCount} commit${commitCount === 1 ? '' : 's'} since \`${short(last)}\``;
+    // A bundle checked in before source tracking has output but no commit: this run records its baseline.
+    const baseline = before && !last;
+    const span = commitCount === null
+        ? (baseline ? 'the checked-in bundle records no commit, so this run records one' : 'no earlier build to compare with')
+        : `${commitCount} commit${commitCount === 1 ? '' : 's'} since \`${short(last)}\``;
+    const changes = describeBundleChanges(before, after);
     const body = [
         `## ${source.title}`,
         '',
@@ -141,15 +148,17 @@ function syncSource(source, tmp) {
         '',
         '**Compiled output**',
         '',
-        ...(outputChanged ? describeBundleChanges(before, after).map(l => `- ${l}`) : ['- Unchanged apart from the recorded commit.']),
+        ...(!outputChanged ? [`- Unchanged apart from the recorded commit${baseline ? ': the checked-in bundle already matches this commit' : ''}.`]
+            : changes.length ? changes.map(l => `- ${l}`) : ['- Changed outside the fields listed here; diff the bundle.']),
     ];
     if (flagged.length) {
         body.push('', changedFiles
             ? '**Hand-ported code changed upstream.** A recompile does not update these, so compare them with the port:'
-            : '**No baseline to compare against.** Check that these hand-ported files still match their ports:', '');
+            : `**No baseline to compare against${baseline ? ' (one time only: later runs diff against the commit recorded here)' : ''}.** Check that these hand-ported files still match their ports:`, '');
         for (const h of flagged) body.push(`- [ ] \`${h.file}\`: ${h.port}`);
     }
-    return { title: `${source.title} to ${version}(${short(head.commit)})`, body: body.join('\n') };
+    const title = baseline && !outputChanged ? `${source.title} baseline (${short(head.commit)})` : `${source.title} to ${version}(${short(head.commit)})`;
+    return { title, body: body.join('\n') };
 }
 
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));

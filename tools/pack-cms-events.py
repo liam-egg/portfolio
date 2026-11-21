@@ -35,7 +35,7 @@ if '--per-sample' in args:
     k = args.index('--per-sample')
     per_sample = int(args[k + 1])
     del args[k:k + 2]
-src = args[0] if args else 'vr/data.root'
+src = args[0] if args else 'vr/cms-events/data.root'
 out = args[1] if len(args) > 1 else 'vr/cms-events/events.json'
 
 BTAG = 1.74         # TCHE medium working point, as the tutorial uses

@@ -20,6 +20,7 @@
         #hud { top: 16px; left: 16px; width: 420px; user-select: none; pointer-events: none; }
         #controls { top: 16px; right: 16px; width: 360px; }
         #controls .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        #controls .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; }
         #controls input[type=range] { flex: 1; min-width: 0; }
         #controls label { color: var(--secondary); font-family: 'Fira Code', monospace; font-size: 13px; }
         #controls output { color: var(--gold); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 7ch; text-align: right; }
@@ -53,19 +54,22 @@
                 <dt><kbd>drag</kbd></dt><dd>look around (try looking back)</dd>
                 <dt><kbd>Space</kbd><kbd>Enter</kbd></dt><dd>stop · back to the start</dd>
                 <dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></dt><dd>aberration · Doppler · beaming</dd>
+                <dt><kbd>4</kbd><kbd>5</kbd></dt><dd>stars · objects</dd>
                 <dt><kbd>R</kbd><kbd>H</kbd></dt><dd>look ahead · hide help</dd>
             </dl>
             <span class="command">controls <span>--vr</span></span>
             <dl>
                 <dt><kbd>stick</kbd></dt><dd>↕ speed (either stick) · ↔ steer (left)</dd>
                 <dt><kbd>R trigger</kbd><kbd>L trigger</kbd></dt><dd>speed up · slow down (or pinch)</dd>
-                <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>aberration · Doppler</dd>
-                <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>beaming · stop</dd>            </dl>
+                <dt><kbd>R ray</kbd></dt><dd>point at the left wrist panel and pull the trigger to switch an effect</dd>
+                <dt><kbd>Y</kbd></dt><dd>stop</dd>
+            </dl>
             <div class="rule"></div>
             <span class="note">Light here crawls at 20 m/s, so the effects of near-light speed are what you see.
-                Each vertex is drawn where its light appears to come from in your moving frame (aberration);
-                surfaces reflect a 5,800 K sun as real spectra, shifted by the Doppler factor and turned back into
-                colour through the CIE 1931 eye response; brightness scales as D⁵. Stars are blackbodies, seen at D·T.</span>
+                Aberration only changes the direction light arrives from, so every pixel looks its ray up, through the
+                exact Lorentz transformation, in the world as the station sees it from your eye. Surfaces reflect a
+                5,800 K sun as real spectra, shifted by the Doppler factor and turned back into colour through the
+                CIE 1931 eye response; brightness scales as D⁵. Stars are blackbodies, seen at D·T.</span>
         </div>
     </section>
 </div>
@@ -78,10 +82,14 @@
             <input id="speed" type="range" min="0" max="3.5" step="0.01" value="0" aria-label="Target speed (rapidity)">
             <output id="speed-out">0.000c</output>
         </div>
+        <div class="toggles">
+            <button class="switch" role="switch" id="aberration" aria-checked="true"><span class="track"></span>Aberration</button>
+            <button class="switch" role="switch" id="doppler" aria-checked="true"><span class="track"></span>Doppler</button>
+            <button class="switch" role="switch" id="beaming" aria-checked="false"><span class="track"></span>Beaming</button>
+            <button class="switch" role="switch" id="stars" aria-checked="true"><span class="track"></span>Stars</button>
+            <button class="switch" role="switch" id="objects" aria-checked="true"><span class="track"></span>Objects</button>
+        </div>
         <div class="row">
-            <button id="aberration" aria-pressed="true">Aberration on</button>
-            <button id="doppler" aria-pressed="true">Doppler on</button>
-            <button id="beaming" aria-pressed="false">Beaming off</button>
             <button id="stop">Stop</button>
         </div>
         <div id="error"></div>
@@ -106,14 +114,16 @@ const ALTITUDE = 7;                                     // the ship's deck above
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000, 0);                    // the station views clear to transparent: stars show through
 renderer.toneMapping = THREE.ACESFilmicToneMapping;    // beaming pushes the view ahead far past 1
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
 
-const scene = new THREE.Scene();
+const scene = new THREE.Scene();                        // what is drawn to the screen: stars, the remapped view, the rig
 scene.background = new THREE.Color(0x000000);
+const fieldScene = new THREE.Scene();                   // the world at rest in S, drawn only into the station views
 const rig = new THREE.Group();                          // the ship: at its position in S, turned to its heading
 scene.add(rig);
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 4000);
@@ -196,14 +206,21 @@ const starLUT = (() => {
     return tex;
 })();
 
-// ─── Relativistic shaders ───────────────────────────────────────────────────
+// ─── How the view is made ───────────────────────────────────────────────────
+// Light reaching the eye at one event is the same light in every frame; the ship's motion only changes
+// the direction each ray seems to come from (aberration) and its frequency (Doppler). The ship's view is
+// therefore the station's view from the same point with every direction remapped, which is linear in the
+// light: a star and a surface seen in the same direction go through the same map. So the world is drawn
+// unaberrated, from each eye, into a cube map (the station views below), and every pixel of the final view
+// looks its own ray up there through the exact inverse aberration and applies Doppler and beaming. Moving
+// the vertices instead bent straight edges only at the vertices, into polylines that grew coarse as the
+// view behind magnified, and put surfaces and stars through different maps.
 const uniforms = {
-    uObs: { value: new THREE.Vector3() },               // the eye, in S
+    uObs: { value: new THREE.Vector3() },               // the head, in S (stars, at infinity, need no more)
     uDir: { value: new THREE.Vector3(0, 0, -1) },       // the ship's direction of travel, in S
     uBeta: { value: 0 }, uGamma: { value: 1 },
     uAberration: { value: 1 }, uDoppler: { value: 1 }, uBeaming: { value: 0 },   // beaming starts off: it darkens all but the view ahead
     uSurfaceLUT: { value: surfaceLUT }, uStarLUT: { value: starLUT },
-    uSun: { value: new THREE.Vector3(0.45, 0.8, 0.35).normalize() },
     uPixelRatio: { value: 1 },
     uExposure: { value: 1 },                            // eye adaptation to the beamed light ahead
 };
@@ -216,13 +233,26 @@ const common = /* glsl */`
     vec3 aberrate(vec3 rel) {
         return rel + uDir * ((uGamma - 1.0) * dot(rel, uDir) + uGamma * uBeta * length(rel));
     }
-    // Doppler factor: received over emitted frequency, γ(1 + β cos θ), θ from the direction of travel
+    // The inverse, the boost back by −β: the station-frame direction of light seen along n' (unit)
+    vec3 unaberrate(vec3 n) {
+        return normalize(n + uDir * ((uGamma - 1.0) * dot(n, uDir) - uGamma * uBeta));
+    }
+    // Doppler factor: received over emitted frequency, γ(1 + β cos θ), θ from the direction of travel in S
     float doppler(vec3 rel) {
         float r = length(rel);
         return uGamma * (1.0 + uBeta * (r > 0.0 ? dot(rel, uDir) / r : 0.0));
     }`;
+
+// ─── The field (station frame) ──────────────────────────────────────────────
+// One 30 m cell, repeated: a cube on the floor, a sphere overhead and a striped pillar. The whole
+// field snaps to the cell round the ship, so it never runs out and the snapping is invisible. It is lit
+// in S, where the sun and the surfaces are at rest, and written out as rest-frame linear colour.
+const fieldUniforms = {
+    uEye: { value: new THREE.Vector3() },               // the eye this station view is drawn from
+    uSun: { value: new THREE.Vector3(0.45, 0.8, 0.35).normalize() },
+};
 const surfaceVertex = /* glsl */`
-    ${common}
+    uniform vec3 uEye;
     varying vec3 vRel, vWorld, vNormal, vLocal, vOrigin;
     void main() {
         mat4 m = modelMatrix;
@@ -234,13 +264,10 @@ const surfaceVertex = /* glsl */`
         vLocal = position;
         vOrigin = (m * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
         vNormal = normalize(mat3(m) * normal);
-        vRel = world.xyz - uObs;
-        vec3 shown = uAberration > 0.5 ? aberrate(vRel) : vRel;
-        gl_Position = projectionMatrix * viewMatrix * vec4(uObs + shown, 1.0);
+        vRel = world.xyz - uEye;
+        gl_Position = projectionMatrix * viewMatrix * world;
     }`;
 const surfaceFragment = /* glsl */`
-    ${common}
-    uniform sampler2D uSurfaceLUT;
     uniform vec3 uSun;
     varying vec3 vRel, vWorld, vNormal, vLocal, vOrigin;
     const vec3 PALETTE[6] = vec3[6](vec3(0.85, 0.18, 0.15), vec3(0.2, 0.7, 0.25), vec3(0.18, 0.4, 0.9),
@@ -276,32 +303,17 @@ const surfaceFragment = /* glsl */`
         return mod(floor(vWorld.y / 2.0), 2.0) < 1.0 ? vec3(0.9) : vec3(0.12);
     #endif
     }
-    vec3 dopplerShift(vec3 c, float D) {
-        float u = clamp((log(D) - ${LOG_D[0].toFixed(6)}) / ${(LOG_D[1] - LOG_D[0]).toFixed(6)}, 0.0, 1.0);
-        float x = (u * ${(LUT_W - 1).toFixed(1)} + 0.5) / ${LUT_W.toFixed(1)};
-        return max(c.r * texture2D(uSurfaceLUT, vec2(x, 0.5 / 3.0)).rgb
-                 + c.g * texture2D(uSurfaceLUT, vec2(x, 1.5 / 3.0)).rgb
-                 + c.b * texture2D(uSurfaceLUT, vec2(x, 2.5 / 3.0)).rgb, 0.0);
-    }
     void main() {
-        // Lit in the station frame, where the sun and the surfaces are at rest
         vec3 c = albedo() * (0.3 + 0.7 * max(dot(normalize(vNormal), uSun), 0.0));
-        float D = doppler(vRel);
-        if (uDoppler > 0.5) c = dopplerShift(c, D);
-        if (uBeaming > 0.5) c *= min(pow(D, 5.0), 1e4);
-        c *= uExposure * (1.0 - smoothstep(${FADE[0].toFixed(1)}, ${FADE[1].toFixed(1)}, length(vRel)));
-        gl_FragColor = vec4(c, 1.0);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
+        c *= 1.0 - smoothstep(${FADE[0].toFixed(1)}, ${FADE[1].toFixed(1)}, length(vRel));
+        gl_FragColor = vec4(c, 1.0);                    // alpha 1: surfaces hide the stars behind them
     }`;
-const surface = mode => new THREE.ShaderMaterial({ uniforms, vertexShader: surfaceVertex, fragmentShader: surfaceFragment, defines: { MODE: mode } });
+const surface = mode => new THREE.ShaderMaterial({ uniforms: fieldUniforms, vertexShader: surfaceVertex, fragmentShader: surfaceFragment, defines: { MODE: mode } });
 
-// ─── The field ──────────────────────────────────────────────────────────────
-// One 30 m cell, repeated: a cube on the floor, a sphere overhead and a striped pillar. The whole
-// field snaps to the cell round the ship, so it never runs out and the snapping is invisible.
+// No vertex is moved any more, so the geometry needs no more triangles than its shape.
 const field = new THREE.Group();
-scene.add(field);
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(2 * FADE[1] + 2 * CELL, 2 * FADE[1] + 2 * CELL, 256, 256).rotateX(-Math.PI / 2), surface(0));
+fieldScene.add(field);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(2 * FADE[1] + 2 * CELL, 2 * FADE[1] + 2 * CELL).rotateX(-Math.PI / 2), surface(0));
 field.add(floor);
 function lattice(geometry, mode, offset) {
     const n = (2 * CELLS + 1) ** 2;
@@ -313,13 +325,151 @@ function lattice(geometry, mode, offset) {
     }
     field.add(mesh);
 }
-lattice(new THREE.BoxGeometry(3, 3, 3, 8, 8, 8), 1, [0, 3.5, 0]);
+lattice(new THREE.BoxGeometry(3, 3, 3), 1, [0, 3.5, 0]);
 lattice(new THREE.SphereGeometry(2, 32, 16), 2, [CELL / 2, 12, 0]);
-lattice(new THREE.BoxGeometry(0.8, 24, 0.8, 1, 48, 1).translate(0, 12, 0), 3, [CELL / 2, 0, CELL / 2]);
-field.traverse(o => { o.frustumCulled = false; });       // the shader moves every vertex
+lattice(new THREE.BoxGeometry(0.8, 24, 0.8).translate(0, 12, 0), 3, [CELL / 2, 0, CELL / 2]);
+
+// ─── Station views ──────────────────────────────────────────────────────────
+// Per eye, a cube map of the field from that eye, plus narrow views straight back. Looking back, the
+// whole rear hemisphere comes from a station-frame cone only a few degrees across round −v (4° at
+// β = 0.998), magnified up to γ(1 + β) ≈ 32 times: a cube map spread over 90° a face goes soft there.
+// Up to three nested views, each a quarter the width of the last, cover that cone at the eye's resolution.
+const halfFloat = renderer.extensions.has('EXT_color_buffer_float');
+const viewOptions = {
+    type: halfFloat ? THREE.HalfFloatType : THREE.UnsignedByteType,
+    generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
+};
+const SIZES = { desktop: { cube: 1536, back: 1536 }, xr: { cube: 1024, back: 1024 } };
+const BACK_LEVELS = 3;
+const views = [0, 1].map(() => {
+    const cube = new THREE.WebGLCubeRenderTarget(SIZES.desktop.cube, viewOptions);
+    const backs = Array.from({ length: BACK_LEVELS }, () => new THREE.WebGLRenderTarget(SIZES.desktop.back, SIZES.desktop.back, viewOptions));
+    return { cube, backs, cubeCamera: new THREE.CubeCamera(0.1, 4000, cube), eye: new THREE.Vector3() };
+});
+function sizeViews({ cube, back }) {
+    for (const v of views) { v.cube.setSize(cube, cube); for (const b of v.backs) b.setSize(back, back); }
+}
+const backCamera = new THREE.PerspectiveCamera(10, 1, 0.1, 4000);
+
+// The station-frame half-angles of the back views: the first covers everything seen within 100° of
+// straight back (capped at 60°, where a perspective view stops being worth it), each next a quarter of
+// it. Fewer are drawn when the view behind is barely magnified.
+const THETA_EDGE = Math.cos(THREE.MathUtils.degToRad(80));     // seen 80° from ahead = 100° from behind
+function backCones(beta) {
+    const magnification = Math.sqrt((1 + beta) / (1 - beta));  // 1/D straight back, γ(1 + β)
+    const levels = magnification < 1.5 ? 0 : magnification < 6 ? 1 : magnification < 24 ? 2 : 3;
+    const cosS = (THETA_EDGE - beta) / (1 - beta * THETA_EDGE);
+    const alpha = Math.min(Math.PI - Math.acos(cosS), THREE.MathUtils.degToRad(60));
+    return Array.from({ length: levels }, (_, k) => alpha / 4 ** k);
+}
+
+const _target = new THREE.Vector3();
+function renderStationViews(eyes) {
+    const cones = backCones(uniforms.uAberration.value > 0.5 ? uniforms.uBeta.value : 0);
+    backCamera.position.set(0, 0, 0);
+    backCamera.lookAt(_target.copy(uniforms.uDir.value).negate());
+    backCamera.updateMatrixWorld();
+    const e = backCamera.matrixWorld.elements;
+    composite.uniforms.uBackRight.value.set(e[0], e[1], e[2]);
+    composite.uniforms.uBackUp.value.set(e[4], e[5], e[6]);
+    composite.uniforms.uBackLevels.value = cones.length;
+    cones.forEach((a, k) => { composite.uniforms.uBackTan.value[k] = Math.tan(a); });
+
+    const output = renderer.getRenderTarget(), xr = renderer.xr.enabled;
+    eyes.forEach((eye, i) => {
+        const v = views[i];
+        v.eye.setFromMatrixPosition(eye.matrixWorld);
+        fieldUniforms.uEye.value.copy(v.eye);
+        v.cubeCamera.position.copy(v.eye);
+        v.cubeCamera.update(renderer, fieldScene);     // turns XR off while it draws its six faces
+        renderer.xr.enabled = false;
+        cones.forEach((a, k) => {
+            backCamera.fov = THREE.MathUtils.radToDeg(2 * a);
+            backCamera.updateProjectionMatrix();
+            backCamera.position.copy(v.eye);
+            backCamera.lookAt(_target.copy(v.eye).sub(uniforms.uDir.value));
+            backCamera.updateMatrixWorld();
+            renderer.setRenderTarget(v.backs[k]);
+            renderer.render(fieldScene, backCamera);
+        });
+        renderer.setRenderTarget(output);
+        renderer.xr.enabled = xr;
+    });
+    composite.uniforms.uEye0.value.copy(views[0].eye);
+    composite.uniforms.uEye1.value.copy(eyes.length > 1 ? views[1].eye : views[0].eye);
+}
+
+// ─── The ship's view ────────────────────────────────────────────────────────
+// A sphere round the head, drawn after the stars. Each pixel takes its ray (exact in view space, so it
+// stays precise kilometres from the origin), aberrates it back into S, reads the station view of its own
+// eye, then shifts and beams the light. Where no surface is, the view is transparent and the stars show.
+const sampleBack = k => /* glsl */`{
+        vec2 p = q / uBackTan[${k}];
+        float w = (uBackLevels > ${k} && z > 0.0) ? 1.0 - smoothstep(0.8, 0.95, max(abs(p.x), abs(p.y))) : 0.0;
+        vec4 b = second ? texture2D(uBack1[${k}], p * 0.5 + 0.5) : texture2D(uBack0[${k}], p * 0.5 + 0.5);
+        s = mix(s, b, w);
+    }`;
+const composite = new THREE.ShaderMaterial({
+    uniforms: {
+        ...uniforms,                                    // the same uniform objects, so the ship's state is shared
+        uCube0: { value: views[0].cube.texture }, uCube1: { value: views[1].cube.texture },
+        uBack0: { value: views[0].backs.map(b => b.texture) }, uBack1: { value: views[1].backs.map(b => b.texture) },
+        uEye0: { value: new THREE.Vector3() }, uEye1: { value: new THREE.Vector3() },
+        uBackRight: { value: new THREE.Vector3(1, 0, 0) }, uBackUp: { value: new THREE.Vector3(0, 1, 0) },
+        uBackTan: { value: new Array(BACK_LEVELS).fill(1) }, uBackLevels: { value: 0 },
+    },
+    vertexShader: /* glsl */`
+        varying vec3 vView;
+        void main() {
+            vec4 view = modelViewMatrix * vec4(position, 1.0);
+            vView = view.xyz;
+            gl_Position = projectionMatrix * view;
+        }`,
+    fragmentShader: /* glsl */`
+        ${common}
+        uniform sampler2D uSurfaceLUT;
+        uniform samplerCube uCube0, uCube1;
+        uniform sampler2D uBack0[${BACK_LEVELS}], uBack1[${BACK_LEVELS}];
+        uniform vec3 uEye0, uEye1, uBackRight, uBackUp;
+        uniform float uBackTan[${BACK_LEVELS}];
+        uniform int uBackLevels;
+        varying vec3 vView;
+        vec3 dopplerShift(vec3 c, float D) {
+            float u = clamp((log(D) - ${LOG_D[0].toFixed(6)}) / ${(LOG_D[1] - LOG_D[0]).toFixed(6)}, 0.0, 1.0);
+            float x = (u * ${(LUT_W - 1).toFixed(1)} + 0.5) / ${LUT_W.toFixed(1)};
+            return max(c.r * texture2D(uSurfaceLUT, vec2(x, 0.5 / 3.0)).rgb
+                     + c.g * texture2D(uSurfaceLUT, vec2(x, 1.5 / 3.0)).rgb
+                     + c.b * texture2D(uSurfaceLUT, vec2(x, 2.5 / 3.0)).rgb, 0.0);
+        }
+        void main() {
+            vec3 seen = normalize((vec4(vView, 0.0) * viewMatrix).xyz);      // view → world: the transpose
+            vec3 n = uAberration > 0.5 ? unaberrate(seen) : seen;
+            // Which eye this is: each draws its own station view, so the stereo is the true one
+            bool second = distance(cameraPosition, uEye1) < distance(cameraPosition, uEye0);
+            vec4 s = second ? textureCube(uCube1, n) : textureCube(uCube0, n);
+            float z = -dot(n, uDir);                                           // along −v, the back views' axis
+            vec2 q = vec2(dot(n, uBackRight), dot(n, uBackUp)) / max(z, 1e-4);
+            ${Array.from({ length: BACK_LEVELS }, (_, k) => sampleBack(k)).join('\n')}
+            if (s.a < 0.002) discard;
+            vec3 c = s.rgb / s.a;                                              // texels are premultiplied at edges
+            float D = doppler(n);
+            if (uDoppler > 0.5) c = dopplerShift(c, D);
+            if (uBeaming > 0.5) c *= min(pow(D, 5.0), 1e4);
+            gl_FragColor = vec4(c * uExposure, 1.0);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+            gl_FragColor = vec4(gl_FragColor.rgb * s.a, s.a);
+        }`,
+    side: THREE.BackSide, transparent: true, premultipliedAlpha: true, depthWrite: false,
+});
+const shipView = new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), composite);
+shipView.frustumCulled = false;
+shipView.renderOrder = -0.5;                            // after the stars, before the controllers' rays
+camera.add(shipView);                                   // depth-tested, so the controllers stay in front
 
 // ─── Stars ──────────────────────────────────────────────────────────────────
-// Directions at infinity: aberration turns them, Doppler moves each along its blackbody curve.
+// Directions at infinity, put through the same aberration as the surfaces; Doppler moves each along its
+// blackbody curve.
 const stars = (() => {
     const N = 4000;
     const dir = new Float32Array(N * 3), temp = new Float32Array(N), base = new Float32Array(N), norm = new Float32Array(N);
@@ -375,7 +525,7 @@ const stars = (() => {
         blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
     }));
     points.frustumCulled = false;
-    points.renderOrder = -1;
+    points.renderOrder = -1;                            // before the ship's view, which covers them with surfaces
     return points;
 })();
 scene.add(stars);
@@ -397,18 +547,26 @@ function restart() {
     setTarget(0);
     lookYaw = lookPitch = 0;
 }
-const toggles = {};
-for (const [key, uniform, name] of [['aberration', 'uAberration', 'Aberration'], ['doppler', 'uDoppler', 'Doppler'], ['beaming', 'uBeaming', 'Beaming']]) {
-    const button = document.getElementById(key);
-    toggles[key] = (on = uniforms[uniform].value < 0.5) => {
-        uniforms[uniform].value = on ? 1 : 0;
-        button.textContent = `${name} ${on ? 'on' : 'off'}`;
-        button.setAttribute('aria-pressed', on);
-    };
-    button.addEventListener('click', () => toggles[key]());
+
+// ─── Switches ───────────────────────────────────────────────────────────────
+// The same list drives the desktop switches, the keys 1–5 and the clickable chips on the VR wrist panel.
+const switches = [
+    { key: 'aberration', label: 'Aberration', get: () => uniforms.uAberration.value > 0.5, set: on => { uniforms.uAberration.value = on ? 1 : 0; } },
+    { key: 'doppler', label: 'Doppler', get: () => uniforms.uDoppler.value > 0.5, set: on => { uniforms.uDoppler.value = on ? 1 : 0; } },
+    { key: 'beaming', label: 'Beaming', get: () => uniforms.uBeaming.value > 0.5, set: on => { uniforms.uBeaming.value = on ? 1 : 0; } },
+    { key: 'stars', label: 'Stars', get: () => stars.visible, set: on => { stars.visible = on; } },
+    { key: 'objects', label: 'Objects', get: () => shipView.visible, set: on => { shipView.visible = on; } },
+];
+function toggle(key, on) {
+    const s = switches.find(x => x.key === key);
+    s.set(on ?? !s.get());
+    document.getElementById(key).setAttribute('aria-checked', s.get());
+}
+for (const s of switches) {
+    document.getElementById(s.key).addEventListener('click', () => toggle(s.key));
+    toggle(s.key, s.get());
 }
 speedInput.addEventListener('input', () => setTarget(+speedInput.value));
-// ?beta=0.9 starts the ship already at speed
 // ?beta=0.9 starts the ship already at speed; ?look=180 starts looking that many degrees round (desktop)
 const params = new URLSearchParams(location.search);
 const startBeta = parseFloat(params.get('beta'));
@@ -416,12 +574,81 @@ if (startBeta > 0) { ship.rapidity = Math.min(Math.atanh(Math.min(startBeta, 0.9
 lookYaw = THREE.MathUtils.degToRad(parseFloat(params.get('look')) || 0);
 document.getElementById('stop').addEventListener('click', () => setTarget(0));
 
+// ─── VR wrist panel ─────────────────────────────────────────────────────────
+// Speed, and a chip per switch, drawn into the scene (HTML overlays don't reach the headset). Point the
+// right controller's ray at a chip and pull the trigger to switch it. Every line is squeezed to fit.
+const vrHud = (() => {
+    const W = 512, H = 368;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const material = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
+
+    const wrist = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.2 * H / W), material);
+    wrist.position.set(0, 0.1, -0.03);
+    wrist.rotation.x = -Math.PI / 4;
+    wrist.renderOrder = 10;
+
+    const chips = [...switches.map(s => ({ label: s.label, on: s.get, act: () => toggle(s.key) })),
+        { label: 'Stop', on: null, act: () => setTarget(0) }];
+    const cw = (W - 48 - 2 * 12) / 3, ch = 92;
+    const rects = chips.map((_, i) => ({ x: 24 + (i % 3) * (cw + 12), y: 150 + Math.floor(i / 3) * (ch + 14), w: cw, h: ch }));
+
+    const GOLD = '#FFB74D', GREY = '#8a8a8a';
+    let last = '', hover = -1;
+    function draw(beta, gamma, target, ahead) {
+        const key = [beta.toFixed(3), gamma.toFixed(2), target.toFixed(3), ahead.toFixed(2), hover, ...chips.map(c => c.on?.())].join();
+        if (key === last) return;
+        last = key;
+        ctx.clearRect(0, 0, W, H);
+        ctx.fillStyle = 'rgba(0,0,0,0.78)';
+        ctx.beginPath(); ctx.roundRect(0, 0, W, H, 22); ctx.fill();
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = GOLD; ctx.font = 'bold 46px monospace';
+        ctx.fillText(`β ${beta.toFixed(3)}c`, 24, 46, 300);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#e0e0e0'; ctx.font = '30px monospace';
+        ctx.fillText(`γ ${gamma.toFixed(2)}`, W - 24, 48, W - 48 - 310);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = GREY; ctx.font = '24px monospace';
+        ctx.fillText(`target ${target.toFixed(3)}c · ahead ×${ahead.toFixed(2)}`, 24, 100, W - 48);
+        // Chips: filled gold when on, grey outline when off; the one under the ray is outlined white
+        chips.forEach(({ label, on }, i) => {
+            const { x, y, w, h } = rects[i], isOn = on ? on() : false;
+            ctx.beginPath(); ctx.roundRect(x, y, w, h, 14);
+            if (isOn) { ctx.fillStyle = GOLD; ctx.fill(); }
+            else { ctx.strokeStyle = '#555'; ctx.lineWidth = 3; ctx.stroke(); }
+            if (i === hover) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 5; ctx.stroke(); }
+            ctx.textAlign = 'center';
+            ctx.fillStyle = isOn ? '#000' : i === hover ? '#fff' : GREY;
+            ctx.font = 'bold 24px monospace'; ctx.fillText(label, x + w / 2, y + 34, w - 14);
+            ctx.font = '20px monospace'; ctx.fillText(on ? (isOn ? 'on' : 'off') : 'now', x + w / 2, y + 64, w - 14);
+        });
+        tex.needsUpdate = true;
+    }
+    // uv on the panel → the chip under it, or −1
+    function pick(uv) {
+        const x = uv.x * W, y = (1 - uv.y) * H;
+        return rects.findIndex(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+    }
+    return {
+        wrist, draw, pick,
+        get hover() { return hover; },
+        set hover(i) { hover = i; },
+        click() { if (hover >= 0) chips[hover].act(); },
+    };
+})();
+
 // ─── Input ──────────────────────────────────────────────────────────────────
 const DEADZONE = 0.15;
 const dz = v => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
 const controllerModels = new XRControllerModelFactory();
 const prev = {};
 const selecting = { left: false, right: false };        // trigger held, or a pinch with hand tracking
+const pointer = { ray: null, beam: null };              // the right hand's ray, which works the wrist panel
 const TURN_RATE = 0.9;                                  // rad/s at full left-stick deflection
 for (let i = 0; i < 2; i++) {
     const grip = renderer.xr.getControllerGrip(i);
@@ -432,10 +659,25 @@ for (let i = 0; i < 2; i++) {
     // Select (trigger, or pinch with hands) is the one input every headset and hand-tracking mode has
     const ray = renderer.xr.getController(i);
     rig.add(ray);
+    const beam = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
+        new THREE.LineBasicMaterial({ color: 0xffb74d, transparent: true, opacity: 0.6, toneMapped: false }));
+    beam.visible = false;
+    ray.add(beam);
     let hand = null;
-    ray.addEventListener('connected', e => { hand = e.data.handedness; });
-    ray.addEventListener('disconnected', () => { if (hand in selecting) selecting[hand] = false; hand = null; });
-    ray.addEventListener('selectstart', () => { if (hand in selecting) selecting[hand] = true; });
+    ray.addEventListener('connected', e => {
+        hand = e.data.handedness;
+        if (hand === 'right') Object.assign(pointer, { ray, beam });
+    });
+    ray.addEventListener('disconnected', () => {
+        if (hand in selecting) selecting[hand] = false;
+        if (pointer.ray === ray) { pointer.ray = pointer.beam = null; beam.visible = false; vrHud.hover = -1; }
+        hand = null;
+    });
+    ray.addEventListener('selectstart', () => {
+        // Over a chip, the right trigger presses it instead of speeding up
+        if (hand === 'right' && vrHud.hover >= 0) { vrHud.click(); return; }
+        if (hand in selecting) selecting[hand] = true;
+    });
     ray.addEventListener('selectend', () => { if (hand in selecting) selecting[hand] = false; });
 }
 // The controllers' gamepads, read from the session each frame rather than kept from the 'connected'
@@ -454,7 +696,21 @@ function stick(gp) {
 }
 const edge = (name, down) => { const e = down && !prev[name]; prev[name] = down; return e; };
 
+const raycaster = new THREE.Raycaster(), _rotation = new THREE.Matrix4();
+function pollPointer() {
+    const { ray, beam } = pointer;
+    if (!ray || !vrHud.wrist.parent) { vrHud.hover = -1; if (beam) beam.visible = false; return; }
+    _rotation.identity().extractRotation(ray.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(ray.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(_rotation);
+    const hit = raycaster.intersectObject(vrHud.wrist, false)[0];
+    vrHud.hover = hit ? vrHud.pick(hit.uv) : -1;
+    beam.visible = true;
+    beam.scale.z = hit ? hit.distance : 0.25;           // a short stub until it reaches the panel
+}
+
 function pollXRInput(dt) {
+    pollPointer();
     const pads = xrGamepads();
     const [lx, ly] = stick(pads.left), [, ry] = stick(pads.right);
     // Speed: either stick forward to speed up, back to slow down; or hold the right trigger (pinch)
@@ -463,10 +719,7 @@ function pollXRInput(dt) {
     if (throttle) setTarget(ship.target + THREE.MathUtils.clamp(throttle, -1, 1) * 1.2 * dt);
     // Continuous steering on the left stick, faster the further it's pushed
     ship.heading -= lx * TURN_RATE * dt;
-    const r = pads.right?.buttons || [], l = pads.left?.buttons || [];
-    if (edge('a', !!r[4]?.pressed)) toggles.aberration();
-    if (edge('b', !!r[5]?.pressed)) toggles.doppler();
-    if (edge('x', !!l[4]?.pressed)) toggles.beaming();
+    const l = pads.left?.buttons || [];
     if (edge('y', !!l[5]?.pressed)) setTarget(0);
 }
 
@@ -478,9 +731,8 @@ window.addEventListener('keydown', e => {
     keys.add(e.code);
     if (e.code === 'Space') setTarget(0);
     if (e.code === 'Enter') restart();
-    if (e.code === 'Digit1') toggles.aberration();
-    if (e.code === 'Digit2') toggles.doppler();
-    if (e.code === 'Digit3') toggles.beaming();
+    const digit = /^Digit([1-5])$/.exec(e.code);
+    if (digit) toggle(switches[digit[1] - 1].key);
     if (e.code === 'KeyR') lookYaw = lookPitch = 0;
     if (e.code === 'KeyH') document.getElementById('hud').classList.toggle('hidden');
 });
@@ -509,68 +761,17 @@ el.addEventListener('pointercancel', endDrag);
 
 renderer.xr.addEventListener('sessionstart', () => {
     camera.position.set(0, 0, 0);
+    sizeViews(SIZES.xr);
     document.getElementById('hud').style.display = 'none';
     document.getElementById('controls').style.display = 'none';
 });
 renderer.xr.addEventListener('sessionend', () => {
     camera.position.set(0, 1.6, 0);
+    sizeViews(SIZES.desktop);
     selecting.left = selecting.right = false;
     document.getElementById('hud').style.display = '';
     document.getElementById('controls').style.display = '';
 });
-
-// VR readout on the left controller: speed and which effects are on, drawn into the scene (HTML
-// overlays don't reach the headset). Every line is squeezed to fit the panel rather than overflow it.
-const vrHud = (() => {
-    const W = 512, H = 224;
-    const canvas = document.createElement('canvas');
-    canvas.width = W; canvas.height = H;
-    const ctx = canvas.getContext('2d');
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const material = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
-
-    const wrist = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.14 * H / W), material);
-    wrist.position.set(0, 0.07, -0.02);
-    wrist.rotation.x = -Math.PI / 4;
-    wrist.renderOrder = 10;
-
-    const GOLD = '#FFB74D', GREY = '#8a8a8a';
-    let last = '';
-    function draw(beta, gamma, target, ahead, effects) {
-        const key = [beta.toFixed(3), gamma.toFixed(2), target.toFixed(3), ahead.toFixed(2), ...effects.map(e => e.on)].join();
-        if (key === last) return;
-        last = key;
-        ctx.clearRect(0, 0, W, H);
-        ctx.fillStyle = 'rgba(0,0,0,0.78)';
-        ctx.beginPath(); ctx.roundRect(0, 0, W, H, 22); ctx.fill();
-        ctx.textBaseline = 'middle';
-        ctx.textAlign = 'left';
-        ctx.fillStyle = GOLD; ctx.font = 'bold 46px monospace';
-        ctx.fillText(`β ${beta.toFixed(3)}c`, 24, 46, 300);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = '#e0e0e0'; ctx.font = '30px monospace';
-        ctx.fillText(`γ ${gamma.toFixed(2)}`, W - 24, 48, W - 48 - 310);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = GREY; ctx.font = '24px monospace';
-        ctx.fillText(`target ${target.toFixed(3)}c · ahead ×${ahead.toFixed(2)}`, 24, 100, W - 48);
-        // effect chips: filled gold when on, grey outline when off
-        const cw = (W - 48 - 2 * 12) / 3;
-        effects.forEach(({ label, button, on }, i) => {
-            const x = 24 + i * (cw + 12), y = 136;
-            ctx.beginPath(); ctx.roundRect(x, y, cw, 64, 12);
-            if (on) { ctx.fillStyle = GOLD; ctx.fill(); }
-            else { ctx.strokeStyle = '#555'; ctx.lineWidth = 3; ctx.stroke(); }
-            ctx.textAlign = 'center';
-            ctx.fillStyle = on ? '#000' : GREY;
-            ctx.font = 'bold 22px monospace'; ctx.fillText(label, x + cw / 2, y + 22, cw - 12);
-            ctx.font = '18px monospace'; ctx.fillText(`${on ? 'on' : 'off'} · ${button}`, x + cw / 2, y + 46, cw - 12);
-        });
-        tex.needsUpdate = true;
-    }
-
-    return { wrist, draw };
-})();
 
 // ─── Loop ───────────────────────────────────────────────────────────────────
 const statsEl = document.getElementById('stats');
@@ -601,6 +802,13 @@ renderer.setAnimationLoop(now => {
     if (!renderer.xr.isPresenting) camera.rotation.set(lookPitch, lookYaw, 0, 'YXZ');
     field.position.set(Math.round(ship.position.x / CELL) * CELL, 0, Math.round(ship.position.z / CELL) * CELL);
 
+    // The eyes where they are this frame: the headset's views follow the rig only once updateCamera runs
+    rig.updateMatrixWorld(true);
+    let eyes = [camera];
+    if (renderer.xr.isPresenting) {
+        renderer.xr.updateCamera(camera);
+        eyes = renderer.xr.getCamera().cameras.slice(0, 2);
+    }
     uniforms.uObs.value.copy(camera.getWorldPosition(_eye));
     uniforms.uBeta.value = beta;
     uniforms.uGamma.value = gamma;
@@ -610,12 +818,9 @@ renderer.setAnimationLoop(now => {
     // With beaming the view ahead brightens as D⁵. The eye stops down as D⁻³ of the forward factor:
     // the sides stay readable, the forward cone glows overexposed and the view behind goes dark.
     uniforms.uExposure.value = uniforms.uBeaming.value > 0.5 ? ahead ** -3 : 1;
+    if (shipView.visible) renderStationViews(eyes);
     if (renderer.xr.isPresenting) {
-        vrHud.draw(beta, gamma, Math.tanh(ship.target), ahead, [
-            { label: 'Aberration', button: 'A', on: uniforms.uAberration.value > 0.5 },
-            { label: 'Doppler', button: 'B', on: uniforms.uDoppler.value > 0.5 },
-            { label: 'Beaming', button: 'X', on: uniforms.uBeaming.value > 0.5 },
-        ]);
+        vrHud.draw(beta, gamma, Math.tanh(ship.target), ahead);
     } else if ((statsTimer += dt) > 0.2) {
         statsTimer = 0;
         statsEl.textContent = `β ${beta.toFixed(4)}c   γ ${gamma.toFixed(3)}   rapidity ${ship.rapidity.toFixed(2)}\n` +

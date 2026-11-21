@@ -22,7 +22,7 @@
         "rule": "dark-glow",
         "value": "*",
         "files": [
-          "vr/mandelbulb.html"
+          "vr/fractals.html"
         ],
         "createdAt": "2026-10-29T20:13:17.921Z",
         "reason": "HUD button hover glow (vr/vr.css) is the gold version of index.html's button glow (box-shadow #ffffff70); user asked the HUD to match vr/index.html"
@@ -31,7 +31,7 @@
         "rule": "dark-glow",
         "value": "*",
         "files": [
-          "vr/root.html"
+          "vr/root-vr.html"
         ],
         "createdAt": "2026-10-29T20:13:18.350Z",
         "reason": "HUD button hover glow (vr/vr.css) is the gold version of index.html's button glow (box-shadow #ffffff70); user asked the HUD to match vr/index.html"
@@ -62,6 +62,15 @@
         ],
         "createdAt": "2026-11-03T09:09:35.080Z",
         "reason": "Claude: finding comes from the site's existing shared vr/vr.css (gold button hover shadow), already used by root-vr.html; page adds no glow of its own"
+      },
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "vr/relativity.html"
+        ],
+        "createdAt": "2026-11-20T16:10:00.000Z",
+        "reason": "Claude: finding comes from the site's existing shared vr/vr.css (gold button hover shadow, on the Stop button), already accepted for the other /vr pages; page adds no glow of its own"
       }
     ]
   }

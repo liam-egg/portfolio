@@ -1,4 +1,7 @@
 {
+  "redirects": [
+    { "source": "/vr/mandelbulb.html", "destination": "/vr/fractals.html", "permanent": true }
+  ],
   "headers": [
     {
       "source": "/(src|images)/(.*)",
