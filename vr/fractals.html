@@ -42,6 +42,42 @@
             #controls select {
                 width: 100%;
             }
+            /* The Julia constant: a switch, then one slider per quaternion component */
+            #julia:not([hidden]) {
+                display: grid;
+                grid-template-columns: 2.5ch 1fr 7ch;
+                gap: 6px 10px;
+                align-items: center;
+            }
+            #julia > .head {
+                grid-column: 1 / -1;
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 6px 16px;
+            }
+            #julia > .head > #julia-reset {
+                margin-left: auto;
+            }
+            /* .hud button's all: unset would otherwise override the hidden attribute */
+            #julia [hidden] {
+                display: none !important;
+            }
+            #julia label {
+                color: var(--secondary);
+                font-family: 'Fira Code', monospace;
+                font-size: 13px;
+                text-align: right;
+            }
+            #julia input[type='range'] {
+                width: 100%;
+            }
+            #julia output {
+                color: var(--gold);
+                font-family: 'Fira Code', monospace;
+                font-size: 13px;
+                text-align: right;
+            }
         </style>
         <script type="importmap">
             {
@@ -108,6 +144,29 @@
             <section>
                 <select id="fractal" aria-label="Fractal"></select>
                 <span class="note" id="fractal-note"></span>
+                <div id="julia">
+                    <div class="head">
+                        <button class="switch" role="switch" id="julia-mode" aria-checked="false">
+                            <span class="track"></span>Julia set
+                        </button>
+                        <button class="switch" role="switch" id="julia-animate" aria-checked="true">
+                            <span class="track"></span>Animate c
+                        </button>
+                        <button id="julia-reset">Reset c</button>
+                    </div>
+                    <label for="julia-c0" id="julia-l0">1</label>
+                    <input id="julia-c0" type="range" step="0.001" />
+                    <output id="julia-c0-out"></output>
+                    <label for="julia-c1" id="julia-l1">i</label>
+                    <input id="julia-c1" type="range" step="0.001" />
+                    <output id="julia-c1-out"></output>
+                    <label for="julia-c2" id="julia-l2">j</label>
+                    <input id="julia-c2" type="range" step="0.001" />
+                    <output id="julia-c2-out"></output>
+                    <label for="julia-c3" id="julia-l3">k</label>
+                    <input id="julia-c3" type="range" step="0.001" />
+                    <output id="julia-c3-out"></output>
+                </div>
             </section>
         </div>
 
@@ -139,18 +198,20 @@
                 0.05,
                 200,
             );
-            camera.position.set(0, 1.6, 0);
+            const EYE_HEIGHT = 1.6;                       // the desktop camera's, and a standing headset's typical
+            camera.position.set(0, EYE_HEIGHT, 0);
             rig.add(camera);
 
-            // Starts about 1 m across at chest height, an arm's length or so ahead, so you can lean
-            // in and walk round it; grips / scroll still grow it to room scale.
-            const FRACTAL_CENTER = new THREE.Vector3(0, 1.3, -1.2);
+            // Starts about 1 m across, an arm's length or so ahead and centred at eye height, so the view opens
+            // straight onto it (a headset moves it to the wearer's actual eye height; see centreOnHead). You can
+            // lean in and walk round it; grips / scroll still grow it to room scale.
+            const FRACTAL_CENTER = new THREE.Vector3(0, EYE_HEIGHT, -1.2);
             const FRACTAL_SCALE = 0.4;
             const BOUND_RADIUS = 1.25;
             const MAX_STEPS_CAP = 128;   // the proximity ramp below can push the march this far
             const MAX_SHADOW_CAP = 48;
 
-            const SUN_DIR = new THREE.Vector3(0.1, 0.8, 0.6).normalize();
+            const SUN_DIR = new THREE.Vector3(0.3, 1.0, 0.3).normalize();   // high and a little to the side
             const BAC_DIR = new THREE.Vector3(-SUN_DIR.x, -1.0, -SUN_DIR.z);
             const UP_DIR = new THREE.Vector3(0, 1, 0);
 
@@ -161,6 +222,7 @@
                 uShadow: { value: 16 },
                 uIter: { value: 7 },
                 uJuliaC: { value: new THREE.Vector4() },
+                uJulia: { value: 0 },                      // bulb and ship: 1 draws the Julia set of uJuliaC
                 uPixel: { value: 0.0008 },
                 uInvModel: { value: new THREE.Matrix4() },
                 uCenter: { value: FRACTAL_CENTER.clone() },
@@ -176,17 +238,14 @@
     const vec3 SUN_DIR_W = vec3(${SUN_DIR.toArray()
         .map((v) => v.toFixed(4))
         .join(',')});
-    const vec3 SUN_COL   = vec3(1.50, 1.42, 1.30);
-    const vec3 SKY_COL   = vec3(0.45, 0.80, 1.50);   // fill light on the fractal, not the backdrop
+    // Shading after a clean ShaderToy Mandelbulb: an untextured surface under a warm key light with soft
+    // shadows, a cool sky fill from above, a faint green bounce from below and a little ambient, darkened in
+    // the crevices by how long the march took, against a light grey backdrop.
+    const vec3 KEY = vec3(0.9, 0.8, 0.7);
+    const vec3 BACKDROP = vec3(0.8);                 // a display value: drawn as is, no gamma
 
-    // Backdrop: plain black (distant surface fades into it too)
     vec3 sky(vec3 rd, vec3 ro) {
-        return vec3(0.0);
-    }
-
-        vec3 post(vec3 col) {
-        col = pow(clamp(col, 0.0, 1.0), vec3(0.45));
-        col = col * 0.6 + 0.4 * col * col * (3.0 - 2.0 * col);           col = mix(col, vec3(dot(col, vec3(0.33))), -0.2);                 return col;
+        return BACKDROP;
     }
 `;
 
@@ -204,24 +263,30 @@
     varying vec3 vWorld;
     void main() {
         vec3 rd = normalize(vWorld - cameraPosition);
-        gl_FragColor = vec4(post(sky(rd, cameraPosition)), 1.0);
+        gl_FragColor = vec4(sky(rd, cameraPosition), 1.0);
     }
 `;
 
             // ─── Fractals ───────────────────────────────────────────────────────
-            // Each is a distance estimator de(p) → (distance to the surface, orbit trap in [0, 1]) in the
-            // bounding sphere's units, compiled into its own material. Time mutates each one: uPhase twists
-            // the bulb and the ship's latitude, uJuliaC walks the Julia constant round a loop in 4D.
+            // Each is a distance estimator de(p) → (distance to the surface, two orbit traps in [0, 1]) in the
+            // bounding sphere's units, compiled into its own material. The traps (the closest the orbit comes
+            // to the origin, and to a plane) are unused by the current clean shading, but kept for colouring.
+            // Time mutates each one: uPhase twists the bulb and the ship's latitude, and c (uJuliaC) can walk a
+            // loop. The bulb and the ship are Mandelbrot-type sets, c being each point's own position; with
+            // uJulia set, c is fixed instead and they become their Julia sets, like the quaternion one.
             const FRACTALS = {
                 mandelbulb: {
                     title: 'Mandelbulb',
                     note: 'z → zⁿ + c in spherical coordinates, n = 8 (White and Nylander’s power-8 bulb)',
                     iterations: 7,
                     glsl: `
-    vec2 de(vec3 p) {
+    uniform vec4 uJuliaC;
+    uniform float uJulia;
+    vec3 de(vec3 p) {
         p = p.xzy;
+        vec3 c = mix(p, uJuliaC.xyz, uJulia);
         vec3 z = p;
-        float dr = 1.0, r = 0.0, t0 = 1.0;
+        float dr = 1.0, r = 0.0, t0 = 1.0, t1 = 1.0;
         for (int i = 0; i < 8; i++) {
             if (i >= uIter) break;
             r = length(z);
@@ -229,11 +294,12 @@
             float theta = atan(z.y, z.x) * 8.0;
             float phi = (asin(clamp(z.z / r, -1.0, 1.0)) + uPhase) * 8.0;
             float r2 = r * r, r4 = r2 * r2, r8 = r4 * r4;
-            dr = 8.0 * (r8 / r) * dr + 1.0;
-            z = r8 * vec3(cos(theta) * cos(phi), sin(theta) * cos(phi), sin(phi)) + p;
+            dr = 8.0 * (r8 / r) * dr + 1.0 - uJulia;     // dc/dz₀ is 1 when c is the point, 0 when fixed
+            z = r8 * vec3(cos(theta) * cos(phi), sin(theta) * cos(phi), sin(phi)) + c;
             t0 = min(t0, r8);
+            t1 = min(t1, abs(z.y));
         }
-        return vec2(0.5 * log(r) * r / dr, t0);
+        return vec3(0.5 * log(r) * r / dr, t0, t1);
     }`,
                 },
                 julia: {
@@ -243,20 +309,21 @@
                     // The set reaches about 1.5 from the origin: shrink it into the sphere.
                     glsl: `
     uniform vec4 uJuliaC;
-    vec2 de(vec3 p) {
+    vec3 de(vec3 p) {
         const float S = 1.2;
         vec4 z = vec4(p.xzy * S, 0.0);
-        float dz2 = 1.0, m2 = dot(z, z), t0 = 1.0;   // |dz/dz₀|², |z|²
+        float dz2 = 1.0, m2 = dot(z, z), t0 = 1.0, t1 = 1.0;   // |dz/dz₀|², |z|²
         for (int i = 0; i < 12; i++) {
             if (i >= uIter) break;
             dz2 *= 4.0 * m2;                          // dz → 2 z dz
             z = vec4(z.x * z.x - dot(z.yzw, z.yzw), 2.0 * z.x * z.yzw) + uJuliaC;
             m2 = dot(z, z);
             t0 = min(t0, m2);
+            t1 = min(t1, abs(z.y));
             if (m2 > 16.0) break;
         }
         // Hubbard–Douady potential estimate: |z| log|z| / |dz|
-        return vec2(0.25 * log(m2) * sqrt(m2 / dz2) / S, t0);
+        return vec3(0.25 * log(m2) * sqrt(m2 / dz2) / S, t0, t1);
     }`,
                 },
                 ship: {
@@ -265,12 +332,15 @@
                     iterations: 14,
                     // The 2D ship spans Re c ≈ −1.8 … 0.6: centre that and scale it into the sphere.
                     glsl: `
-    vec2 de(vec3 p) {
+    uniform vec4 uJuliaC;
+    uniform float uJulia;
+    vec3 de(vec3 p) {
         const float S = 1.6;
-        const vec3 CENTRE = vec3(-0.5, -0.2, 0.0);
-        vec3 c = p.xzy * S + CENTRE;
-        vec3 z = c;
-        float dr = 1.0, r = length(z), t0 = 1.0;
+        const vec3 CENTRE = vec3(-0.5, -0.2, 0.0);   // the classic set's middle; a Julia set sits round 0
+        vec3 q = p.xzy * S;
+        vec3 z = q + CENTRE * (1.0 - uJulia);
+        vec3 c = mix(z, uJuliaC.xyz, uJulia);
+        float dr = 1.0, r = length(z), t0 = 1.0, t1 = 1.0;
         for (int i = 0; i < 16; i++) {
             if (i >= uIter) break;
             r = length(z);
@@ -278,11 +348,12 @@
             z = abs(z);                               // the fold that makes it a burning ship
             float theta = atan(z.y, z.x) * 2.0;
             float phi = (asin(clamp(z.z / r, -1.0, 1.0)) + uPhase) * 2.0;
-            dr = 2.0 * r * dr + 1.0;
+            dr = 2.0 * r * dr + 1.0 - uJulia;
             z = r * r * vec3(cos(theta) * cos(phi), sin(theta) * cos(phi), sin(phi)) + c;
             t0 = min(t0, r * r);
+            t1 = min(t1, abs(z.y));
         }
-        return vec2(0.5 * log(r) * r / dr / S, t0);
+        return vec3(0.5 * log(r) * r / dr / S, t0, t1);
     }`,
                 },
             };
@@ -291,6 +362,9 @@
     precision highp float;
     ${commonGLSL}
     #define BOUND ${BOUND_RADIUS.toFixed(3)}
+    // The step count at which occlusion halves the light (the ShaderToy's 30, for its plain march;
+    // this march over-relaxes and takes fewer)
+    #define OCC_STEPS 18.0
 
     uniform float uPhase, uPixel;
     uniform int uSteps, uShadow, uIter;
@@ -306,7 +380,7 @@
             vec3 p = ro + rd * t;
             if (dot(p, p) > BOUND * BOUND) break;
             float h = de(p).x;
-            if (h < 0.001) return 0.02;
+            if (h < 0.001) return 0.0;
             res = min(res, k * h / t);
             t += clamp(h, 0.01, 2.0);
         }
@@ -332,10 +406,11 @@
         float tFar = -b + h;
 
                                 float os = 0.0, pd = 100.0, maxErr = 1e3;
-        float resT = -1.0, resTrap = 0.0;
+        float resT = -1.0, steps = 0.0;
         for (int i = 0; i < ${MAX_STEPS_CAP}; i++) {
             if (i >= uSteps) break;
-            vec2 c = de(ro + rd * t);
+            steps = float(i);
+            vec3 c = de(ro + rd * t);
             float d = c.x, stp;
             if (d > os) {
                 if (t + d > tFar) { resT = -1.0; break; }                   os = 0.4 * d * d / pd;
@@ -345,31 +420,30 @@
                 stp = -os; os = 0.0; pd = 100.0; d = 1.0;
             }
             float err = d / max(t, 0.01);
-            if (err < maxErr) { maxErr = err; resT = t; resTrap = c.y; }
+            if (err < maxErr) { maxErr = err; resT = t; }
             if (err < uPixel) break;
             t += stp;
         }
         if (resT < 0.0) discard;   
         vec3 p = ro + rd * resT;
         vec3 n = nor(p, max(0.0005, uPixel * resT));
-        float shadow = uShadow > 0 ? softshadow(p, uSunL, 10.0) : 1.0;
+        float sha = uShadow > 0 ? softshadow(p, uSunL, 4.0) : 1.0;
+        // Occlusion from the march: rays that took many steps came in through narrow gaps
+        float occ = 1.0 / (1.0 + pow(steps / OCC_STEPS, 3.0));
+        float dif = max(0.0, dot(uSunL, n));
+        float skyL = max(0.0, dot(n, uUpL));
+        float ind = max(0.0, dot(-uSunL, n));
+        float spec = pow(max(0.0, dot(reflect(rd, n), uSunL)), 20.0);
 
-        float dif = max(0.0, dot(n, uSunL));
-        float skyL = 0.6 + 0.4 * max(0.0, dot(n, uUpL));
-        float bac = max(0.3 + 0.7 * dot(uBacL, n), 0.0);
-        float spe = pow(clamp(dot(uSunL, reflect(rd, n)), 0.0, 1.0), 10.0);
+        vec3 col = dif * KEY * sha;
+        col += skyL * vec3(0.16, 0.20, 0.24) * occ;
+        col += ind * vec3(0.40, 0.48, 0.40) * occ;
+        col += 0.1 * occ;
+        col += spec * sha * KEY;
+        col = pow(col, vec3(0.45));
+        col = mix(col, BACKDROP, 1.0 - exp(-0.001 * resT * resT));   // distant surface fades into the backdrop
 
-        vec3 lin = 4.5 * SUN_COL * dif * shadow;
-        lin += 0.8 * bac * SUN_COL;
-        lin += 0.6 * skyL * SKY_COL * shadow;
-        lin += 3.0 * spe * shadow;
-
-        float tr = pow(clamp(resTrap, 0.0, 1.0), 0.55);
-        vec3 tc0 = mix(vec3(0.02, 0.17, 0.40), vec3(0.82, 0.76, 0.66), smoothstep(0.25, 1.0, tr));
-        vec3 col = lin * vec3(0.9, 0.9, 0.92) * 0.16 * tc0;
-        col = mix(col, sky(rdW, cameraPosition), 1.0 - exp(-0.001 * resT * resT));
-
-        gl_FragColor = vec4(post(col), 1.0);
+        gl_FragColor = vec4(col, 1.0);
     }
 `;
 
@@ -414,8 +488,104 @@
             fractalSelect.replaceChildren(
                 ...Object.entries(FRACTALS).map(([k, f]) => new Option(f.title, k)),
             );
+            // ─── The constant c ─────────────────────────────────────────────────
+            // The quaternion set is a Julia set: c = a + bi + cj + dk is always a fixed constant. The bulb
+            // and the ship are Mandelbrot-type: c is each point's own position, unless "Julia set" is on,
+            // when they draw the Julia set of a fixed c = (x, y, z) in their own triplex coordinates instead
+            // (z up). Each fractal keeps its own c. Animated, c walks a small loop round its home value with
+            // the fractal's time (scrub, pause and rewind move it too); a slider takes it over, holds it and,
+            // on the bulb or ship, switches to the Julia set. Well beyond the sliders' range the sets
+            // break up into disconnected dust. ?c=a,b,c[,d] opens the starting fractal on a given c, held.
+            const C_SETTINGS = {
+                julia: { labels: ['1', 'i', 'j', 'k'], home: [-0.291, -0.399, 0.339, 0.437], range: 1.2, loop: 0.08, alwaysJulia: true },
+                mandelbulb: { labels: ['x', 'y', 'z'], home: [0.32, -0.45, 0.2], range: 1.2, loop: 0.1 },
+                ship: { labels: ['x', 'y', 'z'], home: [-0.5, -0.3, 0], range: 2, loop: 0.08 },   // inside the connected region
+            };
+            const cState = Object.fromEntries(Object.entries(C_SETTINGS).map(([kind, s]) => [kind, {
+                julia: !!s.alwaysJulia,                  // the bulb and ship open as their classic sets
+                animate: true,
+                c: new THREE.Vector4(...s.home, 0),
+            }]));
+            const juliaPanel = document.getElementById('julia');
+            const juliaMode = document.getElementById('julia-mode');
+            const juliaAnimate = document.getElementById('julia-animate');
+            const juliaSliders = [0, 1, 2, 3].map((k) => ({
+                label: document.getElementById(`julia-l${k}`),
+                input: document.getElementById(`julia-c${k}`),
+                output: document.getElementById(`julia-c${k}-out`),
+            }));
+            const fmtC = (v) => (v < 0 ? '−' : '+') + Math.abs(v).toFixed(3);
+            const current = () => cState[fractalKind];
+            function showJuliaState() {
+                const st = current();
+                juliaMode.setAttribute('aria-checked', st.julia);
+                juliaAnimate.setAttribute('aria-checked', st.animate);
+            }
+            // Mirror c into the sliders (each frame while it animates, so they show where it is)
+            function showJuliaC() {
+                const st = current(), n = C_SETTINGS[fractalKind].labels.length;
+                st.c.toArray().slice(0, n).forEach((v, k) => {
+                    if (document.activeElement !== juliaSliders[k].input) juliaSliders[k].input.value = v;
+                    juliaSliders[k].output.textContent = fmtC(v);
+                });
+            }
+            // Lay the panel out for a fractal: its labels, how many components, its range
+            function layoutJulia(kind) {
+                const s = C_SETTINGS[kind];
+                juliaMode.hidden = !!s.alwaysJulia;      // the quaternion set is always a Julia set
+                juliaSliders.forEach(({ label, input, output }, k) => {
+                    const used = k < s.labels.length;
+                    label.hidden = input.hidden = output.hidden = !used;
+                    if (!used) return;
+                    label.textContent = s.labels[k];
+                    input.min = -s.range;
+                    input.max = s.range;
+                    input.setAttribute('aria-label', `c, ${s.labels[k]} component`);
+                });
+                showJuliaState();
+                showJuliaC();
+            }
+            juliaSliders.forEach(({ input }, k) => {
+                input.addEventListener('input', () => {
+                    const st = current();
+                    st.animate = false;
+                    st.julia = true;                     // choosing c means drawing its Julia set
+                    st.c.setComponent(k, +input.value);
+                    showJuliaState();
+                    showJuliaC();
+                });
+            });
+            juliaMode.addEventListener('click', () => {
+                current().julia = !current().julia;
+                showJuliaState();
+            });
+            juliaAnimate.addEventListener('click', () => {
+                current().animate = !current().animate;
+                showJuliaState();
+            });
+            document.getElementById('julia-reset').addEventListener('click', () => {
+                const st = current();
+                st.animate = false;
+                st.c.set(...C_SETTINGS[fractalKind].home, 0);
+                showJuliaState();
+                showJuliaC();
+            });
+            // c for this frame, and whether to draw the Julia set
+            function updateC() {
+                const st = current(), s = C_SETTINGS[fractalKind];
+                if (st.animate) {
+                    const jt = fractalTime * 0.15;
+                    const loop = [Math.sin(jt * 1.2), Math.sin(jt * 1.7 + 1.0), Math.sin(jt * 1.3 + 2.0), Math.sin(jt * 2.5 + 3.0)];
+                    st.c.fromArray(s.home.map((h, k) => h + s.loop * loop[k]).concat([0]).slice(0, 4));
+                }
+                uniforms.uJuliaC.value.copy(st.c);
+                uniforms.uJulia.value = st.julia ? 1 : 0;
+                if (st.animate && !renderer.xr.isPresenting) showJuliaC();
+            }
+
             function setFractal(kind) {
                 fractalKind = kind;
+                layoutJulia(kind);
                 fractal.material = fractalMaterial(kind);
                 uniforms.uIter.value = FRACTALS[kind].iterations;
                 fractalSelect.value = kind;
@@ -426,6 +596,14 @@
                 setFractal(kinds[(kinds.indexOf(fractalKind) + 1) % kinds.length]);
             };
             fractalSelect.addEventListener('change', () => setFractal(fractalSelect.value));
+            {
+                const cParam = (params.get('c') ?? '').split(',').map(Number);
+                const n = C_SETTINGS[fractalKind].labels.length, r = C_SETTINGS[fractalKind].range;
+                if (cParam.length >= n && cParam.slice(0, n).every(Number.isFinite)) {
+                    Object.assign(cState[fractalKind], { julia: true, animate: false });
+                    cState[fractalKind].c.fromArray(cParam.slice(0, n).map((v) => THREE.MathUtils.clamp(v, -r, r)).concat([0, 0, 0]).slice(0, 4));
+                }
+            }
             setFractal(fractalKind);
 
             const input = {
@@ -517,7 +695,7 @@
                 pitch = 0;
 
             window.addEventListener('keydown', (e) => {
-                if (e.target.closest?.('select') && e.code !== 'Escape') return;
+                if (e.target.closest?.('select, input, button') && e.code !== 'Escape') return;
                 if (e.repeat) return;
                 if (e.code === 'KeyF') nextFractal();
                 keys.add(e.code);
@@ -616,15 +794,7 @@
 
                 uniforms.uTime.value = fractalTime;
                 uniforms.uPhase.value = fractalTime * 0.1;
-                // The Julia constant circles Paul Bourke's c = −0.291 − 0.399i + 0.339j + 0.437k on a small
-                // closed loop in 4D, near the edge of the connected sets, where they are most intricate
-                const jt = fractalTime * 0.15;
-                uniforms.uJuliaC.value.set(
-                    -0.291 + 0.08 * Math.sin(jt * 1.2),
-                    -0.399 + 0.08 * Math.sin(jt * 1.7 + 1.0),
-                    0.339 + 0.08 * Math.sin(jt * 1.3 + 2.0),
-                    0.437 + 0.08 * Math.sin(jt * 2.5 + 3.0),
-                );
+                updateC();
                 fractal.rotation.y = fractalTime * 0.2;
                 fractal.updateMatrixWorld();
                 uniforms.uInvModel.value.copy(fractal.matrixWorld).invert();
@@ -730,7 +900,22 @@
             uniforms.uPixel.value = desktopPixel();
             setLevel(quality.level);
 
+            // In a headset, eye height is the wearer's (standing, seated, tall or short), and the pose only arrives
+            // with the session's first frames: once it does, lift or lower the fractal to sit straight ahead.
+            // The camera still holds the desktop pose until the first headset frame has rendered, so wait a few.
+            let centreOnHead = false, xrFrames = 0;
+            const _head = new THREE.Vector3();
+            function centreFractalOnHead() {
+                if (++xrFrames < 3) return;
+                camera.getWorldPosition(_head);
+                if (_head.y < 0.3) return;                // no real pose yet
+                FRACTAL_CENTER.y = _head.y;
+                setSize(size);
+                centreOnHead = false;
+            }
             renderer.xr.addEventListener('sessionstart', () => {
+                centreOnHead = true;
+                xrFrames = 0;
                 const session = renderer.xr.getSession();
                 quality.target = 1 / (session.frameRate || 72);
                 quality.ema = quality.target;
@@ -741,7 +926,9 @@
                 document.getElementById('controls').style.display = 'none';
             });
             renderer.xr.addEventListener('sessionend', () => {
-                camera.position.set(0, 1.6, 0);
+                camera.position.set(0, EYE_HEIGHT, 0);
+                FRACTAL_CENTER.y = EYE_HEIGHT;            // back to the desktop camera's height
+                setSize(size);
                 quality.target = 1 / 60;
                 quality.max = 6;
                 setLevel(5);
@@ -810,6 +997,7 @@
                 lastTime = now;
 
                 if (renderer.xr.isPresenting) {
+                    if (centreOnHead) centreFractalOnHead();
                     pollXRInput();
                 } else {
                     pollDesktopInput();

@@ -69,7 +69,9 @@
                 Aberration only changes the direction light arrives from, so every pixel looks its ray up, through the
                 exact Lorentz transformation, in the world as the station sees it from your eye. Surfaces reflect a
                 5,800 K sun as real spectra, shifted by the Doppler factor and turned back into colour through the
-                CIE 1931 eye response; brightness scales as D⁵. Stars are blackbodies, seen at D·T.</span>
+                CIE 1931 eye response. Stars are blackbodies, seen at D·T. Doppler alone shifts the colour and
+                keeps the brightness; beaming adds the true brightness, so light shifted out of the visible
+                fades and the rest scales as D⁵.</span>
         </div>
     </section>
 </div>
@@ -114,7 +116,6 @@ const ALTITUDE = 7;                                     // the ship's deck above
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setClearColor(0x000000, 0);                    // the station views clear to transparent: stars show through
 renderer.toneMapping = THREE.ACESFilmicToneMapping;    // beaming pushes the view ahead far past 1
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
@@ -123,7 +124,6 @@ document.body.appendChild(VRButton.createButton(renderer));
 
 const scene = new THREE.Scene();                        // what is drawn to the screen: stars, the remapped view, the rig
 scene.background = new THREE.Color(0x000000);
-const fieldScene = new THREE.Scene();                   // the world at rest in S, drawn only into the station views
 const rig = new THREE.Group();                          // the ship: at its position in S, turned to its heading
 scene.add(rig);
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 4000);
@@ -170,6 +170,10 @@ function inverse3(m) {                                  // m[row][col]
         [B / det, (a * i - c * g) / det, -(a * f - c * d) / det],
         [Cc / det, -(a * h - b * g) / det, (a * e - b * d) / det]];
 }
+// Shifted far, the visible light falls by many orders of magnitude (the sun's light from behind at D = 1/40
+// left as 15 µm infrared), past what half floats hold. So each table stores the colour at a fixed
+// brightness, and the brightness apart from it as a logarithm: here each band's shifted colour is divided
+// by white's luminance W(D), and alpha holds ln W(D) (each row holds the same).
 const surfaceLUT = (() => {
     const raw = D => BANDS.map(band => seen(l => planck(l * D, 5800) * band(l * D)));
     // Calibrate so each band reads back as pure r, g or b at rest: the lookup is M⁻¹ · raw(D).
@@ -178,9 +182,10 @@ const surfaceLUT = (() => {
     const data = new Uint16Array(LUT_W * 3 * 4);
     for (let x = 0; x < LUT_W; x++) {
         const D = Math.exp(LOG_D[0] + (LOG_D[1] - LOG_D[0]) * x / (LUT_W - 1));
-        raw(D).forEach((rgb, k) => {
-            const out = Minv.map(row => row[0] * rgb[0] + row[1] * rgb[1] + row[2] * rgb[2]);
-            data.set([...out, 1].map(v => THREE.DataUtils.toHalfFloat(Number.isFinite(v) ? v : 0)), (k * LUT_W + x) * 4);
+        const rows = raw(D).map(rgb => Minv.map(row => row[0] * rgb[0] + row[1] * rgb[1] + row[2] * rgb[2]));
+        const W = luminance([0, 1, 2].map(i => rows[0][i] + rows[1][i] + rows[2][i]));   // 1 at rest
+        rows.forEach((out, k) => {
+            data.set([...out.map(v => v / W), Math.log(W)].map(v => THREE.DataUtils.toHalfFloat(Number.isFinite(v) ? v : 0)), (k * LUT_W + x) * 4);
         });
     }
     const tex = new THREE.DataTexture(data, LUT_W, 3, THREE.RGBAFormat, THREE.HalfFloatType);
@@ -190,15 +195,17 @@ const surfaceLUT = (() => {
 })();
 
 // Stars: blackbodies. A blackbody at T seen with Doppler factor D is exactly a blackbody at D·T,
-// beaming included, so one table of absolute colour against temperature covers them.
-const LOG_T = [Math.log(500), Math.log(2e6)];
+// beaming included, so one table against temperature covers them: the colour at luminance 1, and in
+// alpha ln Y(T), the luminance relative to the sun's. It reaches down to 200 K, for cool stars behind at
+// β = 0.998 (D ≈ 1/32), where only the deep red end of the visible is left.
+const LOG_T = [Math.log(200), Math.log(2e6)];
 const Y_SUN = luminance(seen(l => planck(l, 5800)));
 const blackbody = T => seen(l => planck(l, T)).map(v => v / Y_SUN);
 const starLUT = (() => {
     const data = new Uint16Array(LUT_W * 4);
     for (let x = 0; x < LUT_W; x++) {
-        const rgb = blackbody(Math.exp(LOG_T[0] + (LOG_T[1] - LOG_T[0]) * x / (LUT_W - 1)));
-        data.set([...rgb, 1].map(v => THREE.DataUtils.toHalfFloat(Number.isFinite(v) ? v : 0)), x * 4);
+        const rgb = blackbody(Math.exp(LOG_T[0] + (LOG_T[1] - LOG_T[0]) * x / (LUT_W - 1))), Y = luminance(rgb);
+        data.set([...rgb.map(v => v / Y), Math.log(Y)].map(v => THREE.DataUtils.toHalfFloat(Number.isFinite(v) ? v : 0)), x * 4);
     }
     const tex = new THREE.DataTexture(data, LUT_W, 1, THREE.RGBAFormat, THREE.HalfFloatType);
     tex.minFilter = tex.magFilter = THREE.LinearFilter;
@@ -210,13 +217,14 @@ const starLUT = (() => {
 // Light reaching the eye at one event is the same light in every frame; the ship's motion only changes
 // the direction each ray seems to come from (aberration) and its frequency (Doppler). The ship's view is
 // therefore the station's view from the same point with every direction remapped, which is linear in the
-// light: a star and a surface seen in the same direction go through the same map. So the world is drawn
-// unaberrated, from each eye, into a cube map (the station views below), and every pixel of the final view
-// looks its own ray up there through the exact inverse aberration and applies Doppler and beaming. Moving
-// the vertices instead bent straight edges only at the vertices, into polylines that grew coarse as the
-// view behind magnified, and put surfaces and stars through different maps.
+// light: a star and a surface seen in the same direction go through the same map. So every pixel takes its
+// own ray, turns it back into the station frame through the exact inverse aberration, and traces it there:
+// the field is a floor plane and a lattice of boxes and spheres, so the ray finds them analytically, with
+// nothing rendered ahead of time. Curves stay exact at any speed: drawing the field first (moving vertices,
+// or rendering cube maps to look up) bends straight edges at a finite set of points, which shows as
+// polygons once the view behind is magnified, up to γ(1 + β) ≈ 32 times at β = 0.998.
 const uniforms = {
-    uObs: { value: new THREE.Vector3() },               // the head, in S (stars, at infinity, need no more)
+    uObs: { value: new THREE.Vector3() },               // the head, in S
     uDir: { value: new THREE.Vector3(0, 0, -1) },       // the ship's direction of travel, in S
     uBeta: { value: 0 }, uGamma: { value: 1 },
     uAberration: { value: 1 }, uDoppler: { value: 1 }, uBeaming: { value: 0 },   // beaming starts off: it darkens all but the view ahead
@@ -243,180 +251,23 @@ const common = /* glsl */`
         return uGamma * (1.0 + uBeta * (r > 0.0 ? dot(rel, uDir) / r : 0.0));
     }`;
 
-// ─── The field (station frame) ──────────────────────────────────────────────
-// One 30 m cell, repeated: a cube on the floor, a sphere overhead and a striped pillar. The whole
-// field snaps to the cell round the ship, so it never runs out and the snapping is invisible. It is lit
-// in S, where the sun and the surfaces are at rest, and written out as rest-frame linear colour.
-const fieldUniforms = {
-    uEye: { value: new THREE.Vector3() },               // the eye this station view is drawn from
-    uSun: { value: new THREE.Vector3(0.45, 0.8, 0.35).normalize() },
-};
-const surfaceVertex = /* glsl */`
-    uniform vec3 uEye;
-    varying vec3 vRel, vWorld, vNormal, vLocal, vOrigin;
-    void main() {
-        mat4 m = modelMatrix;
-        #ifdef USE_INSTANCING
-            m = m * instanceMatrix;
-        #endif
-        vec4 world = m * vec4(position, 1.0);
-        vWorld = world.xyz;
-        vLocal = position;
-        vOrigin = (m * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-        vNormal = normalize(mat3(m) * normal);
-        vRel = world.xyz - uEye;
-        gl_Position = projectionMatrix * viewMatrix * world;
-    }`;
-const surfaceFragment = /* glsl */`
-    uniform vec3 uSun;
-    varying vec3 vRel, vWorld, vNormal, vLocal, vOrigin;
-    const vec3 PALETTE[6] = vec3[6](vec3(0.85, 0.18, 0.15), vec3(0.2, 0.7, 0.25), vec3(0.18, 0.4, 0.9),
-                                    vec3(0.95, 0.65, 0.2), vec3(0.85, 0.85, 0.85), vec3(0.6, 0.25, 0.75));
-    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-    // 1 on a line of the given period and half-width (metres), antialiased
-    float lines(float x, float period, float width) {
-        float d = abs(fract(x / period + 0.5) - 0.5) * period;
-        return 1.0 - smoothstep(width, width + fwidth(x) * 1.5, d);
-    }
-    vec3 albedo() {
-        vec2 cell = floor(vOrigin.xz / ${CELL.toFixed(1)} + 0.5);
-    #if MODE == 0
-        // Floor: dark tiles, a 10 m grid, brighter every 30 m
-        float grid = max(lines(vWorld.x, 10.0, 0.08), lines(vWorld.z, 10.0, 0.08));
-        float major = max(lines(vWorld.x, ${CELL.toFixed(1)}, 0.18), lines(vWorld.z, ${CELL.toFixed(1)}, 0.18));
-        vec2 tile = floor(vWorld.xz / ${CELL.toFixed(1)});
-        vec3 base = mod(tile.x + tile.y, 2.0) < 1.0 ? vec3(0.05, 0.06, 0.08) : vec3(0.08, 0.09, 0.11);
-        return mix(mix(base, vec3(0.5), grid), vec3(0.85), major);
-    #elif MODE == 1
-        // Cubes: one colour each, with dark edges so their apparent rotation reads
-        vec3 a = abs(vLocal) / 1.5;
-        float edge = step(0.88, a.x) * step(0.88, a.y) + step(0.88, a.y) * step(0.88, a.z) + step(0.88, a.x) * step(0.88, a.z);
-        return PALETTE[int(hash(cell) * 6.0)] * (edge > 0.0 ? 0.15 : 1.0);
-    #elif MODE == 2
-        // Spheres: a globe grid every 30°
-        vec3 n = normalize(vLocal);
-        float lon = atan(n.z, n.x) * 57.29578, lat = asin(clamp(n.y, -1.0, 1.0)) * 57.29578;
-        float g = max(lines(lon, 30.0, 1.2), lines(lat, 30.0, 1.2));
-        return mix(PALETTE[int(hash(cell + 17.0) * 6.0)], vec3(0.95), g);
-    #else
-        // Pillars: 2 m bands, so their spacing shows the view stretching and squeezing
-        return mod(floor(vWorld.y / 2.0), 2.0) < 1.0 ? vec3(0.9) : vec3(0.12);
-    #endif
-    }
-    void main() {
-        vec3 c = albedo() * (0.3 + 0.7 * max(dot(normalize(vNormal), uSun), 0.0));
-        c *= 1.0 - smoothstep(${FADE[0].toFixed(1)}, ${FADE[1].toFixed(1)}, length(vRel));
-        gl_FragColor = vec4(c, 1.0);                    // alpha 1: surfaces hide the stars behind them
-    }`;
-const surface = mode => new THREE.ShaderMaterial({ uniforms: fieldUniforms, vertexShader: surfaceVertex, fragmentShader: surfaceFragment, defines: { MODE: mode } });
-
-// No vertex is moved any more, so the geometry needs no more triangles than its shape.
-const field = new THREE.Group();
-fieldScene.add(field);
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(2 * FADE[1] + 2 * CELL, 2 * FADE[1] + 2 * CELL).rotateX(-Math.PI / 2), surface(0));
-field.add(floor);
-function lattice(geometry, mode, offset) {
-    const n = (2 * CELLS + 1) ** 2;
-    const mesh = new THREE.InstancedMesh(geometry, surface(mode), n);
-    const m = new THREE.Matrix4();
-    let k = 0;
-    for (let i = -CELLS; i <= CELLS; i++) for (let j = -CELLS; j <= CELLS; j++) {
-        mesh.setMatrixAt(k++, m.makeTranslation(i * CELL + offset[0], offset[1], j * CELL + offset[2]));
-    }
-    field.add(mesh);
-}
-lattice(new THREE.BoxGeometry(3, 3, 3), 1, [0, 3.5, 0]);
-lattice(new THREE.SphereGeometry(2, 32, 16), 2, [CELL / 2, 12, 0]);
-lattice(new THREE.BoxGeometry(0.8, 24, 0.8).translate(0, 12, 0), 3, [CELL / 2, 0, CELL / 2]);
-
-// ─── Station views ──────────────────────────────────────────────────────────
-// Per eye, a cube map of the field from that eye, plus narrow views straight back. Looking back, the
-// whole rear hemisphere comes from a station-frame cone only a few degrees across round −v (4° at
-// β = 0.998), magnified up to γ(1 + β) ≈ 32 times: a cube map spread over 90° a face goes soft there.
-// Up to three nested views, each a quarter the width of the last, cover that cone at the eye's resolution.
-const halfFloat = renderer.extensions.has('EXT_color_buffer_float');
-const viewOptions = {
-    type: halfFloat ? THREE.HalfFloatType : THREE.UnsignedByteType,
-    generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
-};
-const SIZES = { desktop: { cube: 1536, back: 1536 }, xr: { cube: 1024, back: 1024 } };
-const BACK_LEVELS = 3;
-const views = [0, 1].map(() => {
-    const cube = new THREE.WebGLCubeRenderTarget(SIZES.desktop.cube, viewOptions);
-    const backs = Array.from({ length: BACK_LEVELS }, () => new THREE.WebGLRenderTarget(SIZES.desktop.back, SIZES.desktop.back, viewOptions));
-    return { cube, backs, cubeCamera: new THREE.CubeCamera(0.1, 4000, cube), eye: new THREE.Vector3() };
-});
-function sizeViews({ cube, back }) {
-    for (const v of views) { v.cube.setSize(cube, cube); for (const b of v.backs) b.setSize(back, back); }
-}
-const backCamera = new THREE.PerspectiveCamera(10, 1, 0.1, 4000);
-
-// The station-frame half-angles of the back views: the first covers everything seen within 100° of
-// straight back (capped at 60°, where a perspective view stops being worth it), each next a quarter of
-// it. Fewer are drawn when the view behind is barely magnified.
-const THETA_EDGE = Math.cos(THREE.MathUtils.degToRad(80));     // seen 80° from ahead = 100° from behind
-function backCones(beta) {
-    const magnification = Math.sqrt((1 + beta) / (1 - beta));  // 1/D straight back, γ(1 + β)
-    const levels = magnification < 1.5 ? 0 : magnification < 6 ? 1 : magnification < 24 ? 2 : 3;
-    const cosS = (THETA_EDGE - beta) / (1 - beta * THETA_EDGE);
-    const alpha = Math.min(Math.PI - Math.acos(cosS), THREE.MathUtils.degToRad(60));
-    return Array.from({ length: levels }, (_, k) => alpha / 4 ** k);
-}
-
-const _target = new THREE.Vector3();
-function renderStationViews(eyes) {
-    const cones = backCones(uniforms.uAberration.value > 0.5 ? uniforms.uBeta.value : 0);
-    backCamera.position.set(0, 0, 0);
-    backCamera.lookAt(_target.copy(uniforms.uDir.value).negate());
-    backCamera.updateMatrixWorld();
-    const e = backCamera.matrixWorld.elements;
-    composite.uniforms.uBackRight.value.set(e[0], e[1], e[2]);
-    composite.uniforms.uBackUp.value.set(e[4], e[5], e[6]);
-    composite.uniforms.uBackLevels.value = cones.length;
-    cones.forEach((a, k) => { composite.uniforms.uBackTan.value[k] = Math.tan(a); });
-
-    const output = renderer.getRenderTarget(), xr = renderer.xr.enabled;
-    eyes.forEach((eye, i) => {
-        const v = views[i];
-        v.eye.setFromMatrixPosition(eye.matrixWorld);
-        fieldUniforms.uEye.value.copy(v.eye);
-        v.cubeCamera.position.copy(v.eye);
-        v.cubeCamera.update(renderer, fieldScene);     // turns XR off while it draws its six faces
-        renderer.xr.enabled = false;
-        cones.forEach((a, k) => {
-            backCamera.fov = THREE.MathUtils.radToDeg(2 * a);
-            backCamera.updateProjectionMatrix();
-            backCamera.position.copy(v.eye);
-            backCamera.lookAt(_target.copy(v.eye).sub(uniforms.uDir.value));
-            backCamera.updateMatrixWorld();
-            renderer.setRenderTarget(v.backs[k]);
-            renderer.render(fieldScene, backCamera);
-        });
-        renderer.setRenderTarget(output);
-        renderer.xr.enabled = xr;
-    });
-    composite.uniforms.uEye0.value.copy(views[0].eye);
-    composite.uniforms.uEye1.value.copy(eyes.length > 1 ? views[1].eye : views[0].eye);
-}
-
-// ─── The ship's view ────────────────────────────────────────────────────────
-// A sphere round the head, drawn after the stars. Each pixel takes its ray (exact in view space, so it
-// stays precise kilometres from the origin), aberrates it back into S, reads the station view of its own
-// eye, then shifts and beams the light. Where no surface is, the view is transparent and the stars show.
-const sampleBack = k => /* glsl */`{
-        vec2 p = q / uBackTan[${k}];
-        float w = (uBackLevels > ${k} && z > 0.0) ? 1.0 - smoothstep(0.8, 0.95, max(abs(p.x), abs(p.y))) : 0.0;
-        vec4 b = second ? texture2D(uBack1[${k}], p * 0.5 + 0.5) : texture2D(uBack0[${k}], p * 0.5 + 0.5);
-        s = mix(s, b, w);
-    }`;
+// ─── The field and the ship's view ──────────────────────────────────────────
+// One 30 m cell, repeated: a cube on the floor, a sphere overhead and a striped pillar, lit by a sun at
+// rest in S. The field is centred on the cell the ship is in (uSnap, a multiple of the cell), so it never
+// runs out, and every coordinate is taken relative to it: kilometres from the origin they stay small and
+// precise. Past FADE it fades out; objects beyond the lattice's reach, and the floor past its edge, are
+// left out, so the stars show there as before.
+//
+// Drawn on a sphere round the head, after the stars. Each pixel's ray is exact in view space and taken from
+// its own eye, so the stereo is the true one. Where the ray finds nothing, the view is transparent.
+const REACH = CELLS * CELL + CELL / 2;                  // the lattice's half-width round the ship
+const FLOOR_EDGE = FADE[1] + CELL;                      // the floor's half-width, as the old floor plane's
 const composite = new THREE.ShaderMaterial({
     uniforms: {
         ...uniforms,                                    // the same uniform objects, so the ship's state is shared
-        uCube0: { value: views[0].cube.texture }, uCube1: { value: views[1].cube.texture },
-        uBack0: { value: views[0].backs.map(b => b.texture) }, uBack1: { value: views[1].backs.map(b => b.texture) },
-        uEye0: { value: new THREE.Vector3() }, uEye1: { value: new THREE.Vector3() },
-        uBackRight: { value: new THREE.Vector3(1, 0, 0) }, uBackUp: { value: new THREE.Vector3(0, 1, 0) },
-        uBackTan: { value: new Array(BACK_LEVELS).fill(1) }, uBackLevels: { value: 0 },
+        uSnap: { value: new THREE.Vector3() },          // the field's centre, in S (a multiple of the cell)
+        uSnapCell: { value: new THREE.Vector2() },      // the same in cells, for the tile parity and colours
+        uSun: { value: new THREE.Vector3(0.45, 0.8, 0.35).normalize() },
     },
     vertexShader: /* glsl */`
         varying vec3 vView;
@@ -428,39 +279,118 @@ const composite = new THREE.ShaderMaterial({
     fragmentShader: /* glsl */`
         ${common}
         uniform sampler2D uSurfaceLUT;
-        uniform samplerCube uCube0, uCube1;
-        uniform sampler2D uBack0[${BACK_LEVELS}], uBack1[${BACK_LEVELS}];
-        uniform vec3 uEye0, uEye1, uBackRight, uBackUp;
-        uniform float uBackTan[${BACK_LEVELS}];
-        uniform int uBackLevels;
+        uniform vec3 uSnap, uSun;
+        uniform vec2 uSnapCell;
         varying vec3 vView;
-        vec3 dopplerShift(vec3 c, float D) {
+        const float CELL = ${CELL.toFixed(1)}, REACH = ${REACH.toFixed(1)}, FLOOR_EDGE = ${FLOOR_EDGE.toFixed(1)};
+        const vec3 CUBE = vec3(0.0, 3.5, 0.0), SPHERE = vec3(${(CELL / 2).toFixed(1)}, 12.0, 0.0), PILLAR = vec3(${(CELL / 2).toFixed(1)}, 12.0, ${(CELL / 2).toFixed(1)});
+        const vec3 PALETTE[6] = vec3[6](vec3(0.85, 0.18, 0.15), vec3(0.2, 0.7, 0.25), vec3(0.18, 0.4, 0.9),
+                                        vec3(0.95, 0.65, 0.2), vec3(0.85, 0.85, 0.85), vec3(0.6, 0.25, 0.75));
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        // 1 on a line of the given period and half-width, antialiased over a footprint fw (same units)
+        float lines(float x, float period, float width, float fw) {
+            float d = abs(fract(x / period + 0.5) - 0.5) * period;
+            return 1.0 - smoothstep(width, width + fw * 1.5, d);
+        }
+        // The lattice: each object's position in its own cell (the nearest copy), and the cell it is in
+        vec3 local(vec3 p, vec3 offset) { vec3 q = p - offset; q.xz -= CELL * floor(q.xz / CELL + 0.5); return q; }
+        vec2 cellOf(vec3 p, vec3 offset) { return floor((p.xz - offset.xz) / CELL + 0.5) + uSnapCell; }
+        float box(vec3 q, vec3 b) { vec3 d = abs(q) - b; return length(max(d, 0.0)) + min(max(d.x, max(d.y, d.z)), 0.0); }
+        // Distance to the nearest object, and which: 1 cube, 2 sphere, 3 pillar
+        vec2 field(vec3 p) {
+            vec2 r = vec2(box(local(p, CUBE), vec3(1.5)), 1.0);
+            float s = length(local(p, SPHERE)) - 2.0;
+            if (s < r.x) r = vec2(s, 2.0);
+            float c = box(local(p, PILLAR), vec3(0.4, 12.0, 0.4));
+            if (c < r.x) r = vec2(c, 3.0);
+            return r;
+        }
+        vec3 boxNormal(vec3 q, vec3 b) {
+            vec3 a = abs(q) / b;
+            return a.x > a.y && a.x > a.z ? vec3(sign(q.x), 0.0, 0.0) : a.y > a.z ? vec3(0.0, sign(q.y), 0.0) : vec3(0.0, 0.0, sign(q.z));
+        }
+        // The albedo's colour under the shifted sunlight, at the brightness it had at rest (white stays at
+        // luminance 1); W is the factor the shift itself takes the visible light down or up by
+        vec3 dopplerShift(vec3 c, float D, out float W) {
             float u = clamp((log(D) - ${LOG_D[0].toFixed(6)}) / ${(LOG_D[1] - LOG_D[0]).toFixed(6)}, 0.0, 1.0);
             float x = (u * ${(LUT_W - 1).toFixed(1)} + 0.5) / ${LUT_W.toFixed(1)};
-            return max(c.r * texture2D(uSurfaceLUT, vec2(x, 0.5 / 3.0)).rgb
+            vec4 r = texture2D(uSurfaceLUT, vec2(x, 0.5 / 3.0));
+            W = exp(r.a);
+            return max(c.r * r.rgb
                      + c.g * texture2D(uSurfaceLUT, vec2(x, 1.5 / 3.0)).rgb
                      + c.b * texture2D(uSurfaceLUT, vec2(x, 2.5 / 3.0)).rgb, 0.0);
         }
         void main() {
             vec3 seen = normalize((vec4(vView, 0.0) * viewMatrix).xyz);      // view → world: the transpose
             vec3 n = uAberration > 0.5 ? unaberrate(seen) : seen;
-            // Which eye this is: each draws its own station view, so the stereo is the true one
-            bool second = distance(cameraPosition, uEye1) < distance(cameraPosition, uEye0);
-            vec4 s = second ? textureCube(uCube1, n) : textureCube(uCube0, n);
-            float z = -dot(n, uDir);                                           // along −v, the back views' axis
-            vec2 q = vec2(dot(n, uBackRight), dot(n, uBackUp)) / max(z, 1e-4);
-            ${Array.from({ length: BACK_LEVELS }, (_, k) => sampleBack(k)).join('\n')}
-            if (s.a < 0.002) discard;
-            vec3 c = s.rgb / s.a;                                              // texels are premultiplied at edges
-            float D = doppler(n);
-            if (uDoppler > 0.5) c = dopplerShift(c, D);
-            if (uBeaming > 0.5) c *= min(pow(D, 5.0), 1e4);
+            vec3 o = cameraPosition - uSnap;                                   // this eye, relative to the field
+
+            // Footprints, taken before any branching so the screen derivatives are sound: where the ray would
+            // meet the floor, and how much a pixel's ray turns (for the globes' lines)
+            float tFloor = -o.y / min(n.y, -1e-6);
+            vec2 floorXZ = o.xz + n.xz * tFloor;
+            vec2 floorFw = fwidth(floorXZ);
+            float turn = length(fwidth(n));
+
+            // The floor, if the ray comes down onto it within its edge
+            float tHit = 1e9, id = 0.0;
+            if (n.y < 0.0 && max(abs(floorXZ.x), abs(floorXZ.y)) < FLOOR_EDGE) { tHit = tFloor; id = 4.0; }
+            // The lattice, sphere-traced, no further than the floor or the fade
+            float t = 0.0, tMax = min(tHit, ${(FADE[1] + 20).toFixed(1)});
+            for (int i = 0; i < 160; i++) {
+                vec3 p = o + n * t;
+                if (t > tMax || max(abs(p.x), abs(p.z)) > REACH + 30.0) break;
+                vec2 f = field(p);
+                if (max(abs(p.x), abs(p.z)) > REACH) f.x = max(f.x, 1.0);       // outside the lattice: nothing to hit
+                if (f.x < 0.0015 * (1.0 + 0.1 * t)) { if (max(abs(p.x), abs(p.z)) <= REACH) { tHit = t; id = f.y; } break; }
+                t += f.x;
+            }
+            if (id == 0.0) discard;                                           // nothing here: the stars show
+
+            // Shade in S, where the sun and the surfaces are at rest
+            vec3 p = o + n * tHit, N, a;
+            if (id == 4.0) {
+                // Floor: dark tiles, a 10 m grid, brighter every 30 m (the field's centre is a whole cell,
+                // so its lines and tiles line up with the absolute ones)
+                N = vec3(0.0, 1.0, 0.0);
+                float grid = max(lines(floorXZ.x, 10.0, 0.08, floorFw.x), lines(floorXZ.y, 10.0, 0.08, floorFw.y));
+                float major = max(lines(floorXZ.x, CELL, 0.18, floorFw.x), lines(floorXZ.y, CELL, 0.18, floorFw.y));
+                vec2 tile = floor(floorXZ / CELL) + uSnapCell;
+                vec3 base = mod(tile.x + tile.y, 2.0) < 1.0 ? vec3(0.05, 0.06, 0.08) : vec3(0.08, 0.09, 0.11);
+                a = mix(mix(base, vec3(0.5), grid), vec3(0.85), major);
+            } else if (id == 1.0) {
+                // Cubes: one colour each, with dark edges so their apparent rotation reads
+                vec3 q = local(p, CUBE), e = abs(q) / 1.5;
+                N = boxNormal(q, vec3(1.5));
+                float edge = step(0.88, e.x) * step(0.88, e.y) + step(0.88, e.y) * step(0.88, e.z) + step(0.88, e.x) * step(0.88, e.z);
+                a = PALETTE[int(hash(cellOf(p, CUBE)) * 6.0)] * (edge > 0.0 ? 0.15 : 1.0);
+            } else if (id == 2.0) {
+                // Spheres: a globe grid every 30°, its lines antialiased over the pixel's footprint
+                N = normalize(local(p, SPHERE));
+                float lon = atan(N.z, N.x) * 57.29578, lat = asin(clamp(N.y, -1.0, 1.0)) * 57.29578;
+                float fw = turn * tHit / 2.0 * 57.29578;
+                float g = max(lines(lon, 30.0, 1.2, fw / max(sqrt(1.0 - N.y * N.y), 0.05)), lines(lat, 30.0, 1.2, fw));
+                a = mix(PALETTE[int(hash(cellOf(p, SPHERE) + 17.0) * 6.0)], vec3(0.95), g);
+            } else {
+                // Pillars: 2 m bands, so their spacing shows the view stretching and squeezing
+                N = boxNormal(local(p, PILLAR), vec3(0.4, 12.0, 0.4));
+                a = mod(floor(p.y / 2.0), 2.0) < 1.0 ? vec3(0.9) : vec3(0.12);
+            }
+            vec3 c = a * (0.3 + 0.7 * max(dot(N, uSun), 0.0));
+            c *= 1.0 - smoothstep(${FADE[0].toFixed(1)}, ${FADE[1].toFixed(1)}, tHit);
+
+            // Doppler alone changes the colour, holding its brightness; with beaming on, the brightness is the
+            // true one: the shift's own loss or gain in the visible, then D⁵
+            float D = doppler(n), W = 1.0;
+            if (uDoppler > 0.5) c = dopplerShift(c, D, W);
+            if (uBeaming > 0.5) c *= min(W * pow(D, 5.0), 1e4);
             gl_FragColor = vec4(c * uExposure, 1.0);
             #include <tonemapping_fragment>
             #include <colorspace_fragment>
-            gl_FragColor = vec4(gl_FragColor.rgb * s.a, s.a);
         }`,
-    side: THREE.BackSide, transparent: true, premultipliedAlpha: true, depthWrite: false,
+    // Transparent only for its place in the draw order: three draws opaque objects before every transparent
+    // one, so as opaque it would go down before the stars and be painted over by them
+    side: THREE.BackSide, depthWrite: false, transparent: true,
 });
 const shipView = new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), composite);
 shipView.frustumCulled = false;
@@ -472,42 +402,47 @@ camera.add(shipView);                                   // depth-tested, so the 
 // blackbody curve.
 const stars = (() => {
     const N = 4000;
-    const dir = new Float32Array(N * 3), temp = new Float32Array(N), base = new Float32Array(N), norm = new Float32Array(N);
+    const dir = new Float32Array(N * 3), temp = new Float32Array(N), base = new Float32Array(N);
     let seed = 0x5eed;
     const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
     for (let i = 0; i < N; i++) {
         const z = 2 * rnd() - 1, a = 2 * Math.PI * rnd(), r = Math.sqrt(1 - z * z);
         dir.set([r * Math.cos(a), z, r * Math.sin(a)], i * 3);
         temp[i] = 2800 * Math.exp(2.4 * rnd() ** 2.2);    // mostly cool, a few hot: 2,800 – 31,000 K
-        base[i] = 2.0 * 10 ** (-0.4 * 6.5 * Math.sqrt(rnd()));  // visual brightness at rest
-        norm[i] = 1 / luminance(blackbody(temp[i]));      // so the colour table reads 1 at rest
+        base[i] = 2.0 * 10 ** (-0.4 * 6.5 * Math.sqrt(rnd()));  // visual brightness at rest (the table reads luminance 1)
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(dir, 3));
     g.setAttribute('temperature', new THREE.BufferAttribute(temp, 1));
     g.setAttribute('brightness', new THREE.BufferAttribute(base, 1));
-    g.setAttribute('norm', new THREE.BufferAttribute(norm, 1));
     const points = new THREE.Points(g, new THREE.ShaderMaterial({
         uniforms,
         vertexShader: /* glsl */`
             ${common}
             uniform sampler2D uStarLUT;
             uniform float uPixelRatio;
-            attribute float temperature, brightness, norm;
+            attribute float temperature, brightness;
             varying vec3 vColor;
-            vec3 bb(float T) {
+            // A blackbody's colour at luminance 1 (rgb) and ln of its luminance (a)
+            vec4 bb(float T) {
                 float u = clamp((log(T) - ${LOG_T[0].toFixed(6)}) / ${(LOG_T[1] - LOG_T[0]).toFixed(6)}, 0.0, 1.0);
-                return max(texture2D(uStarLUT, vec2((u * ${(LUT_W - 1).toFixed(1)} + 0.5) / ${LUT_W.toFixed(1)}, 0.5)).rgb, 0.0);
+                vec4 s = texture2D(uStarLUT, vec2((u * ${(LUT_W - 1).toFixed(1)} + 0.5) / ${LUT_W.toFixed(1)}, 0.5));
+                return vec4(max(s.rgb, 0.0), s.a);
             }
             void main() {
                 vec3 shown = uAberration > 0.5 ? aberrate(position) : position;
-                gl_Position = projectionMatrix * viewMatrix * vec4(uObs + normalize(shown) * 3000.0, 1.0);
+                // At infinity only the view's rotation matters: leaving out the eye's position keeps the stars
+                // steady however far the ship has flown from the origin
+                gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * normalize(shown) * 3000.0, 1.0);
                 float D = doppler(position);
-                // A blackbody seen at D: B(λ, D·T) with beaming; B(λ, D·T) / D⁵ is the shift alone.
-                vec3 c;
-                if (uDoppler > 0.5) c = bb(temperature * D) * (uBeaming > 0.5 ? 1.0 : pow(D, -5.0));
-                else c = bb(temperature) * (uBeaming > 0.5 ? min(pow(D, 5.0), 1e4) : 1.0);
-                c *= brightness * norm * uExposure;
+                // Seen at D a blackbody is one at D·T. Doppler alone gives it that colour at the brightness it
+                // had at rest; with beaming too, its brightness is the true B(λ, D·T)'s, which falls away fast
+                // as the light leaves the visible (cool stars behind vanish into the infrared). Beaming alone
+                // keeps the colour and scales the brightness as D⁵, as for the surfaces.
+                vec4 rest = bb(temperature), s = uDoppler > 0.5 ? bb(temperature * D) : rest;
+                vec3 c = s.rgb;
+                if (uBeaming > 0.5) c *= uDoppler > 0.5 ? min(exp(s.a - rest.a), 1e4) : min(pow(D, 5.0), 1e4);
+                c *= brightness * uExposure;
                 float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
                 gl_PointSize = clamp(1.0 + 2.0 * log2(1.0 + 4.0 * lum), 1.0, 14.0) * uPixelRatio;
                 vColor = c;
@@ -572,6 +507,8 @@ const params = new URLSearchParams(location.search);
 const startBeta = parseFloat(params.get('beta'));
 if (startBeta > 0) { ship.rapidity = Math.min(Math.atanh(Math.min(startBeta, 0.999)), MAX_RAPIDITY); setTarget(ship.rapidity); }
 lookYaw = THREE.MathUtils.degToRad(parseFloat(params.get('look')) || 0);
+// ?doppler=0, ?beaming=1 … start with a switch set (each switch's key, 0 or 1)
+for (const s of switches) if (params.has(s.key)) toggle(s.key, params.get(s.key) !== '0');
 document.getElementById('stop').addEventListener('click', () => setTarget(0));
 
 // ─── VR wrist panel ─────────────────────────────────────────────────────────
@@ -761,13 +698,11 @@ el.addEventListener('pointercancel', endDrag);
 
 renderer.xr.addEventListener('sessionstart', () => {
     camera.position.set(0, 0, 0);
-    sizeViews(SIZES.xr);
     document.getElementById('hud').style.display = 'none';
     document.getElementById('controls').style.display = 'none';
 });
 renderer.xr.addEventListener('sessionend', () => {
     camera.position.set(0, 1.6, 0);
-    sizeViews(SIZES.desktop);
     selecting.left = selecting.right = false;
     document.getElementById('hud').style.display = '';
     document.getElementById('controls').style.display = '';
@@ -800,15 +735,10 @@ renderer.setAnimationLoop(now => {
     rig.position.copy(ship.position);
     rig.rotation.set(0, ship.heading, 0);
     if (!renderer.xr.isPresenting) camera.rotation.set(lookPitch, lookYaw, 0, 'YXZ');
-    field.position.set(Math.round(ship.position.x / CELL) * CELL, 0, Math.round(ship.position.z / CELL) * CELL);
-
-    // The eyes where they are this frame: the headset's views follow the rig only once updateCamera runs
-    rig.updateMatrixWorld(true);
-    let eyes = [camera];
-    if (renderer.xr.isPresenting) {
-        renderer.xr.updateCamera(camera);
-        eyes = renderer.xr.getCamera().cameras.slice(0, 2);
-    }
+    // The field is centred on the ship's cell: whole cells, so the move is invisible
+    const cellX = Math.round(ship.position.x / CELL), cellZ = Math.round(ship.position.z / CELL);
+    composite.uniforms.uSnap.value.set(cellX * CELL, 0, cellZ * CELL);
+    composite.uniforms.uSnapCell.value.set(cellX, cellZ);
     uniforms.uObs.value.copy(camera.getWorldPosition(_eye));
     uniforms.uBeta.value = beta;
     uniforms.uGamma.value = gamma;
@@ -818,7 +748,6 @@ renderer.setAnimationLoop(now => {
     // With beaming the view ahead brightens as D⁵. The eye stops down as D⁻³ of the forward factor:
     // the sides stay readable, the forward cone glows overexposed and the view behind goes dark.
     uniforms.uExposure.value = uniforms.uBeaming.value > 0.5 ? ahead ** -3 : 1;
-    if (shipView.visible) renderStationViews(eyes);
     if (renderer.xr.isPresenting) {
         vrHud.draw(beta, gamma, Math.tanh(ship.target), ahead);
     } else if ((statsTimer += dt) > 0.2) {
