@@ -44,7 +44,7 @@ const OMEGA_M = 0.25, OMEGA_L = 0.75;                   // the Millennium Simula
 
 // ─── Cosmology ──────────────────────────────────────────────────────────────
 // Comoving distance D_C(z) = (c/H0) ∫ dz' / E(z'), tabulated once (Simpson's rule) and interpolated.
-const Z_MAX = 1.3, Z_STEPS = 13000;                     // eBOSS reaches z ≈ 1.1
+const Z_MAX = 2, Z_STEPS = 20000;                       // DESI's emission-line galaxies reach z ≈ 1.6
 const comovingTable = (() => {
     const E = z => Math.sqrt(OMEGA_M * (1 + z) ** 3 + OMEGA_L);
     const t = new Float64Array(Z_STEPS + 1), dz = Z_MAX / Z_STEPS;
@@ -82,9 +82,10 @@ const weightAt = p => millennium.weights[Math.min(millennium.count - 1, Math.flo
 function writeSurvey(id, galaxies) {
     // Luminosity from M = m − 5 log10(D_L / 10 pc); only its rank matters, so h drops out
     const logL = galaxies.map(g => -0.4 * (g.m - 5 * Math.log10((1 + g.z) * comoving(g.z) * 1e5)));
-    const order = logL.map((_, i) => i).sort((a, b) => logL[a] - logL[b]);
-    const w = new Float64Array(galaxies.length);
-    order.forEach((i, rank) => { w[i] = weightAt((rank + 0.5) / galaxies.length); });
+    // Galaxies without a magnitude (a few DESI targets lack photometry) take the median weight
+    const ranked = logL.map((_, i) => i).filter(i => Number.isFinite(logL[i])).sort((a, b) => logL[a] - logL[b]);
+    const w = new Float64Array(galaxies.length).fill(weightAt(0.5));
+    ranked.forEach((i, rank) => { w[i] = weightAt((rank + 0.5) / ranked.length); });
 
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     for (const g of galaxies) for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], g.p[k]); max[k] = Math.max(max[k], g.p[k]); }
@@ -169,6 +170,40 @@ export const SDSS_QUERIES = {
     boss: "SELECT ra, dec, z, cModelMag_i AS mag FROM SpecPhoto WHERE survey IN ('boss','eboss') AND class='GALAXY' AND zWarning=0 AND z BETWEEN 0.05 AND 1.2 AND fiberID % 17 = 0",
 };
 
+// ─── DESI (DR1 redshift extract + Legacy Surveys photometry) ────────────────
+// raw/desi_200k.csv: targetid, mean_fiber_ra, mean_fiber_dec, z, zerr, zwarn, spectype (J2000 degrees).
+// It has no magnitudes; raw/desi_photometry.csv (tools/fetch-desi-photometry.mjs) adds flux_r in
+// nanomaggies and the Milky Way transmission, giving the dereddened r = 22.5 − 2.5 log10(flux_r / T).
+// Galaxies only, with clean redshifts (zwarn 0): the extract's stars aren't large-scale structure, and its
+// quasars would stretch the scene out to z ≈ 6.
+function readDESI(file, photometryFile) {
+    const flux = new Map();
+    if (fs.existsSync(photometryFile)) {
+        for (const line of fs.readFileSync(photometryFile, 'utf8').split(/\r?\n/).slice(1)) {
+            const [id, f, t] = line.split(',');
+            if (id && +f > 0 && +t > 0) flux.set(id, +f / +t);
+        }
+    } else console.warn(`  ${path.basename(photometryFile)} missing: run tools/fetch-desi-photometry.mjs; brightness falls back to the median`);
+    const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+    const header = lines[0].split(','), col = name => header.indexOf(name);
+    const [iId, iRa, iDec, iZ, iWarn, iType] = ['targetid', 'mean_fiber_ra', 'mean_fiber_dec', 'z', 'zwarn', 'spectype'].map(col);
+    const galaxies = [];
+    let other = 0, poor = 0, noFlux = 0;
+    for (const line of lines.slice(1)) {
+        if (!line) continue;
+        const c = line.split(',');
+        if (c[iType] !== 'GALAXY') { other++; continue; }
+        const z = +c[iZ];
+        if (c[iWarn] !== '0' || !(z > 0.002 && z < Z_MAX)) { poor++; continue; }
+        const f = flux.get(c[iId]);
+        if (!f) noFlux++;
+        // With no flux, r = NaN: writeSurvey gives it the median weight rather than ranking it
+        galaxies.push({ p: place(+c[iRa] / 15, +c[iDec], comoving(z)), z, m: f ? 22.5 - 2.5 * Math.log10(f) : NaN });
+    }
+    console.log(`  ${path.basename(file)}: ${other.toLocaleString()} stars and quasars, ${poor.toLocaleString()} galaxies with a flagged redshift skipped; ${noFlux} kept without photometry`);
+    return galaxies;
+}
+
 // ─── Manifest ───────────────────────────────────────────────────────────────
 // The page lists datasets in this order; credit is shown in its HUD while the dataset is on screen.
 const datasets = [{
@@ -197,6 +232,9 @@ const surveys = [
     { id: 'boss', title: 'SDSS BOSS / eBOSS', file: 'boss_eboss_100k.csv', read: () => readSDSS(path.join(rawDir, 'boss_eboss_100k.csv')),
         description: 'Luminous red and emission-line galaxies from BOSS and eBOSS, out to z ≈ 1.1, 2009–19',
         credit: 'Sloan Digital Sky Survey DR17 (Abdurro’uf et al. 2022): BOSS (Dawson et al. 2013) and eBOSS (Dawson et al. 2016); SDSS is funded by the Alfred P. Sloan Foundation, the participating institutions and the US DOE Office of Science' },
+    { id: 'desi', title: 'DESI DR1', file: 'desi_200k.csv', read: () => readDESI(path.join(rawDir, 'desi_200k.csv'), path.join(rawDir, 'desi_photometry.csv')),
+        description: 'Bright, luminous red and emission-line galaxies from the Dark Energy Spectroscopic Instrument, out to z ≈ 1.6, 2021–22',
+        credit: 'DESI Data Release 1 (DESI Collaboration 2025), photometry from the DESI Legacy Imaging Surveys DR9, via NOIRLab’s Astro Data Lab; DESI is supported by the US DOE Office of Science and the participating institutions' },
 ];
 for (const s of surveys) {
     const file = path.join(rawDir, s.file ?? (s.id === '2dfgrs' ? '2dfgrs.idz' : `${s.id}.txt`));

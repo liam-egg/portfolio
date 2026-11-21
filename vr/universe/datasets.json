@@ -131,6 +131,27 @@
       "zMax": 1.2,
       "mirrorZ": false,
       "credit": "Sloan Digital Sky Survey DR17 (Abdurro’uf et al. 2022): BOSS (Dawson et al. 2013) and eBOSS (Dawson et al. 2016); SDSS is funded by the Alfred P. Sloan Foundation, the participating institutions and the US DOE Office of Science"
+    },
+    {
+      "id": "desi",
+      "title": "DESI DR1",
+      "kind": "survey",
+      "description": "Bright, luminous red and emission-line galaxies from the Dark Energy Spectroscopic Instrument, out to z ≈ 1.6, 2021–22",
+      "file": "datasets/desi.u16",
+      "count": 126957,
+      "min": [
+        -3426,
+        -1585,
+        -3204
+      ],
+      "max": [
+        3423,
+        3350,
+        3417
+      ],
+      "zMax": 1.698,
+      "mirrorZ": false,
+      "credit": "DESI Data Release 1 (DESI Collaboration 2025), photometry from the DESI Legacy Imaging Surveys DR9, via NOIRLab’s Astro Data Lab; DESI is supported by the US DOE Office of Science and the participating institutions"
     }
   ]
 }

@@ -18,7 +18,7 @@ const SITE_VISUALS = [
         title: 'Universe',
         author: 'Markus Lipp',
         extended: true,
-        description: "Markus Lipp's UniverseVR, an Oculus DK2 demo, rebuilt for WebXR from its shaders and opened up to more data. Fly through 849,274 galaxies from the Millennium Simulation, or switch to the real sky: the CfA surveys that found the Great Wall, the 2dF survey and SDSS out to z ≈ 1, all drawn to one scale and seen from the Milky Way."
+        description: "Markus Lipp's UniverseVR, an Oculus DK2 demo, rebuilt for WebXR from its shaders and opened up to more data. Fly through 849,274 galaxies from the Millennium Simulation, or switch to the real sky: the CfA surveys that found the Great Wall, the 2dF survey, SDSS and DESI out to z ≈ 1.7, all drawn to one scale and seen from the Milky Way."
     },
     {
         slug: 'root',
