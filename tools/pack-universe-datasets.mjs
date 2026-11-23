@@ -27,6 +27,11 @@
  * luminosity percentile p gets the Millennium weight at percentile p, so every dataset glows on one scale.
  * Luminosity comes from the apparent magnitude and the luminosity distance (1 + z)·D_C.
  *
+ * Labels: with raw/ned_galaxies.csv (tools/fetch-ned-galaxies.mjs), each survey also gets
+ * datasets/<id>.labels.json, its galaxies that NED knows by a familiar name (M, NGC, IC, Arp, UGC, Mrk …),
+ * matched by position and redshift. Then `fetch-ned-galaxies.mjs aliases` and a second run here find the
+ * familiar names NED doesn't prefer (see writeLabels).
+ *
  * Raw files are not committed (raw/ is gitignored): CfA from the CfA Redshift Catalog (ZCAT, Huchra et al.)
  * and 2dFGRS from the 2dFGRS final data release (Colless et al. 2001, 2003), www.2dfgrs.net.
  */
@@ -64,6 +69,19 @@ function comoving(z) {
 function place(raHours, decDeg, d) {
     const a = raHours * Math.PI / 12, b = decDeg * Math.PI / 180;
     return [d * Math.cos(b) * Math.cos(a), d * Math.sin(b), -d * Math.cos(b) * Math.sin(a)];
+}
+const unit = (raDeg, decDeg) => {
+    const a = raDeg * Math.PI / 180, b = decDeg * Math.PI / 180;
+    return [Math.cos(b) * Math.cos(a), Math.cos(b) * Math.sin(a), Math.sin(b)];
+};
+// B1950 (FK4) → J2000 (FK5), the standard rotation without the E-terms (good to about half an arcsecond)
+function precessB1950(raDeg, decDeg) {
+    const v = unit(raDeg, decDeg), M = [
+        [0.9999256782, -0.0111820611, -0.0048579477],
+        [0.0111820610, 0.9999374784, -0.0000271765],
+        [0.0048579479, -0.0000271474, 0.9999881997]];
+    const [x, y, z] = M.map(r => r[0] * v[0] + r[1] * v[1] + r[2] * v[2]);
+    return [((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360, Math.asin(z) * 180 / Math.PI];
 }
 
 // ─── Millennium weights, for matching ───────────────────────────────────────
@@ -117,17 +135,17 @@ function readCfA(file) {
         // The surveys reach ~15,000 km/s; the catalogue also lists a few quasars and background objects
         // far beyond them, which would stretch the survey's box to no purpose
         if (v > 45000) { far++; continue; }
-        const z = v / C_KMS;
-        galaxies.push({ p: place(raH, decD, comoving(z)), z, m });
+        const z = v / C_KMS, [raJ, decJ] = precessB1950(raH * 15, decD);   // to J2000, as the other surveys
+        galaxies.push({ p: place(raJ / 15, decJ, comoving(z)), z, m, ra: raJ, dec: decJ });
     }
     console.log(`  ${path.basename(file)}: ${skipped} rows without a usable velocity (≤ 500 km/s) or magnitude, ${far} beyond 45,000 km/s, skipped`);
     return galaxies;
 }
 
 // ─── 2dFGRS (best-observation catalogue) ────────────────────────────────────
-// Object lines: seq, nspec, name, UKST plate, RA/Dec B1950 (h m s, d m s), RA/Dec J2000, 7 magnitude
-// columns (bJ selection magnitude first), then nobs?, z, z_helio, quality, run. Spectrum lines carry the
-// name second instead.
+// Object lines: seq, nspec, name, UKST plate, RA/Dec B1950 (h m s, d m s), RA/Dec J2000 (read here), 7
+// magnitude columns (bJ selection magnitude first), then nobs?, z, z_helio, quality, run. Spectrum lines
+// carry the name second instead.
 function read2dF(file) {
     const galaxies = [];
     let objects = 0, poor = 0, out = 0;
@@ -141,7 +159,7 @@ function read2dF(file) {
         if (!(z > 0.002 && z < 0.5) || !Number.isFinite(bJ)) { out++; continue; }
         const raH = +t[10] + +t[11] / 60 + +t[12] / 3600;
         const decD = (t[13].startsWith('-') ? -1 : 1) * (Math.abs(+t[13]) + +t[14] / 60 + +t[15] / 3600);
-        galaxies.push({ p: place(raH, decD, comoving(z)), z, m: bJ });
+        galaxies.push({ p: place(raH, decD, comoving(z)), z, m: bJ, ra: raH * 15, dec: decD });
     }
     console.log(`  ${path.basename(file)}: ${objects.toLocaleString()} objects, ${poor.toLocaleString()} without a quality ≥ 3 redshift, ${out.toLocaleString()} stars or beyond z 0.5`);
     return galaxies;
@@ -158,7 +176,7 @@ function readSDSS(file) {
         if (!line) continue;
         const [ra, dec, z, m] = line.split(',').map(Number);
         if (!(z > 0 && z < Z_MAX) || ![ra, dec, m].every(Number.isFinite) || m <= 0) { bad++; continue; }
-        galaxies.push({ p: place(ra / 15, dec, comoving(z)), z, m });
+        galaxies.push({ p: place(ra / 15, dec, comoving(z)), z, m, ra, dec });
     }
     console.log(`  ${path.basename(file)}: ${galaxies.length.toLocaleString()} rows, ${bad} without a usable redshift or magnitude skipped`);
     return galaxies;
@@ -198,10 +216,97 @@ function readDESI(file, photometryFile) {
         const f = flux.get(c[iId]);
         if (!f) noFlux++;
         // With no flux, r = NaN: writeSurvey gives it the median weight rather than ranking it
-        galaxies.push({ p: place(+c[iRa] / 15, +c[iDec], comoving(z)), z, m: f ? 22.5 - 2.5 * Math.log10(f) : NaN });
+        galaxies.push({ p: place(+c[iRa] / 15, +c[iDec], comoving(z)), z, m: f ? 22.5 - 2.5 * Math.log10(f) : NaN, ra: +c[iRa], dec: +c[iDec] });
     }
     console.log(`  ${path.basename(file)}: ${other.toLocaleString()} stars and quasars, ${poor.toLocaleString()} galaxies with a flagged redshift skipped; ${noFlux} kept without photometry`);
     return galaxies;
+}
+
+// ─── Names from NED ─────────────────────────────────────────────────────────
+// raw/ned_galaxies.csv and raw/ned_aliases.json come from tools/fetch-ned-galaxies.mjs. A survey galaxy is
+// NED's galaxy if they lie within MATCH_ARCSEC on the sky and agree in redshift to 0.002(1 + z); of several,
+// the one with a familiar name, then the most cited. Only familiar names become labels: the catalogues in
+// NAMED, most familiar first (a galaxy in several shows the first). NED's other designations (SDSS J…,
+// WISEA J…, 2MASX J…) label nothing a viewer would recognise.
+const NAMED = [
+    [/^Messier\s+0*(\d+)$/i, d => `M${d}`],
+    [/^NGC\s+0*(\d+[A-Z]?)$/i, d => `NGC ${d}`],
+    [/^IC\s+0*(\d+[A-Z]?)$/i, d => `IC ${d}`],
+    [/^Arp\s+0*(\d+[A-Z]?)$/i, d => `Arp ${d}`],
+    [/^UGC\s+0*(\d+[A-Z]?)$/i, d => `UGC ${d}`],
+    [/^UGCA\s+0*(\d+[A-Z]?)$/i, d => `UGCA ${d}`],
+    [/^(?:MRK|Markarian)\s+0*(\d+[A-Z]?)$/i, d => `Mrk ${d}`],
+    [/^3C\s+0*(\d+(?:\.\d+)?[A-Z]?)$/i, d => `3C ${d}`],
+];
+// The best familiar name among a galaxy's names, as [rank, label], or null
+function familiar(names) {
+    let best = null;
+    for (const n of names) {
+        const s = n.trim().replace(/\s+/g, ' ');
+        NAMED.forEach(([re, f], rank) => {
+            const m = s.match(re);
+            if (m && (!best || rank < best[0])) best = [rank, f(m[1])];
+        });
+    }
+    return best;
+}
+const MATCH_ARCSEC = { cfa1: 20, cfa2: 20 };            // CfA's photographic positions; fibre surveys: 5″
+const ALIAS_REFS = 30;                                  // cited this often but oddly named: ask NED for its other names
+const ned = (() => {
+    const file = path.join(rawDir, 'ned_galaxies.csv');
+    if (!fs.existsSync(file)) { console.warn(`ned_galaxies.csv missing: run tools/fetch-ned-galaxies.mjs galaxies; no labels`); return null; }
+    const aliasFile = path.join(rawDir, 'ned_aliases.json');
+    const aliases = fs.existsSync(aliasFile) ? JSON.parse(fs.readFileSync(aliasFile, 'utf8')) : {};
+    const rows = [];
+    for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/).slice(1)) {
+        const m = line.match(/^"(.*)",([^,]*),([^,]*),([^,]*),([^,]*)$/);
+        if (!m) continue;
+        const [, name, ra, dec, z, refs] = m;
+        rows.push({ name, v: unit(+ra, +dec), z: +z, refs: +refs, label: familiar([name, ...(aliases[name] ?? [])]) });
+    }
+    // Grid on the unit sphere, cells wider than any match radius, so a match is in a cell next to its own
+    const CELL = 1e-3, key = v => v.map(c => Math.floor(c / CELL)).join(',');
+    const cells = new Map();
+    for (const r of rows) { const k = key(r.v); (cells.get(k) ?? cells.set(k, []).get(k)).push(r); }
+    console.log(`NED: ${rows.length.toLocaleString()} galaxies, ${rows.filter(r => r.label).length.toLocaleString()} with familiar names (${Object.keys(aliases).length.toLocaleString()} alias lookups cached)`);
+    return {
+        near(v, radius) {
+            const c = v.map(x => Math.floor(x / CELL)), out = [];
+            for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) {
+                for (const r of cells.get(`${c[0] + i},${c[1] + j},${c[2] + k}`) ?? []) {
+                    const d = Math.hypot(r.v[0] - v[0], r.v[1] - v[1], r.v[2] - v[2]);
+                    if (d <= radius) out.push([r, d]);
+                }
+            }
+            return out;
+        },
+    };
+})();
+const unnamed = new Map();                              // well-cited matches without a familiar name: NED name → refs
+
+// galaxies (with ra, dec in J2000 degrees) → datasets/<id>.labels.json: [label, x, y, z (Mpc/h), refs], most cited first
+function writeLabels(id, galaxies) {
+    if (!ned) return null;
+    const radius = (MATCH_ARCSEC[id] ?? 5) / 206265;
+    const best = new Map();                             // NED galaxy → its nearest survey galaxy, so each label is used once
+    for (const g of galaxies) {
+        let pick = null;
+        for (const [r, d] of ned.near(unit(g.ra, g.dec), radius)) {
+            if (!(Math.abs(r.z - g.z) <= 0.002 * (1 + g.z))) continue;
+            const better = !pick || (!!r.label !== !!pick[0].label ? !!r.label : r.refs !== pick[0].refs ? r.refs > pick[0].refs : d < pick[1]);
+            if (better) pick = [r, d];
+        }
+        if (!pick) continue;
+        const [r, d] = pick;
+        if (!r.label) { if (r.refs >= ALIAS_REFS) unnamed.set(r.name, r.refs); continue; }
+        if (!best.has(r) || d < best.get(r).d) best.set(r, { g, d });
+    }
+    const labels = [...best].sort(([a], [b]) => b.refs - a.refs)
+        .map(([r, { g }]) => [r.label[1], ...g.p.map(v => +v.toFixed(2)), r.refs]);
+    const file = `datasets/${id}.labels.json`;
+    fs.writeFileSync(path.join(outDir, file), JSON.stringify({ format: 'universe-labels@1', labels }));
+    console.log(`  ${labels.length.toLocaleString()} named galaxies (${labels.slice(0, 5).map(l => l[0]).join(', ')}${labels.length > 5 ? ' …' : ''})`);
+    return { labels: file, labelCount: labels.length };
 }
 
 // ─── Manifest ───────────────────────────────────────────────────────────────
@@ -239,14 +344,24 @@ const surveys = [
 for (const s of surveys) {
     const file = path.join(rawDir, s.file ?? (s.id === '2dfgrs' ? '2dfgrs.idz' : `${s.id}.txt`));
     if (!fs.existsSync(file)) { console.warn(`${s.id}: ${file} missing, left out of the manifest`); continue; }
-    const packed = writeSurvey(s.id, s.read());
-    datasets.push({ id: s.id, title: s.title, kind: 'survey', description: s.description, file: `datasets/${s.id}.u16`, ...packed, mirrorZ: false, credit: s.credit });
+    const galaxies = s.read();
+    const packed = writeSurvey(s.id, galaxies);
+    const labels = writeLabels(s.id, galaxies);
+    datasets.push({ id: s.id, title: s.title, kind: 'survey', description: s.description, file: `datasets/${s.id}.u16`, ...packed, mirrorZ: false, credit: s.credit, ...labels });
+}
+if (ned) {
+    // For tools/fetch-ned-galaxies.mjs aliases, most cited first
+    const list = [...unnamed].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+    fs.writeFileSync(path.join(rawDir, 'ned_unnamed.txt'), list.join('\n') + '\n');
+    console.log(`${list.length.toLocaleString()} matched galaxies cited ≥ ${ALIAS_REFS} times have no familiar NED name: listed in ned_unnamed.txt for the alias lookup`);
 }
 const manifest = {
     format: 'universe-datasets@1',
     scale: SCALE,
     units: 'Mpc/h',
     cosmology: { omegaM: OMEGA_M, omegaL: OMEGA_L },
+    // NED's required acknowledgement, shown with the labels
+    labelCredit: 'This research has made use of the NASA/IPAC Extragalactic Database (NED), which is funded by the National Aeronautics and Space Administration and operated by the California Institute of Technology',
     datasets,
 };
 fs.writeFileSync(path.join(outDir, 'datasets.json'), JSON.stringify(manifest, null, 2) + '\n');

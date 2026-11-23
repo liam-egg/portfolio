@@ -6,6 +6,7 @@
     "omegaM": 0.25,
     "omegaL": 0.75
   },
+  "labelCredit": "This research has made use of the NASA/IPAC Extragalactic Database (NED), which is funded by the National Aeronautics and Space Administration and operated by the California Institute of Technology",
   "datasets": [
     {
       "id": "millennium",
@@ -35,14 +36,14 @@
       "file": "datasets/cfa1.u16",
       "count": 1832,
       "min": [
-        -120,
+        -121,
         -4,
         -83
       ],
       "max": [
-        173,
+        172,
         104,
-        96
+        97
       ],
       "zMax": 0.061,
       "mirrorZ": false,
@@ -56,14 +57,14 @@
       "file": "datasets/cfa2.u16",
       "count": 17315,
       "min": [
-        -234,
-        -12,
-        -209
+        -235,
+        -10,
+        -207
       ],
       "max": [
         253,
-        345,
-        199
+        344,
+        201
       ],
       "zMax": 0.129,
       "mirrorZ": false,

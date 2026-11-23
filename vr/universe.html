@@ -55,7 +55,7 @@
                 <dt><kbd>drag</kbd></dt><dd>look around</dd>
                 <dt><kbd>Enter</kbd><kbd>R</kbd></dt><dd>back to the start (a survey's overview)</dd>
                 <dt><kbd>G</kbd><kbd>[</kbd><kbd>]</kbd></dt><dd>glow · exposure</dd>
-                <dt><kbd>N</kbd></dt><dd>next dataset</dd>
+                <dt><kbd>N</kbd><kbd>L</kbd></dt><dd>next dataset · galaxy names</dd>
                 <dt><kbd>M</kbd><kbd>H</kbd></dt><dd>music · hide help</dd>
             </dl>
             <span class="command">controls <span>--vr</span></span>
@@ -65,12 +65,13 @@
                 <dt><kbd>R trigger</kbd></dt><dd>faster</dd>
                 <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>glow · back to the start (a survey's overview)</dd>
                 <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>exposure · next dataset</dd>
-                <dt><kbd>L stick</kbd></dt><dd>press: music</dd>
+                <dt><kbd>L stick</kbd><kbd>R stick</kbd></dt><dd>press: music · galaxy names</dd>
             </dl>
             <div class="rule"></div>
             <span class="note">UniverseVR beta by Markus Lipp, rebuilt for WebXR from its DK2 shaders. Every dataset is drawn
                 at one scale, 0.1 m per Mpc/h; the surveys are centred on the Milky Way.<br>
                 Galaxies: <span id="data-credit">loading…</span>.<br>
+                <span id="label-credit" style="display: block"></span>
                 Music: "Blazing Stars", "Cosmic Switchboard", "Lightyears" by Eric Matyas, soundimage.org</span>
         </div>
     </section>
@@ -88,6 +89,9 @@
         </div>
         <div class="row">
             <button id="glow" aria-pressed="true">Glow on</button>
+            <button id="labels" aria-pressed="true">Names on</button>
+        </div>
+        <div class="row">
             <button id="music" aria-pressed="false">Music off</button>
             <button id="center">Centre</button>
         </div>
@@ -272,6 +276,109 @@ galaxyGroup.add(nearGalaxies);
 // frame's flight (the head pose lags a frame) can carry a galaxy past the edge of the selection.
 const NEAR_REACH = NEAR + 0.4;
 
+// ─── Names ──────────────────────────────────────────────────────────────────
+// Labels for the galaxies NED knows by a familiar name (M, NGC, IC, Arp, UGC, Mrk …). A survey names
+// thousands, so only the few that matter most from where you are get a label: in view, ranked by how
+// often they are cited over the square of their distance (a famous galaxy far off can still outrank an
+// obscure one nearby), and kept apart so no two labels overlap. Drawn in the overlay, after the colour map,
+// at a fixed angular size, so a name reads the same near or far, in a headset as on screen.
+const MAX_LABELS = 24;
+const LABEL_HEIGHT = 0.036;                             // radians: text about 1.2° tall
+const LABEL_VIEW = Math.cos(THREE.MathUtils.degToRad(48));   // within this cone of the gaze
+// A label's width in label heights, near enough to keep them apart without drawing each one first
+// (the canvas below: a ring 48 px square, then ~15.5 px a character at 28 px Geist, over 48 px height)
+const labelAspect = name => (58 + 15.5 * name.length) / 48;
+const labelGroup = new THREE.Group();                   // turned with the galaxies (galaxyGroup)
+overlayScene.add(labelGroup);
+const labelTextures = new Map();                        // name → { texture, aspect, anchor }, least recently used first
+function labelTexture(name) {
+    const cached = labelTextures.get(name);
+    if (cached) { labelTextures.delete(name); labelTextures.set(name, cached); return cached; }
+    const H = 48, font = '500 28px Geist, system-ui, sans-serif';
+    const canvas = document.createElement('canvas');
+    let ctx = canvas.getContext('2d');
+    ctx.font = font;
+    canvas.width = Math.ceil(H + ctx.measureText(name).width + 10);
+    canvas.height = H;
+    ctx = canvas.getContext('2d');
+    // A ring round the galaxy, then the name beside it, dark-edged so it reads over the brightest glow
+    ctx.strokeStyle = '#FFB74D';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(H / 2, H / 2, 9, 0, Math.PI * 2); ctx.stroke();
+    ctx.font = font;
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.strokeText(name, H, H / 2 + 1);
+    ctx.fillStyle = '#ececec';
+    ctx.fillText(name, H, H / 2 + 1);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.generateMipmaps = false;
+    texture.minFilter = THREE.LinearFilter;
+    const entry = { texture, aspect: canvas.width / H, anchor: H / 2 / canvas.width };
+    labelTextures.set(name, entry);
+    if (labelTextures.size > 200) {                     // forget the longest unused
+        const [oldest, old] = labelTextures.entries().next().value;
+        old.texture.dispose();
+        labelTextures.delete(oldest);
+    }
+    return entry;
+}
+const labelSprites = Array.from({ length: MAX_LABELS }, () => {
+    // sizeAttenuation off: the sprite's scale is an angle, not a size, so the label never shrinks with distance
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false }));
+    s.visible = false;
+    s.renderOrder = 5;
+    labelGroup.add(s);
+    return s;
+});
+const shownLabels = new Set();                          // indices on screen, favoured next time so labels don't flicker
+let labelTimer = 0;
+const _gaze = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3();
+function updateLabels(dt, eye, toData) {
+    if ((labelTimer += dt) < 0.2) return;
+    labelTimer = 0;
+    const labels = settings.labels ? data?.labels : null;
+    if (!labels) { labelSprites.forEach(s => { s.visible = false; }); shownLabels.clear(); return; }
+    // The view's axes in the dataset's frame: each label's place on screen, as angles from the gaze
+    camera.updateMatrixWorld();
+    camera.matrixWorld.extractBasis(_right, _up, _gaze);
+    _gaze.negate();
+    for (const v of [_right, _up, _gaze]) v.normalize().applyQuaternion(toData);
+    const { names, position, refs } = labels, candidates = [];
+    for (let i = 0; i < names.length; i++) {
+        const dx = position[i * 3] - eye.x, dy = position[i * 3 + 1] - eye.y, dz = position[i * 3 + 2] - eye.z;
+        const d = Math.hypot(dx, dy, dz), ahead = (dx * _gaze.x + dy * _gaze.y + dz * _gaze.z) / d;
+        if (d < 1e-3 || ahead < LABEL_VIEW) continue;
+        const x = (dx * _right.x + dy * _right.y + dz * _right.z) / d / ahead;
+        const y = (dx * _up.x + dy * _up.y + dz * _up.z) / d / ahead;
+        candidates.push({ i, x, y, w: LABEL_HEIGHT * labelAspect(names[i]), score: refs[i] / (d * d) * (shownLabels.has(i) ? 2 : 1) });
+    }
+    candidates.sort((a, b) => b.score - a.score);
+    // Each label covers its ring and the text to its right: no two of those boxes may overlap
+    const PAD = LABEL_HEIGHT * 0.15, chosen = [];
+    for (const c of candidates) {
+        if (chosen.length >= MAX_LABELS) break;
+        if (chosen.some(o => Math.abs(o.y - c.y) < LABEL_HEIGHT + PAD &&
+            c.x - LABEL_HEIGHT / 2 < o.x - LABEL_HEIGHT / 2 + o.w + PAD && o.x - LABEL_HEIGHT / 2 < c.x - LABEL_HEIGHT / 2 + c.w + PAD)) continue;
+        chosen.push(c);
+    }
+    shownLabels.clear();
+    labelSprites.forEach((s, k) => {
+        const c = chosen[k];
+        s.visible = !!c;
+        if (!c) return;
+        shownLabels.add(c.i);
+        const t = labelTexture(names[c.i]);
+        if (s.material.map !== t.texture) { s.material.map = t.texture; s.material.needsUpdate = true; }
+        s.center.set(t.anchor, 0.5);                    // the ring sits on the galaxy
+        s.scale.set(LABEL_HEIGHT * t.aspect, LABEL_HEIGHT, 1);
+        s.position.fromArray(position, c.i * 3);
+    });
+}
+
 // ─── Datasets ───────────────────────────────────────────────────────────────
 // One on screen at a time, each kept once loaded: positions in metres, weights, and a coarse grid of the
 // galaxies sorted by cell, which finds the few near the eye each frame.
@@ -343,6 +450,20 @@ function surveyView(position, count) {
     return { rotation, distance, speed: Math.max(1, distance / 25) };   // fly proportionally faster round a big survey
 }
 
+// A survey's named galaxies (tools/pack-universe-datasets.mjs, names from NED): [name, x, y, z (Mpc/h),
+// papers citing it], most cited first. Optional: without the file the survey simply has no names.
+async function fetchLabels(meta) {
+    if (!meta.labels) return null;
+    try {
+        const r = await fetch(`universe/${meta.labels}`);
+        if (!r.ok) return null;
+        const { labels } = await r.json();
+        const position = new Float32Array(labels.length * 3), refs = new Float32Array(labels.length);
+        labels.forEach(([, x, y, z, n], i) => { position.set([x * SCALE, y * SCALE, z * SCALE], i * 3); refs[i] = n; });
+        return { names: labels.map(l => l[0]), position, refs };
+    } catch { return null; }
+}
+
 async function fetchDataset(meta) {
     if (loaded.has(meta.id)) return loaded.get(meta.id);
     const buf = await fetch(`universe/${meta.file}`).then(r => {
@@ -361,7 +482,7 @@ async function fetchDataset(meta) {
         weight[i] = q[i * 4 + 3] / 65535;
     }
     const view = meta.kind === 'survey' ? surveyView(position, count) : { rotation: new THREE.Quaternion(), distance: 0, speed: 1 };
-    const d = { meta, count, position, weight, grid: buildGrid(position, count), view };
+    const d = { meta, count, position, weight, grid: buildGrid(position, count), view, labels: await fetchLabels(meta) };
     loaded.set(meta.id, d);
     return d;
 }
@@ -423,11 +544,16 @@ async function setDataset(id) {
         data = d;
         loading = null;
         galaxyGroup.quaternion.copy(d.view.rotation);
+        labelGroup.quaternion.copy(d.view.rotation);
+        shownLabels.clear();
+        labelTimer = Infinity;                          // pick this dataset's names on the next frame
         home = d.view.distance;
         center();                                       // every dataset opens on its own home view
         errorEl.textContent = '';
-        document.getElementById('dataset-note').textContent = `${meta.description}. ${d.count.toLocaleString()} galaxies.`;
+        const named = d.labels ? ` ${d.labels.names.length.toLocaleString()} named in NED.` : '';
+        document.getElementById('dataset-note').textContent = `${meta.description}. ${d.count.toLocaleString()} galaxies.${named}`;
         document.getElementById('data-credit').textContent = meta.credit;
+        document.getElementById('label-credit').textContent = d.labels ? `Names: ${manifest.labelCredit}.` : '';
     } catch (e) {
         if (loading === meta) loading = null;
         errorEl.textContent = e.message;
@@ -541,8 +667,16 @@ function renderFrame() {
 }
 
 // ─── Settings ───────────────────────────────────────────────────────────────
-const settings = { glow: true, exposure: 0 };
+const settings = { glow: true, exposure: 0, labels: true };
 const glowButton = document.getElementById('glow'), musicButton = document.getElementById('music');
+const labelsButton = document.getElementById('labels');
+function setLabels(on) {
+    settings.labels = on;
+    labelsButton.textContent = on ? 'Names on' : 'Names off';
+    labelsButton.setAttribute('aria-pressed', on);
+    labelTimer = Infinity;                              // show or hide them on the next frame
+}
+labelsButton.addEventListener('click', () => setLabels(!settings.labels));
 const exposureInput = document.getElementById('exposure'), exposureOut = document.getElementById('exposure-out');
 function setGlow(on) {
     settings.glow = on;
@@ -618,6 +752,7 @@ function pollXRInput(dt) {
     if (pressed('x', !!l[4]?.pressed)) setExposure(settings.exposure >= 2 ? -1 : settings.exposure + 0.5);
     if (pressed('y', !!l[5]?.pressed)) nextDataset();
     if (pressed('lstick', !!l[3]?.pressed)) toggleMusic();
+    if (pressed('rstick', !!r[3]?.pressed)) setLabels(!settings.labels);
 }
 
 // Turn the rig about the head, so the view pivots in place.
@@ -638,6 +773,7 @@ window.addEventListener('keydown', e => {
     if (e.code === 'KeyG') setGlow(!settings.glow);
     if (e.code === 'KeyM') toggleMusic();
     if (e.code === 'KeyN') nextDataset();
+    if (e.code === 'KeyL') setLabels(!settings.labels);
     if (e.code === 'BracketLeft') setExposure(settings.exposure - 0.25);
     if (e.code === 'BracketRight') setExposure(settings.exposure + 0.25);
     if (e.code.startsWith('Arrow')) e.preventDefault();
@@ -782,6 +918,7 @@ renderer.setAnimationLoop(now => {
     // The eye in the dataset's own frame (undoing the survey's turn), for the near galaxies and the readout
     _local.copy(_pos).applyQuaternion(_toData.copy(galaxyGroup.quaternion).invert());
     selectNearGalaxies(_local);
+    updateLabels(dt, _local, _toData);
     const where = data ? whereabouts() : null;
     const title = loading ? `loading ${loading.title}…` : data?.meta.title ?? '';
     if (renderer.xr.isPresenting) {
