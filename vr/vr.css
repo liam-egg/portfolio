@@ -107,7 +107,7 @@ kbd {
     font-family: 'Fira Code', monospace;
     font-size: 13px;
     line-height: 1.6;
-    white-space: pre;
+    white-space: pre-wrap;              /* a long readout wraps inside the panel instead of running out of it */
 }
 /* Controls read like the CV terminal: a command line, then key → action rows */
 .hud .command {

@@ -1110,26 +1110,82 @@ function isBlank(img) {
 }
 
 // ─── Pointer: markers, laser and panels ───
-function ringTexture(colour) {
-    const c = Object.assign(document.createElement('canvas'), { width: 64, height: 64 }), ctx = c.getContext('2d');
-    ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 9;
-    ctx.beginPath(); ctx.arc(32, 32, 24, 0, Math.PI * 2); ctx.stroke();
-    ctx.strokeStyle = colour; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(32, 32, 24, 0, Math.PI * 2); ctx.stroke();
+// Reticles drawn once on a canvas (256 px, so they stay crisp at their ~4° size), dark-edged and glowing so
+// they read over both the black and the brightest clusters.
+function reticleTexture(draw, glow) {
+    const c = Object.assign(document.createElement('canvas'), { width: 256, height: 256 }), ctx = c.getContext('2d');
+    ctx.translate(128, 128);
+    ctx.lineCap = 'round';
+    for (const pass of ['shadow', 'glow', 'line']) {
+        ctx.save();
+        if (pass === 'glow') { ctx.shadowColor = glow; ctx.shadowBlur = 18; }
+        draw(ctx, pass);
+        ctx.restore();
+    }
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
 }
-const marker = (colour, size) => {
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(colour), transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false }));
-    s.scale.set(size, size, 1);
-    s.renderOrder = 6;
-    s.visible = false;
-    labelGroup.add(s);                                  // in the dataset's frame, like the names
+// The style of each pass: a dark underlay, then the coloured stroke with its glow, then a bright core
+const stroke = (ctx, pass, colour, width) => {
+    ctx.strokeStyle = pass === 'shadow' ? 'rgba(0,0,0,0.6)' : pass === 'glow' ? colour : 'rgba(255,248,235,0.85)';
+    ctx.lineWidth = pass === 'shadow' ? width + 6 : pass === 'glow' ? width : width * 0.35;
+};
+// Inner: a fine ring with four ticks pointing in at the galaxy
+const ringTicks = colour => (ctx, pass) => {
+    stroke(ctx, pass, colour, 5);
+    ctx.beginPath(); ctx.arc(0, 0, 50, 0, Math.PI * 2); ctx.stroke();
+    for (let k = 0; k < 4; k++) {
+        const a = k * Math.PI / 2, c = Math.cos(a), s = Math.sin(a);
+        ctx.beginPath(); ctx.moveTo(c * 62, s * 62); ctx.lineTo(c * 80, s * 80); ctx.stroke();
+    }
+};
+// Outer: four arcs, turned slowly while the galaxy is selected
+const arcs = colour => (ctx, pass) => {
+    stroke(ctx, pass, colour, 7);
+    for (let k = 0; k < 4; k++) {
+        const a = k * Math.PI / 2 + Math.PI / 4;
+        ctx.beginPath(); ctx.arc(0, 0, 104, a - 0.36, a + 0.36); ctx.stroke();
+    }
+};
+const reticleSprite = (texture, size, order) => {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false }));
+    s.scale.set(size, size, 1);                         // radians: sizeAttenuation off keeps it one angular size
+    s.renderOrder = order;
     return s;
 };
-const hoverMarker = marker('#4DB6AC', 0.045), selectMarker = marker('#FFB74D', 0.06);
-const placeMarker = (s, g) => { s.visible = g >= 0 && !!data; if (s.visible) s.position.fromArray(data.position, g * 3); };
+const markerGroup = sprites => {
+    const g = new THREE.Group();
+    g.add(...sprites);
+    g.visible = false;
+    labelGroup.add(g);                                  // in the dataset's frame, like the names
+    return g;
+};
+const SELECT_SIZE = 0.075;
+const selectInner = reticleSprite(reticleTexture(ringTicks('#FFB74D'), '#FFB74D'), SELECT_SIZE, 7);
+const selectArcs = reticleSprite(reticleTexture(arcs('#FFB74D'), '#FFB74D'), SELECT_SIZE, 7);
+const selectMarker = markerGroup([selectInner, selectArcs]);
+const hoverMarker = markerGroup([reticleSprite(reticleTexture(ringTicks('#4DB6AC'), '#4DB6AC'), 0.05, 6)]);
+let markerTime = 0;
+const placeMarker = (m, g) => {
+    m.visible = g >= 0 && !!data;
+    if (m.visible) m.position.fromArray(data.position, g * 3);
+    if (m === selectMarker) markerTime = 0;             // replay the lock-on
+};
+// The lock-on: the arcs sweep in from twice the size and fade up over 0.45 s (ease-out), then turn slowly;
+// the ring breathes a few per cent
+function updateMarkers(dt) {
+    if (!selectMarker.visible) return;
+    markerTime += dt;
+    const e = 1 - (1 - Math.min(markerTime / 0.45, 1)) ** 3;
+    const arcScale = SELECT_SIZE * (1 + 1.1 * (1 - e));
+    selectArcs.scale.set(arcScale, arcScale, 1);
+    selectArcs.material.opacity = e;
+    selectArcs.material.rotation = 0.5 * markerTime - 1.2 * (1 - e);
+    const breathe = SELECT_SIZE * (1 + 0.04 * Math.sin(2.4 * markerTime));
+    selectInner.scale.set(breathe, breathe, 1);
+    selectInner.material.opacity = Math.min(1, markerTime / 0.2);
+}
 
 const laser = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]),
@@ -1305,6 +1361,7 @@ renderer.setAnimationLoop(now => {
     cullChunks(_local, _toData);
     updateLabels(dt, _local, _toData);
     updateLaser(dt);
+    updateMarkers(dt);
     const where = data ? whereabouts() : null;
     const title = loading ? `loading ${loading.title}…` : data?.meta.title ?? '';
     if (renderer.xr.isPresenting) {
@@ -1312,8 +1369,8 @@ renderer.setAnimationLoop(now => {
     } else if ((statsTimer += dt) > 0.25) {
         statsTimer = 0;
         statsEl.textContent = (data ? `${title}   ${data.count.toLocaleString()} galaxies\n${where.long}\n` : `${title}\n`) +
-            `${settings.glow ? 'glow' : 'sharp'}   exposure ×${(2 ** settings.exposure).toFixed(2)}   ${fps.toFixed(0)} fps` +
-            (data ? `   drawing ${Math.round(100 * culled / data.count)}%` : '');
+            `${settings.glow ? 'glow' : 'sharp'}   exposure ×${(2 ** settings.exposure).toFixed(2)}\n${fps.toFixed(0)} fps` +
+            (data ? `   drawing ${Math.round(100 * culled / data.count)}% of the galaxies` : '');
     }
     renderFrame();
 });

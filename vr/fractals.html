@@ -119,7 +119,7 @@
                         <dt><kbd>scroll</kbd><kbd>+</kbd><kbd>−</kbd></dt>
                         <dd>grow / shrink · <kbd>0</kbd> resets size and zoom</dd>
                         <dt><kbd>Z</kbd><kbd>X</kbd></dt>
-                        <dd>zoom in / out (shrink yourself, for close-ups)</dd>
+                        <dd>zoom in / out on the surface straight ahead</dd>
                         <dt><kbd>Space</kbd><kbd>R</kbd></dt>
                         <dd>pause · reset time</dd>
                         <dt><kbd>F</kbd><kbd>H</kbd></dt>
@@ -134,7 +134,7 @@
                         <dt><kbd>R grip</kbd><kbd>L grip</kbd></dt>
                         <dd>grow · shrink</dd>
                         <dt><kbd>R trigger</kbd><kbd>L trigger</kbd></dt>
-                        <dd>zoom in · out (shrink yourself, for close-ups)</dd>
+                        <dd>zoom in · out on the surface you face (no more cross-eyed close-ups)</dd>
                         <dt><kbd>A</kbd><kbd>B</kbd></dt>
                         <dd>pause · reset time</dd>
                         <dt><kbd>X</kbd></dt>
@@ -433,7 +433,11 @@
             if (err < uPixel) break;
             t += stp;
         }
-        if (resT < 0.0) discard;   
+        if (resT < 0.0) discard;
+    #ifdef PROBE
+        gl_FragColor = vec4(resT, 1.0, 0.0, 1.0);   // the zoom's probe: distance to the surface (local units), g = hit
+        return;
+    #endif
         vec3 p = ro + rd * resT;
         vec3 n = nor(p, max(0.0005 * uZoom, uPixel * resT));
         float sha = uShadow > 0 ? softshadow(p, uSunL, 4.0) : 1.0;
@@ -648,20 +652,24 @@
             // Close to the surface the two eyes see very different views. Their separation stays a real
             // 63 mm while the surface is a few centimetres away, so the eyes can't fuse it and the view goes
             // cross-eyed. Zoom shrinks the viewer instead: the rig (head, hands and eye separation) scales
-            // down about the eye, so nothing moves in view, but every distance grows by 1/zoom in the
-            // viewer's own terms. A surface 2 cm off at zoom 1/20 is seen as 40 cm off, where stereo is
-            // comfortable. The march's fixed lengths scale with it (uZoom), so detail keeps up.
+            // by `zoom`, so every distance grows by 1/zoom in the viewer's own terms, and the march's fixed
+            // lengths scale with it (uZoom), so detail keeps up. It scales about the point of the surface
+            // straight ahead (found by the probe below): that point keeps its place and seen distance, and
+            // the fractal round it grows, so zooming in magnifies what you look at, on a screen as in a
+            // headset, and your eyes never pass through the surface. Looking at nothing, it scales about
+            // the eye.
             const ZOOM_MIN = 1 / 1000,   // float32 positions hold about this far (the eye then moves in µm steps)
                 ZOOM_MAX = 1;
             const ZOOM_RATE = 1.2; // e-folds per second at a full trigger pull / key held
             const FAR = 200;
             let zoom = 1;
             const _zoomEye = new THREE.Vector3();
-            function setZoom(z) {
+            function setZoom(z, pivot) {
                 z = THREE.MathUtils.clamp(z, ZOOM_MIN, ZOOM_MAX);
-                camera.getWorldPosition(_zoomEye);
-                // The eye is rig.position + zoom · (its pose in the rig): scale that offset to keep it put
-                rig.position.sub(_zoomEye).multiplyScalar(z / zoom).add(_zoomEye);
+                if (!pivot) pivot = camera.getWorldPosition(_zoomEye);
+                // Everything in the rig is rig.position + zoom · (its pose in the rig): scaling its offset from
+                // the pivot by the same factor as the rig keeps the pivot fixed in the viewer's frame
+                rig.position.sub(pivot).multiplyScalar(z / zoom).add(pivot);
                 rig.scale.setScalar(z);
                 rig.updateMatrixWorld(true);
                 zoom = z;
@@ -670,6 +678,44 @@
                 // distance: 200 m at any zoom
                 camera.far = FAR / z;
                 camera.updateProjectionMatrix();
+            }
+
+            // The probe: the fractal's own shader (with PROBE defined) marches one pixel straight down the
+            // gaze, through a camera a twentieth of a degree wide, and writes the hit distance to a 1×1 float
+            // target, read back only while zooming. Same distance estimator, so no copy of it in JS.
+            const probeFloat = renderer.capabilities.isWebGL2 && renderer.extensions.has('EXT_color_buffer_float');
+            const probeTarget = new THREE.WebGLRenderTarget(1, 1, { type: THREE.FloatType, depthBuffer: false });
+            const probeCamera = new THREE.PerspectiveCamera(0.05, 1, 1e-4, 1000);
+            const probeMaterials = {};
+            const probePixel = new Float32Array(4), _probeColour = new THREE.Color();
+            const _gazeWorld = new THREE.Vector3(), _probeScale = new THREE.Vector3(), _pivot = new THREE.Vector3();
+            function zoomPivot() {
+                if (!probeFloat) return null;
+                // The head's pose without the rig's scale (the probe camera is the world's size)
+                camera.matrixWorld.decompose(probeCamera.position, probeCamera.quaternion, _probeScale);
+                probeCamera.updateMatrixWorld();
+                const material = fractal.material;
+                fractal.material = probeMaterials[fractalKind] ??= new THREE.ShaderMaterial({
+                    uniforms, vertexShader, fragmentShader: fractalFragment(fractalKind),
+                    defines: { PROBE: '' }, side: THREE.BackSide, depthWrite: false,
+                });
+                // In a headset three swaps any camera for the XR one, so step out of XR for this one pixel
+                const target = renderer.getRenderTarget(), xr = renderer.xr.enabled, alpha = renderer.getClearAlpha();
+                renderer.getClearColor(_probeColour);
+                renderer.xr.enabled = false;
+                renderer.setRenderTarget(probeTarget);
+                renderer.setClearColor(0x000000, 0);
+                renderer.clear();
+                renderer.render(fractal, probeCamera);
+                renderer.readRenderTargetPixels(probeTarget, 0, 0, 1, 1, probePixel);
+                renderer.setClearColor(_probeColour, alpha);
+                renderer.setRenderTarget(target);
+                renderer.xr.enabled = xr;
+                fractal.material = material;
+                if (probePixel[1] < 0.5) return null;      // looking past the fractal
+                // Local units → metres: the fractal's scale is uniform
+                probeCamera.getWorldDirection(_gazeWorld);
+                return _pivot.copy(probeCamera.position).addScaledVector(_gazeWorld, probePixel[0] * fractal.scale.x);
             }
 
             const DEADZONE = 0.15;
@@ -833,7 +879,7 @@
                 input.scrub = 0;
 
                 if (input.resize) setSize(size * Math.exp(input.resize * SIZE_RATE * dt));
-                if (input.zoom) setZoom(zoom * Math.exp(-input.zoom * ZOOM_RATE * dt));
+                if (input.zoom) setZoom(zoom * Math.exp(-input.zoom * ZOOM_RATE * dt), zoomPivot());
 
                 uniforms.uTime.value = fractalTime;
                 uniforms.uPhase.value = fractalTime * 0.1;
@@ -1057,8 +1103,8 @@
                 } else if ((statsTimer += dt) > 0.25) {
                     statsTimer = 0;
                     statsEl.textContent =
-                        `${rateLabel()}   ${timeText}   ⌀ ${(2 * BOUND_RADIUS * FRACTAL_SCALE * size).toFixed(1)} m` +
-                        `${zoom < 1 ? `   zoom ×${(1 / zoom).toFixed(1)}` : ''}\n` +
+                        `${rateLabel()}   ${timeText}\n` +
+                        `⌀ ${(2 * BOUND_RADIUS * FRACTAL_SCALE * size).toFixed(1)} m   zoom ×${(1 / zoom).toFixed(1)}\n` +
                         `${(1 / quality.ema).toFixed(0)} fps   quality ${quality.level}/${quality.max}` +
                         `   steps ${uniforms.uSteps.value}   res ${Math.round((renderer.getPixelRatio() / BASE_PIXEL_RATIO) * 100)}%`;
                 }
