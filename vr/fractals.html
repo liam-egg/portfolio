@@ -117,7 +117,9 @@
                         <dt><kbd>right-drag</kbd></dt>
                         <dd>look (or Shift-drag)</dd>
                         <dt><kbd>scroll</kbd><kbd>+</kbd><kbd>−</kbd></dt>
-                        <dd>grow / shrink · <kbd>0</kbd> resets size</dd>
+                        <dd>grow / shrink · <kbd>0</kbd> resets size and zoom</dd>
+                        <dt><kbd>Z</kbd><kbd>X</kbd></dt>
+                        <dd>zoom in / out (shrink yourself, for close-ups)</dd>
                         <dt><kbd>Space</kbd><kbd>R</kbd></dt>
                         <dd>pause · reset time</dd>
                         <dt><kbd>F</kbd><kbd>H</kbd></dt>
@@ -131,6 +133,8 @@
                         <dd>↕ down / up · ↔ time</dd>
                         <dt><kbd>R grip</kbd><kbd>L grip</kbd></dt>
                         <dd>grow · shrink</dd>
+                        <dt><kbd>R trigger</kbd><kbd>L trigger</kbd></dt>
+                        <dd>zoom in · out (shrink yourself, for close-ups)</dd>
                         <dt><kbd>A</kbd><kbd>B</kbd></dt>
                         <dd>pause · reset time</dd>
                         <dt><kbd>X</kbd></dt>
@@ -227,6 +231,7 @@
                 uJuliaC: { value: new THREE.Vector4() },
                 uJulia: { value: 0 },                      // bulb and ship: 1 draws the Julia set of uJuliaC
                 uPixel: { value: 0.0008 },
+                uZoom: { value: 1 },
                 uInvModel: { value: new THREE.Matrix4() },
                 uCenter: { value: FRACTAL_CENTER.clone() },
                 uSunL: { value: new THREE.Vector3() },
@@ -370,6 +375,7 @@
     #define OCC_STEPS 18.0
 
     uniform float uPhase, uPixel;
+    uniform float uZoom;   // the viewer's scale (zoom): the march's and shadows' fixed lengths shrink with it
     uniform int uSteps, uShadow, uIter;
     uniform mat4 uInvModel;
     uniform vec3 uSunL, uBacL, uUpL;
@@ -377,15 +383,15 @@
     ${FRACTALS[kind].glsl}
 
     float softshadow(vec3 ro, vec3 rd, float k) {
-        float res = 1.0, t = 0.01;
+        float res = 1.0, t = 0.01 * uZoom;
         for (int i = 0; i < ${MAX_SHADOW_CAP}; i++) {
             if (i >= uShadow) break;
             vec3 p = ro + rd * t;
             if (dot(p, p) > BOUND * BOUND) break;
             float h = de(p).x;
-            if (h < 0.001) return 0.0;
+            if (h < 0.001 * uZoom) return 0.0;
             res = min(res, k * h / t);
-            t += clamp(h, 0.01, 2.0);
+            t += clamp(h, 0.01 * uZoom, 2.0);
         }
         return res;
     }
@@ -422,14 +428,14 @@
             } else {
                 stp = -os; os = 0.0; pd = 100.0; d = 1.0;
             }
-            float err = d / max(t, 0.01);
+            float err = d / max(t, 0.01 * uZoom);
             if (err < maxErr) { maxErr = err; resT = t; }
             if (err < uPixel) break;
             t += stp;
         }
         if (resT < 0.0) discard;   
         vec3 p = ro + rd * resT;
-        vec3 n = nor(p, max(0.0005, uPixel * resT));
+        vec3 n = nor(p, max(0.0005 * uZoom, uPixel * resT));
         float sha = uShadow > 0 ? softshadow(p, uSunL, 4.0) : 1.0;
         // Occlusion from the march: rays that took many steps came in through narrow gaps
         float occ = 1.0 / (1.0 + pow(steps / OCC_STEPS, 3.0));
@@ -617,6 +623,7 @@
                 scrub: 0,
                 paused: false,
                 resize: 0,
+                zoom: 0,
             };
 
             // Variable size, so the fractal can be grown to room scale and walked around. It
@@ -635,6 +642,34 @@
                     Math.max(FRACTAL_CENTER.y, radius),
                     FRACTAL_CENTER.z,
                 );
+            }
+
+            // ─── Zoom ───
+            // Close to the surface the two eyes see very different views. Their separation stays a real
+            // 63 mm while the surface is a few centimetres away, so the eyes can't fuse it and the view goes
+            // cross-eyed. Zoom shrinks the viewer instead: the rig (head, hands and eye separation) scales
+            // down about the eye, so nothing moves in view, but every distance grows by 1/zoom in the
+            // viewer's own terms. A surface 2 cm off at zoom 1/20 is seen as 40 cm off, where stereo is
+            // comfortable. The march's fixed lengths scale with it (uZoom), so detail keeps up.
+            const ZOOM_MIN = 1 / 1000,   // float32 positions hold about this far (the eye then moves in µm steps)
+                ZOOM_MAX = 1;
+            const ZOOM_RATE = 1.2; // e-folds per second at a full trigger pull / key held
+            const FAR = 200;
+            let zoom = 1;
+            const _zoomEye = new THREE.Vector3();
+            function setZoom(z) {
+                z = THREE.MathUtils.clamp(z, ZOOM_MIN, ZOOM_MAX);
+                camera.getWorldPosition(_zoomEye);
+                // The eye is rig.position + zoom · (its pose in the rig): scale that offset to keep it put
+                rig.position.sub(_zoomEye).multiplyScalar(z / zoom).add(_zoomEye);
+                rig.scale.setScalar(z);
+                rig.updateMatrixWorld(true);
+                zoom = z;
+                uniforms.uZoom.value = z;
+                // Near and far are in the viewer's scaled units, so the far plane must reach the same world
+                // distance: 200 m at any zoom
+                camera.far = FAR / z;
+                camera.updateProjectionMatrix();
             }
 
             const DEADZONE = 0.15;
@@ -681,6 +716,9 @@
                 // Grips resize: squeeze right to grow the fractal, left to shrink it.
                 const grip = (gp) => gp?.buttons?.[1]?.value ?? 0;
                 input.resize = grip(gamepads.right) - grip(gamepads.left);
+                // Triggers zoom: right in (shrinks you), left out
+                const trigger = (gp) => gp?.buttons?.[0]?.value ?? 0;
+                input.zoom = trigger(gamepads.right) - trigger(gamepads.left);
                 const btn = gamepads.right?.buttons || [];
                 const a = !!btn[4]?.pressed,
                     b = !!btn[5]?.pressed;
@@ -707,7 +745,7 @@
                     e.preventDefault();
                 }
                 if (e.code === 'KeyR') resetTime();
-                if (e.code === 'Digit0' || e.code === 'Numpad0') setSize(1);
+                if (e.code === 'Digit0' || e.code === 'Numpad0') { setSize(1); setZoom(1); }
                 if (e.code === 'KeyH')
                     document.getElementById('hud').classList.toggle('hidden');
                 if (e.code.startsWith('Arrow')) e.preventDefault();
@@ -765,6 +803,7 @@
                 input.timeAxis = k('ArrowRight') - k('ArrowLeft');
                 input.resize =
                     k('Equal') + k('NumpadAdd') - k('Minus') - k('NumpadSubtract');
+                input.zoom = k('KeyZ') - k('KeyX');
             }
 
             let fractalTime = 0;
@@ -794,6 +833,7 @@
                 input.scrub = 0;
 
                 if (input.resize) setSize(size * Math.exp(input.resize * SIZE_RATE * dt));
+                if (input.zoom) setZoom(zoom * Math.exp(-input.zoom * ZOOM_RATE * dt));
 
                 uniforms.uTime.value = fractalTime;
                 uniforms.uPhase.value = fractalTime * 0.1;
@@ -813,7 +853,8 @@
                 fwd.normalize();
                 right.crossVectors(fwd, up);
                 // Walk faster around a bigger fractal, so circling it doesn't take forever.
-                const step = MOVE_SPEED * Math.max(1, Math.sqrt(size)) * dt;
+                // and at the viewer's own scale when zoomed (a shrunk viewer walks shrunk steps)
+                const step = MOVE_SPEED * Math.max(1, Math.sqrt(size)) * zoom * dt;
                 rig.position.addScaledVector(right, input.moveX * step);
                 rig.position.addScaledVector(fwd, -input.moveZ * step);
                 rig.position.addScaledVector(up, input.moveY * step);
@@ -1016,7 +1057,8 @@
                 } else if ((statsTimer += dt) > 0.25) {
                     statsTimer = 0;
                     statsEl.textContent =
-                        `${rateLabel()}   ${timeText}   ⌀ ${(2 * BOUND_RADIUS * FRACTAL_SCALE * size).toFixed(1)} m\n` +
+                        `${rateLabel()}   ${timeText}   ⌀ ${(2 * BOUND_RADIUS * FRACTAL_SCALE * size).toFixed(1)} m` +
+                        `${zoom < 1 ? `   zoom ×${(1 / zoom).toFixed(1)}` : ''}\n` +
                         `${(1 / quality.ema).toFixed(0)} fps   quality ${quality.level}/${quality.max}` +
                         `   steps ${uniforms.uSteps.value}   res ${Math.round((renderer.getPixelRatio() / BASE_PIXEL_RATIO) * 100)}%`;
                 }

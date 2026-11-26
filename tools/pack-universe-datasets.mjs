@@ -27,6 +27,9 @@
  * luminosity percentile p gets the Millennium weight at percentile p, so every dataset glows on one scale.
  * Luminosity comes from the apparent magnitude and the luminosity distance (1 + z)·D_C.
  *
+ * Each survey also gets <out>/datasets/<id>.sky.f32 (float32 × 3 per galaxy, same order: RA, Dec J2000
+ * degrees, redshift), the exact sky place the page's pointer shows and looks images up by.
+ *
  * Labels: with raw/ned_galaxies.csv (tools/fetch-ned-galaxies.mjs), each survey also gets
  * datasets/<id>.labels.json, its galaxies that NED knows by a familiar name (M, NGC, IC, Arp, UGC, Mrk …),
  * matched by position and redshift. Then `fetch-ned-galaxies.mjs aliases` and a second run here find the
@@ -114,9 +117,15 @@ function writeSurvey(id, galaxies) {
         q[i * 4 + 3] = Math.round(w[i] * 65535);
     });
     fs.writeFileSync(path.join(datasetsDir, `${id}.u16`), Buffer.from(q.buffer));
+    // The sky place of each galaxy, in the same order, for the page's pointer (fetched only when a galaxy is
+    // picked): float32 × 3, RA and Dec (J2000 degrees, to ~0.05″) and redshift. The .u16 positions alone
+    // give the direction only to ~20–80″, too coarse to centre an image or a NED search on the galaxy.
+    const sky = new Float32Array(galaxies.length * 3);
+    galaxies.forEach((g, i) => sky.set([g.ra, g.dec, g.z], i * 3));
+    fs.writeFileSync(path.join(datasetsDir, `${id}.sky.f32`), Buffer.from(sky.buffer));
     const zs = galaxies.map(g => g.z).sort((a, b) => a - b);
     console.log(`${id.padEnd(10)} ${galaxies.length.toLocaleString().padStart(9)} galaxies   z ${zs[0].toFixed(4)} … ${zs[zs.length - 1].toFixed(3)} (median ${zs[zs.length >> 1].toFixed(3)})   ${(q.byteLength / 1024).toFixed(0)} KB`);
-    return { count: galaxies.length, min, max, zMax: +zs[zs.length - 1].toFixed(3) };
+    return { count: galaxies.length, min, max, zMax: +zs[zs.length - 1].toFixed(3), sky: `datasets/${id}.sky.f32` };
 }
 
 // ─── CfA (ZCAT fixed-width) ─────────────────────────────────────────────────
@@ -284,12 +293,13 @@ const ned = (() => {
 })();
 const unnamed = new Map();                              // well-cited matches without a familiar name: NED name → refs
 
-// galaxies (with ra, dec in J2000 degrees) → datasets/<id>.labels.json: [label, x, y, z (Mpc/h), refs], most cited first
+// galaxies (with ra, dec in J2000 degrees) → datasets/<id>.labels.json:
+// [label, x, y, z (Mpc/h), refs, survey index, NED name], most cited first
 function writeLabels(id, galaxies) {
     if (!ned) return null;
     const radius = (MATCH_ARCSEC[id] ?? 5) / 206265;
     const best = new Map();                             // NED galaxy → its nearest survey galaxy, so each label is used once
-    for (const g of galaxies) {
+    for (const [i, g] of galaxies.entries()) {
         let pick = null;
         for (const [r, d] of ned.near(unit(g.ra, g.dec), radius)) {
             if (!(Math.abs(r.z - g.z) <= 0.002 * (1 + g.z))) continue;
@@ -299,10 +309,11 @@ function writeLabels(id, galaxies) {
         if (!pick) continue;
         const [r, d] = pick;
         if (!r.label) { if (r.refs >= ALIAS_REFS) unnamed.set(r.name, r.refs); continue; }
-        if (!best.has(r) || d < best.get(r).d) best.set(r, { g, d });
+        if (!best.has(r) || d < best.get(r).d) best.set(r, { g, i, d });
     }
+    // The survey index lets the page's pointer name a galaxy it picks; NED's own name opens its NED page
     const labels = [...best].sort(([a], [b]) => b.refs - a.refs)
-        .map(([r, { g }]) => [r.label[1], ...g.p.map(v => +v.toFixed(2)), r.refs]);
+        .map(([r, { g, i }]) => [r.label[1], ...g.p.map(v => +v.toFixed(2)), r.refs, i, r.name]);
     const file = `datasets/${id}.labels.json`;
     fs.writeFileSync(path.join(outDir, file), JSON.stringify({ format: 'universe-labels@1', labels }));
     console.log(`  ${labels.length.toLocaleString()} named galaxies (${labels.slice(0, 5).map(l => l[0]).join(', ')}${labels.length > 5 ? ' …' : ''})`);
@@ -359,7 +370,7 @@ const manifest = {
     format: 'universe-datasets@1',
     scale: SCALE,
     units: 'Mpc/h',
-    cosmology: { omegaM: OMEGA_M, omegaL: OMEGA_L },
+    cosmology: { omegaM: OMEGA_M, omegaL: OMEGA_L, h: 0.73 },     // h only for the pointer's look-back times
     // NED's required acknowledgement, shown with the labels
     labelCredit: 'This research has made use of the NASA/IPAC Extragalactic Database (NED), which is funded by the National Aeronautics and Space Administration and operated by the California Institute of Technology',
     datasets,

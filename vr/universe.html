@@ -18,8 +18,9 @@
             font-family: 'Geist', sans-serif;
         }
         canvas { display: block; touch-action: none; }
-        #hud { top: 16px; left: 16px; width: 400px; user-select: none; pointer-events: none; }
-        #controls { top: 16px; right: 16px; width: 340px; }
+        /* Scrolls when taller than the window, so it takes the pointer (dragging on it doesn't look around) */
+        #hud { top: 16px; left: 16px; width: 400px; max-height: calc(100vh - 32px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--lightBorder) transparent; user-select: none; }
+        #controls { top: 16px; right: 16px; width: 340px; max-height: calc(100vh - 32px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--lightBorder) transparent; }
         #controls .row { display: flex; gap: 8px; align-items: center; }
         #controls input[type=range] { flex: 1; }
         #controls select { width: 100%; }
@@ -27,6 +28,14 @@
         #controls output { color: var(--gold); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 5ch; text-align: right; }
         #error { color: #ef5350; font-family: 'Fira Code', monospace; font-size: 13px; white-space: pre-wrap; }
         #error:empty { display: none; }
+        #galaxy { display: flex; flex-direction: column; gap: 6px; }
+        #galaxy[hidden] { display: none; }
+        #galaxy .title { color: var(--gold); font-family: 'Geist', sans-serif; font-size: 16px; font-weight: 600; }
+        #galaxy .facts { color: var(--secondary); font-family: 'Fira Code', monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
+        #galaxy img { width: 100%; aspect-ratio: 1; border-radius: 6px; background: #0a0a0a; object-fit: cover; }
+        #galaxy img[hidden] { display: none; }
+        #galaxy .links { display: flex; gap: 12px; font-family: 'Fira Code', monospace; font-size: 12px; }
+        #galaxy .links a { color: var(--teal); }
     </style>
     <script type="importmap">
     {
@@ -53,6 +62,7 @@
                 <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>fly · arrow keys too</dd>
                 <dt><kbd>Q</kbd><kbd>E</kbd><kbd>Shift</kbd></dt><dd>down / up · faster</dd>
                 <dt><kbd>drag</kbd></dt><dd>look around</dd>
+                <dt><kbd>click</kbd><kbd>Esc</kbd></dt><dd>about a galaxy · put it away</dd>
                 <dt><kbd>Enter</kbd><kbd>R</kbd></dt><dd>back to the start (a survey's overview)</dd>
                 <dt><kbd>G</kbd><kbd>[</kbd><kbd>]</kbd></dt><dd>glow · exposure</dd>
                 <dt><kbd>N</kbd><kbd>L</kbd></dt><dd>next dataset · galaxy names</dd>
@@ -63,6 +73,7 @@
                 <dt><kbd>L stick</kbd></dt><dd>fly where you look</dd>
                 <dt><kbd>R stick</kbd></dt><dd>↕ height · ↔ turn</dd>
                 <dt><kbd>R trigger</kbd></dt><dd>faster</dd>
+                <dt><kbd>R grip</kbd></dt><dd>about the galaxy the laser is on (on nothing: put it away)</dd>
                 <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>glow · back to the start (a survey's overview)</dd>
                 <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>exposure · next dataset</dd>
                 <dt><kbd>L stick</kbd><kbd>R stick</kbd></dt><dd>press: music · galaxy names</dd>
@@ -96,6 +107,13 @@
             <button id="center">Centre</button>
         </div>
         <div id="error"></div>
+        <div id="galaxy" hidden>
+            <div class="rule"></div>
+            <span class="title" id="galaxy-title"></span>
+            <span class="facts" id="galaxy-facts"></span>
+            <span class="note" id="galaxy-image-note"></span>
+            <div class="links" id="galaxy-links"></div>
+        </div>
     </section>
 </div>
 
@@ -253,7 +271,8 @@ const galaxyMaterial = near => new THREE.ShaderMaterial({
     depthWrite: false,
     transparent: true,
 });
-const galaxies = new THREE.Points(new THREE.BufferGeometry(), galaxyMaterial(false));
+// A one-material array, so three draws the geometry's groups: the chunks in view (see cullChunks)
+const galaxies = new THREE.Points(new THREE.BufferGeometry(), [galaxyMaterial(false)]);
 galaxies.frustumCulled = false;
 // Both galaxy meshes sit in a group that turns a survey to face its overview (identity for the simulation),
 // so the controls never need to roll or tilt the camera.
@@ -407,6 +426,103 @@ function buildGrid(position, count) {
     return { min, cell, dims, start, byCell, sphere: new THREE.Sphere(centre, Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2) };
 }
 
+// ─── Chunks: skipping the galaxies out of view ───
+// Every galaxy costs a vertex-shader run per eye even when it's behind you (it is only clipped after), and
+// from inside a dataset that is about half of them. So the GPU's copy of the galaxies is sorted into
+// CHUNK_DIV³ chunks of the dataset's box, in Morton order (neighbouring chunks mostly sit next to each other
+// in the buffer), and each frame only the chunks inside a cone round the gaze are drawn. The CPU arrays keep
+// the survey's order, which the names, the sky file and the pointer index by.
+const CHUNK_DIV = 8;                                    // 512 chunks
+const MAX_RANGES = 24;                                  // draw calls per eye; gaps between them are drawn to stay under
+function buildChunks(position, weight, count) {
+    const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < count; i++) for (let k = 0; k < 3; k++) {
+        min[k] = Math.min(min[k], position[i * 3 + k]);
+        max[k] = Math.max(max[k], position[i * 3 + k]);
+    }
+    const at = (v, k) => Math.min(CHUNK_DIV - 1, Math.floor((v - min[k]) / (max[k] - min[k] || 1) * CHUNK_DIV));
+    // Morton code: the three 3-bit chunk coordinates interleaved
+    const morton = (x, y, z) => { let m = 0; for (let b = 0; b < 3; b++) m |= ((x >> b & 1) << 3 * b) | ((y >> b & 1) << 3 * b + 1) | ((z >> b & 1) << 3 * b + 2); return m; };
+    const N = CHUNK_DIV ** 3, code = new Uint16Array(count), start = new Uint32Array(N + 1);
+    for (let i = 0; i < count; i++) {
+        code[i] = morton(at(position[i * 3], 0), at(position[i * 3 + 1], 1), at(position[i * 3 + 2], 2));
+        start[code[i] + 1]++;
+    }
+    for (let c = 0; c < N; c++) start[c + 1] += start[c];
+    const fill = start.slice(0, -1), gpuPosition = new Float32Array(count * 3), gpuWeight = new Float32Array(count);
+    const lo = new Float32Array(N * 3).fill(Infinity), hi = new Float32Array(N * 3).fill(-Infinity);
+    for (let i = 0; i < count; i++) {
+        const c = code[i], j = fill[c]++;
+        for (let k = 0; k < 3; k++) {
+            const v = position[i * 3 + k];
+            gpuPosition[j * 3 + k] = v;
+            lo[c * 3 + k] = Math.min(lo[c * 3 + k], v);
+            hi[c * 3 + k] = Math.max(hi[c * 3 + k], v);
+        }
+        gpuWeight[j] = weight[i];
+    }
+    // Each non-empty chunk: its range in the buffer and a sphere round the galaxies actually in it
+    const chunks = [];
+    for (let c = 0; c < N; c++) {
+        if (start[c + 1] === start[c]) continue;
+        const centre = [0, 1, 2].map(k => (lo[c * 3 + k] + hi[c * 3 + k]) / 2);
+        const radius = Math.hypot(...[0, 1, 2].map(k => (hi[c * 3 + k] - lo[c * 3 + k]) / 2));
+        chunks.push({ start: start[c], count: start[c + 1] - start[c], centre, radius });
+    }
+    return { gpuPosition, gpuWeight, chunks };
+}
+
+// Half the angle across the view's corners: what the cone must cover. In a headset, read from each eye's
+// projection (asymmetric, so the widest side), and widened for a frame's head turn and the glow of a galaxy
+// just off the edge (a sprite 0.14 m wide at the 0.6 m the point sprites start: ±7°).
+const CULL_MARGIN = THREE.MathUtils.degToRad(12);
+function viewHalfAngle() {
+    let t2 = 0;
+    const xrCameras = renderer.xr.isPresenting ? renderer.xr.getCamera().cameras : [];
+    if (xrCameras.length) {
+        for (const c of xrCameras) {
+            const m = c.projectionMatrix.elements;     // r/n = (1 + m8)/m0, l/n = (m8 − 1)/m0; likewise up/down
+            const x = Math.max(Math.abs((1 + m[8]) / m[0]), Math.abs((m[8] - 1) / m[0]));
+            const y = Math.max(Math.abs((1 + m[9]) / m[5]), Math.abs((m[9] - 1) / m[5]));
+            t2 = Math.max(t2, x * x + y * y);
+        }
+    } else {
+        const ty = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+        t2 = ty * ty * (1 + camera.aspect * camera.aspect);
+    }
+    return Math.atan(Math.sqrt(t2)) + CULL_MARGIN;
+}
+
+// The chunks whose sphere meets the cone (apex at the eye, axis the gaze, both in the dataset's frame) become
+// the geometry's draw groups: runs of neighbouring chunks merge, then the smallest gaps close until there are
+// at most MAX_RANGES (drawing a few unseen galaxies is cheaper than another draw call).
+const _gazeData = new THREE.Vector3();
+function cullChunks(eye, toData) {
+    const geometry = galaxies.geometry;
+    if (!data?.chunks || !geometry.attributes.position) return;
+    camera.getWorldDirection(_gazeData).applyQuaternion(toData);
+    const half = viewHalfAngle(), ranges = [];
+    for (const { start, count, centre, radius } of data.chunks) {
+        const vx = centre[0] - eye.x, vy = centre[1] - eye.y, vz = centre[2] - eye.z, d = Math.hypot(vx, vy, vz);
+        const visible = d <= radius || half >= Math.PI ||
+            Math.acos(THREE.MathUtils.clamp((vx * _gazeData.x + vy * _gazeData.y + vz * _gazeData.z) / d, -1, 1)) - Math.asin(radius / d) < half;
+        if (!visible) continue;
+        const last = ranges[ranges.length - 1];
+        if (last && last.end === start) last.end = start + count;
+        else ranges.push({ start, end: start + count });
+    }
+    while (ranges.length > MAX_RANGES) {
+        let best = 1;
+        for (let i = 2; i < ranges.length; i++) if (ranges[i].start - ranges[i - 1].end < ranges[best].start - ranges[best - 1].end) best = i;
+        ranges[best - 1].end = ranges[best].end;
+        ranges.splice(best, 1);
+    }
+    geometry.clearGroups();
+    for (const r of ranges) geometry.addGroup(r.start, r.end - r.start, 0);
+    culled = ranges.reduce((n, r) => n + r.end - r.start, 0);
+}
+let culled = 0;                                         // galaxies sent to the GPU this frame, for the stats line
+
 // Eigenvalues and unit eigenvectors of a symmetric 3×3 matrix (cyclic Jacobi), largest first.
 function eigenSymmetric3(m) {
     const a = m.map(r => r.slice()), v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
@@ -451,7 +567,8 @@ function surveyView(position, count) {
 }
 
 // A survey's named galaxies (tools/pack-universe-datasets.mjs, names from NED): [name, x, y, z (Mpc/h),
-// papers citing it], most cited first. Optional: without the file the survey simply has no names.
+// papers citing it, survey index, NED's name], most cited first. Optional: without the file the survey
+// simply has no names.
 async function fetchLabels(meta) {
     if (!meta.labels) return null;
     try {
@@ -459,9 +576,21 @@ async function fetchLabels(meta) {
         if (!r.ok) return null;
         const { labels } = await r.json();
         const position = new Float32Array(labels.length * 3), refs = new Float32Array(labels.length);
-        labels.forEach(([, x, y, z, n], i) => { position.set([x * SCALE, y * SCALE, z * SCALE], i * 3); refs[i] = n; });
-        return { names: labels.map(l => l[0]), position, refs };
+        const byGalaxy = new Map();                     // survey index → label, for the pointer
+        labels.forEach(([name, x, y, z, n, g, nedName], i) => {
+            position.set([x * SCALE, y * SCALE, z * SCALE], i * 3);
+            refs[i] = n;
+            if (g !== undefined) byGalaxy.set(g, { name, nedName: nedName ?? name, refs: n });
+        });
+        return { names: labels.map(l => l[0]), position, refs, byGalaxy };
     } catch { return null; }
+}
+
+// A survey's exact sky places (float32 × 3: RA, Dec J2000 degrees, redshift), fetched on the first pick
+function fetchSky(d) {
+    if (!d.meta.sky) return Promise.resolve(null);
+    return d.sky ??= fetch(`universe/${d.meta.sky}`).then(r => (r.ok ? r.arrayBuffer() : null))
+        .then(b => (b ? new Float32Array(b) : null)).catch(() => null);
 }
 
 async function fetchDataset(meta) {
@@ -482,7 +611,8 @@ async function fetchDataset(meta) {
         weight[i] = q[i * 4 + 3] / 65535;
     }
     const view = meta.kind === 'survey' ? surveyView(position, count) : { rotation: new THREE.Quaternion(), distance: 0, speed: 1 };
-    const d = { meta, count, position, weight, grid: buildGrid(position, count), view, labels: await fetchLabels(meta) };
+    const { gpuPosition, gpuWeight, chunks } = buildChunks(position, weight, count);
+    const d = { meta, count, position, weight, gpuPosition, gpuWeight, chunks, grid: buildGrid(position, count), view, labels: await fetchLabels(meta) };
     loaded.set(meta.id, d);
     return d;
 }
@@ -524,6 +654,18 @@ const redshiftAt = (() => {
     };
 })();
 
+// Look-back time to redshift z in Gyr: t = (1/H0) ∫ dz' / ((1 + z') E(z')), 1/H0 = 9.778/h Gyr. h = 0.73 is
+// the Millennium Simulation's, the cosmology every survey is placed in.
+function lookbackGyr(z) {
+    const { omegaM, omegaL, h = 0.73 } = manifest.cosmology, N = 256;
+    let s = 0;
+    for (let i = 0; i < N; i++) {
+        const x = (i + 0.5) * z / N;
+        s += 1 / ((1 + x) * Math.sqrt(omegaM * (1 + x) ** 3 + omegaL));
+    }
+    return 9.7779 / h * s * z / N;
+}
+
 const datasetSelect = document.getElementById('dataset');
 datasetSelect.replaceChildren(...manifest.datasets.map(d => new Option(d.title, d.id)));
 let loading = null;                                     // the dataset being fetched, if any
@@ -535,12 +677,14 @@ async function setDataset(id) {
         const d = await fetchDataset(meta);
         if (loading !== meta) return;                   // another was picked while this one loaded
         const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.BufferAttribute(d.position, 3));
-        g.setAttribute('weight', new THREE.BufferAttribute(d.weight, 1));
+        // The GPU gets the chunk-sorted copy; nothing is drawn until the first cullChunks picks the groups
+        g.setAttribute('position', new THREE.BufferAttribute(d.gpuPosition, 3));
+        g.setAttribute('weight', new THREE.BufferAttribute(d.gpuWeight, 1));
         g.boundingSphere = d.grid.sphere;
         galaxies.geometry.dispose();
         galaxies.geometry = g;
         nearGeometry.instanceCount = 0;
+        if (data !== d) selectGalaxy(-1);               // its galaxy belongs to the old dataset
         data = d;
         loading = null;
         galaxyGroup.quaternion.copy(d.view.rotation);
@@ -719,11 +863,11 @@ for (let i = 0; i < 2; i++) {
     rig.add(grip);
     grip.addEventListener('connected', e => {
         gamepads[e.data.handedness] = e.data.gamepad || null;
-        if (e.data.handedness === 'left') grip.add(vrPanel.mesh);
+        if (e.data.handedness === 'left') grip.add(vrPanel.mesh, infoPanel.mesh);
     });
     grip.addEventListener('disconnected', e => {
         gamepads[e.data.handedness] = null;
-        if (e.data.handedness === 'left') grip.remove(vrPanel.mesh);
+        if (e.data.handedness === 'left') grip.remove(vrPanel.mesh, infoPanel.mesh);
     });
 }
 function stick(gp) {
@@ -753,6 +897,7 @@ function pollXRInput(dt) {
     if (pressed('y', !!l[5]?.pressed)) nextDataset();
     if (pressed('lstick', !!l[3]?.pressed)) toggleMusic();
     if (pressed('rstick', !!r[3]?.pressed)) setLabels(!settings.labels);
+    if (pressed('rgrip', !!r[1]?.pressed)) selectGalaxy(hovered);     // on nothing: puts the card away
 }
 
 // Turn the rig about the head, so the view pivots in place.
@@ -774,6 +919,7 @@ window.addEventListener('keydown', e => {
     if (e.code === 'KeyM') toggleMusic();
     if (e.code === 'KeyN') nextDataset();
     if (e.code === 'KeyL') setLabels(!settings.labels);
+    if (e.code === 'Escape') selectGalaxy(-1);
     if (e.code === 'BracketLeft') setExposure(settings.exposure - 0.25);
     if (e.code === 'BracketRight') setExposure(settings.exposure + 0.25);
     if (e.code.startsWith('Arrow')) e.preventDefault();
@@ -784,7 +930,7 @@ window.addEventListener('blur', () => keys.clear());
 let drag = null;
 const el = renderer.domElement;
 el.addEventListener('contextmenu', e => e.preventDefault());
-el.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; el.setPointerCapture(e.pointerId); });
+el.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY }; el.setPointerCapture(e.pointerId); });
 el.addEventListener('pointermove', e => {
     if (!drag) return;
     yaw -= (e.clientX - drag.x) * 0.004;
@@ -792,7 +938,11 @@ el.addEventListener('pointermove', e => {
     drag.x = e.clientX; drag.y = e.clientY;
 });
 const endDrag = () => { drag = null; };
-el.addEventListener('pointerup', endDrag);
+el.addEventListener('pointerup', e => {
+    // A press that barely moved is a click: pick the galaxy there
+    if (drag && e.button === 0 && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 5) pickAtScreen(e.clientX, e.clientY);
+    endDrag();
+});
 el.addEventListener('pointercancel', endDrag);
 
 function pollDesktopInput() {
@@ -871,9 +1021,243 @@ const vrPanel = (() => {
     };
 })();
 
+// ─── Pointer ────────────────────────────────────────────────────────────────
+// Point at a galaxy (a laser from the right controller, or a click) to learn about it. A survey galaxy shows
+// its name if NED knows it by a familiar one, its sky place and redshift (exact, from <id>.sky.f32), its
+// distance and how long its light has travelled, and a picture from the DESI Legacy Imaging Surveys, which
+// cover most of the sky these surveys looked at. The simulation's galaxies only have a place in the box.
+const PICK_VR = 0.02;                                   // radians either side of the laser (~1.1°)
+const PICK_PIXELS = 8;                                  // on screen: within this many pixels of the click
+const IMAGE_SIZE = 256;                                 // cutout pixels
+let hovered = -1, selected = null;                      // galaxy indices; selected = { d, g, info, image }
+
+// The galaxy nearest the ray (in the scene's frame), within `tolerance` radians of it or inside its glow,
+// favouring the brighter of close calls. -1 if none. A plain scan: a million galaxies take a few ms, and
+// this runs on a click or ten times a second while the laser is out.
+const _o = new THREE.Vector3(), _u = new THREE.Vector3(), _toDataPick = new THREE.Quaternion();
+function pickGalaxy(origin, direction, tolerance) {
+    if (!data) return -1;
+    _toDataPick.copy(galaxyGroup.quaternion).invert();
+    _o.copy(origin).applyQuaternion(_toDataPick);
+    _u.copy(direction).normalize().applyQuaternion(_toDataPick);
+    const { position, weight, count } = data, glow2 = (HALF_WIDTH * 0.6) ** 2, t2 = tolerance * tolerance;
+    let best = -1, bestScore = 1;
+    for (let i = 0; i < count; i++) {
+        const dx = position[i * 3] - _o.x, dy = position[i * 3 + 1] - _o.y, dz = position[i * 3 + 2] - _o.z;
+        const t = dx * _u.x + dy * _u.y + dz * _u.z;
+        if (t <= FADE_END) continue;
+        const perp2 = dx * dx + dy * dy + dz * dz - t * t;
+        const score = perp2 / Math.max(t2 * t * t, glow2) / (0.5 + weight[i]);
+        if (score < bestScore) { bestScore = score; best = i; }
+    }
+    return best;
+}
+
+// ─── Pointer: what is known about a galaxy ───
+const raText = deg => {
+    const s = Math.round(deg / 15 * 36000) / 10, h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+    return `${h}h ${String(m).padStart(2, '0')}m ${(s % 60).toFixed(1).padStart(4, '0')}s`;
+};
+const decText = deg => {
+    const a = Math.round(Math.abs(deg) * 3600), d = Math.floor(a / 3600), m = Math.floor(a % 3600 / 60);
+    return `${deg < 0 ? '−' : '+'}${d}° ${String(m).padStart(2, '0')}′ ${String(a % 60).padStart(2, '0')}″`;
+};
+const thousands = v => v.toLocaleString('en-GB', { maximumFractionDigits: 0 });
+function galaxyInfo(d, g, eye) {
+    const p = [0, 1, 2].map(k => d.position[g * 3 + k] / SCALE);
+    const fromYou = Math.hypot(p[0] - eye.x / SCALE, p[1] - eye.y / SCALE, p[2] - eye.z / SCALE);
+    if (d.meta.kind !== 'survey') {
+        const bz = d.meta.mirrorZ ? -p[2] : p[2];
+        return { title: 'A simulated galaxy', facts: [`at ${fmt(p[0])} ${fmt(p[1])} ${fmt(bz)} Mpc/h in the box`, `${thousands(fromYou)} Mpc/h from you`] };
+    }
+    // The sky place: exact once the sky file is in, from the position until then
+    const r = Math.hypot(...p), sky = d.skyData;
+    const ra = sky ? sky[g * 3] : ((Math.atan2(-p[2], p[0]) * 180 / Math.PI) + 360) % 360;
+    const dec = sky ? sky[g * 3 + 1] : Math.asin(p[1] / r) * 180 / Math.PI;
+    const z = sky ? sky[g * 3 + 2] : redshiftAt(r);
+    const label = d.labels?.byGalaxy?.get(g);
+    const t = lookbackGyr(z);
+    return {
+        title: label?.name ?? 'An unnamed galaxy',
+        subtitle: d.meta.title,
+        ra, dec, z, r, label,
+        facts: [
+            `RA ${raText(ra)}  Dec ${decText(dec)}`,
+            `redshift ${z.toFixed(z < 0.1 ? 4 : 3)}${sky ? '' : ' (approx.)'}`,
+            `${thousands(r)} Mpc/h away now (comoving)`,
+            `its light left ${t < 1 ? `${thousands(t * 1000)} million` : `${t.toFixed(1)} billion`} years ago`,
+            ...(label ? [`cited by ${thousands(label.refs)} papers (NED)`] : []),
+            `${thousands(fromYou)} Mpc/h from you here`,
+        ],
+    };
+}
+
+// A picture from the Legacy Surveys (CORS open, so the headset panel can draw it too), framed on about
+// 40 kpc/h at the galaxy (angular-diameter distance r / (1 + z)), and never finer than the survey's pixels.
+function cutoutUrl(info) {
+    const fov = THREE.MathUtils.clamp(0.04 / (info.r / (1 + info.z)), 50 / 206265, 0.4 * Math.PI / 180) * 206265;
+    return `https://www.legacysurvey.org/viewer/jpeg-cutout?ra=${info.ra.toFixed(5)}&dec=${info.dec.toFixed(5)}` +
+        `&layer=ls-dr10&pixscale=${(fov / IMAGE_SIZE).toFixed(3)}&size=${IMAGE_SIZE}`;
+}
+// Outside the survey's footprint the service returns a blank (black) square
+function isBlank(img) {
+    const c = Object.assign(document.createElement('canvas'), { width: 32, height: 32 }).getContext('2d', { willReadFrequently: true });
+    c.drawImage(img, 0, 0, 32, 32);
+    const px = c.getImageData(0, 0, 32, 32).data;
+    let lit = 0;
+    for (let i = 0; i < px.length; i += 4) if (px[i] + px[i + 1] + px[i + 2] > 24) lit++;
+    return lit < 20;
+}
+
+// ─── Pointer: markers, laser and panels ───
+function ringTexture(colour) {
+    const c = Object.assign(document.createElement('canvas'), { width: 64, height: 64 }), ctx = c.getContext('2d');
+    ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 9;
+    ctx.beginPath(); ctx.arc(32, 32, 24, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = colour; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(32, 32, 24, 0, Math.PI * 2); ctx.stroke();
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+}
+const marker = (colour, size) => {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(colour), transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false }));
+    s.scale.set(size, size, 1);
+    s.renderOrder = 6;
+    s.visible = false;
+    labelGroup.add(s);                                  // in the dataset's frame, like the names
+    return s;
+};
+const hoverMarker = marker('#4DB6AC', 0.045), selectMarker = marker('#FFB74D', 0.06);
+const placeMarker = (s, g) => { s.visible = g >= 0 && !!data; if (s.visible) s.position.fromArray(data.position, g * 3); };
+
+const laser = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]),
+    new THREE.LineBasicMaterial({ color: 0x4DB6AC, transparent: true, opacity: 0.7, depthTest: false }));
+laser.renderOrder = 6;
+let laserRay = null;                                    // the right controller's target-ray space
+for (let i = 0; i < 2; i++) {
+    const ray = renderer.xr.getController(i);
+    rig.add(ray);
+    ray.addEventListener('connected', e => { if (e.data.handedness === 'right') { laserRay = ray; ray.add(laser); } });
+    ray.addEventListener('disconnected', () => { if (laserRay === ray) { ray.remove(laser); laserRay = null; } });
+}
+
+// The headset's info card, above the wrist panel on the left controller: the picture, then the facts
+const infoPanel = (() => {
+    const W = 640, H = 320, canvas = Object.assign(document.createElement('canvas'), { width: W, height: H });
+    const ctx = canvas.getContext('2d'), tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.08), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false }));
+    // Up the wrist panel's tilted face (it leans back 45°), clear of its top edge
+    mesh.position.set(0, 0.06 + 0.044, -0.02 - 0.044);
+    mesh.rotation.x = -Math.PI / 4;
+    mesh.renderOrder = 10;
+    mesh.visible = false;
+    return {
+        mesh,
+        draw(sel) {
+            mesh.visible = !!sel;
+            if (!sel) return;
+            const { info, image } = sel, text = image?.ok ? 336 : 24;
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = 'rgba(0,0,0,0.85)';
+            ctx.beginPath(); ctx.roundRect(0, 0, W, H, 20); ctx.fill();
+            if (image?.ok) ctx.drawImage(image.img, 16, 16, H - 32, H - 32);
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#FFB74D'; ctx.font = 'bold 30px sans-serif';
+            ctx.fillText(info.title, text, 52, W - text - 20);
+            ctx.fillStyle = '#ececec'; ctx.font = '19px monospace';
+            if (info.subtitle) ctx.fillText(info.subtitle, text, 82, W - text - 20);
+            ctx.fillStyle = '#a1a1a1';
+            info.facts.forEach((f, i) => ctx.fillText(f, text, 118 + i * 30, W - text - 20));
+            if (image && !image.ok) ctx.fillText(image.note, text, H - 20, W - text - 20);
+            tex.needsUpdate = true;
+        },
+    };
+})();
+
+// The picture's <img> is made here, so the page never holds one without a source
+const galaxyCard = document.getElementById('galaxy'), galaxyImage = Object.assign(document.createElement('img'), { alt: '', hidden: true });
+document.getElementById('galaxy-image-note').before(galaxyImage);
+function showInfo() {
+    infoPanel.draw(selected);
+    galaxyCard.hidden = !selected;
+    if (!selected) return;
+    const { info, image } = selected;
+    document.getElementById('galaxy-title').textContent = info.title;
+    document.getElementById('galaxy-facts').textContent = (info.subtitle ? `${info.subtitle}\n` : '') + info.facts.join('\n');
+    galaxyImage.hidden = !image?.ok;
+    if (image?.ok && galaxyImage.src !== image.img.src) galaxyImage.src = image.img.src;
+    galaxyImage.alt = image?.ok ? `${info.title}, imaged by the DESI Legacy Imaging Surveys` : '';
+    document.getElementById('galaxy-image-note').textContent = !image ? '' : image.ok ? 'Image: DESI Legacy Imaging Surveys DR10 (legacysurvey.org)' : image.note;
+    const links = [];
+    if (info.ra !== undefined) {
+        const ned = info.label ? `https://ned.ipac.caltech.edu/byname?objname=${encodeURIComponent(info.label.nedName)}`
+            : `https://ned.ipac.caltech.edu/conesearch?search_type=Near%20Position%20Search&coordinates=${info.ra.toFixed(5)}d%20${info.dec.toFixed(5)}d&radius=0.25`;
+        links.push(['NED', ned], ['Sky viewer', `https://www.legacysurvey.org/viewer?ra=${info.ra.toFixed(5)}&dec=${info.dec.toFixed(5)}&layer=ls-dr10&zoom=15`]);
+    }
+    document.getElementById('galaxy-links').replaceChildren(...links.map(([text, href]) =>
+        Object.assign(document.createElement('a'), { textContent: `${text} ↗`, href, target: '_blank', rel: 'noopener' })));
+}
+
+// Pick a galaxy (or -1 to put the card away), then fill in the exact sky place and the picture as they arrive
+function selectGalaxy(g) {
+    placeMarker(selectMarker, g);
+    if (g < 0 || !data) { selected = null; showInfo(); return; }
+    const d = data, sel = selected = { d, g, info: galaxyInfo(d, g, _local), image: null };
+    showInfo();
+    if (d.meta.kind !== 'survey') return;
+    fetchSky(d).then(sky => {
+        if (selected !== sel) return;
+        d.skyData = sky;
+        if (sky) sel.info = galaxyInfo(d, g, _local);
+        sel.image = { ok: false, note: 'loading a picture…' };
+        showInfo();
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            if (selected !== sel) return;
+            sel.image = isBlank(img) ? { ok: false, note: 'No picture: outside the Legacy Surveys' } : { ok: true, img };
+            showInfo();
+        };
+        img.onerror = () => { if (selected === sel) { sel.image = { ok: false, note: 'No picture: the image service did not answer' }; showInfo(); } };
+        img.src = cutoutUrl(sel.info);
+    });
+}
+
+// The laser, ten times a second: the galaxy under it is ringed in teal, and the beam stops there
+let laserTimer = 0;
+const _rayOrigin = new THREE.Vector3(), _rayDirection = new THREE.Vector3(), _hit = new THREE.Vector3();
+function updateLaser(dt) {
+    if (!laserRay || !renderer.xr.isPresenting) { placeMarker(hoverMarker, -1); hovered = -1; return; }
+    if ((laserTimer += dt) >= 0.1) {
+        laserTimer = 0;
+        laserRay.getWorldPosition(_rayOrigin);
+        laserRay.getWorldDirection(_rayDirection).negate();   // an Object3D's world direction is its +z; the ray runs along −z
+        hovered = pickGalaxy(_rayOrigin, _rayDirection, PICK_VR);
+        placeMarker(hoverMarker, hovered);
+    }
+    // To the galaxy if it's on one (the marker is in the dataset frame, a rotation of the world's), else 2 m
+    laser.scale.z = hovered >= 0 ? Math.max(0.05, _rayOrigin.distanceTo(hoverMarker.getWorldPosition(_hit))) : 2;
+}
+
+// A click (a press that didn't turn into a drag) picks the galaxy under the pointer
+const raycaster = new THREE.Raycaster(), _ndc = new THREE.Vector2();
+function pickAtScreen(x, y) {
+    _ndc.set(x / window.innerWidth * 2 - 1, -(y / window.innerHeight) * 2 + 1);
+    camera.updateMatrixWorld();
+    raycaster.setFromCamera(_ndc, camera);
+    // PICK_PIXELS as an angle: the view is 70° tall over the window's height
+    const tolerance = PICK_PIXELS * 2 * Math.tan(THREE.MathUtils.degToRad(35)) / window.innerHeight;
+    selectGalaxy(pickGalaxy(raycaster.ray.origin, raycaster.ray.direction, tolerance));
+}
+
 // ─── Loop ───────────────────────────────────────────────────────────────────
 setExposure(0);
-setDataset(new URLSearchParams(location.search).get('dataset') ?? manifest.datasets[0].id);   // ?dataset=2dfgrs
+const params = new URLSearchParams(location.search);
+// ?dataset=2dfgrs, and ?galaxy=<index in it> opens that galaxy's card
+setDataset(params.get('dataset') ?? manifest.datasets[0].id).then(() => { if (params.has('galaxy')) selectGalaxy(+params.get('galaxy')); });
 const statsEl = document.getElementById('stats');
 const _pos = new THREE.Vector3(), _local = new THREE.Vector3(), _toData = new THREE.Quaternion();
 let lastTime = performance.now(), statsTimer = 0, fps = 60;
@@ -918,7 +1302,9 @@ renderer.setAnimationLoop(now => {
     // The eye in the dataset's own frame (undoing the survey's turn), for the near galaxies and the readout
     _local.copy(_pos).applyQuaternion(_toData.copy(galaxyGroup.quaternion).invert());
     selectNearGalaxies(_local);
+    cullChunks(_local, _toData);
     updateLabels(dt, _local, _toData);
+    updateLaser(dt);
     const where = data ? whereabouts() : null;
     const title = loading ? `loading ${loading.title}…` : data?.meta.title ?? '';
     if (renderer.xr.isPresenting) {
@@ -926,7 +1312,8 @@ renderer.setAnimationLoop(now => {
     } else if ((statsTimer += dt) > 0.25) {
         statsTimer = 0;
         statsEl.textContent = (data ? `${title}   ${data.count.toLocaleString()} galaxies\n${where.long}\n` : `${title}\n`) +
-            `${settings.glow ? 'glow' : 'sharp'}   exposure ×${(2 ** settings.exposure).toFixed(2)}   ${fps.toFixed(0)} fps`;
+            `${settings.glow ? 'glow' : 'sharp'}   exposure ×${(2 ** settings.exposure).toFixed(2)}   ${fps.toFixed(0)} fps` +
+            (data ? `   drawing ${Math.round(100 * culled / data.count)}%` : '');
     }
     renderFrame();
 });

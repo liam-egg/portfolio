@@ -4,7 +4,8 @@
   "units": "Mpc/h",
   "cosmology": {
     "omegaM": 0.25,
-    "omegaL": 0.75
+    "omegaL": 0.75,
+    "h": 0.73
   },
   "labelCredit": "This research has made use of the NASA/IPAC Extragalactic Database (NED), which is funded by the National Aeronautics and Space Administration and operated by the California Institute of Technology",
   "datasets": [
@@ -46,6 +47,7 @@
         97
       ],
       "zMax": 0.061,
+      "sky": "datasets/cfa1.sky.f32",
       "mirrorZ": false,
       "credit": "CfA Redshift Survey (Davis, Huchra, Latham & Tonry 1982; Huchra et al. 1983), via the CfA Redshift Catalog (ZCAT)"
     },
@@ -67,6 +69,7 @@
         201
       ],
       "zMax": 0.129,
+      "sky": "datasets/cfa2.sky.f32",
       "mirrorZ": false,
       "credit": "CfA2 Redshift Survey (Geller & Huchra 1989; Huchra et al. 1990, 1995), via the CfA Redshift Catalog (ZCAT)"
     },
@@ -88,6 +91,7 @@
         603
       ],
       "zMax": 0.485,
+      "sky": "datasets/2dfgrs.sky.f32",
       "mirrorZ": false,
       "credit": "2dF Galaxy Redshift Survey final data release (Colless et al. 2001, 2003), Anglo-Australian Observatory"
     },
@@ -109,6 +113,7 @@
         871
       ],
       "zMax": 0.391,
+      "sky": "datasets/sdss.sky.f32",
       "mirrorZ": false,
       "credit": "Sloan Digital Sky Survey DR17 (Abdurro’uf et al. 2022), main galaxy sample (Strauss et al. 2002); SDSS is funded by the Alfred P. Sloan Foundation, the participating institutions and the US DOE Office of Science"
     },
@@ -130,6 +135,7 @@
         2153
       ],
       "zMax": 1.2,
+      "sky": "datasets/boss.sky.f32",
       "mirrorZ": false,
       "credit": "Sloan Digital Sky Survey DR17 (Abdurro’uf et al. 2022): BOSS (Dawson et al. 2013) and eBOSS (Dawson et al. 2016); SDSS is funded by the Alfred P. Sloan Foundation, the participating institutions and the US DOE Office of Science"
     },
@@ -151,6 +157,7 @@
         3417
       ],
       "zMax": 1.698,
+      "sky": "datasets/desi.sky.f32",
       "mirrorZ": false,
       "credit": "DESI Data Release 1 (DESI Collaboration 2025), photometry from the DESI Legacy Imaging Surveys DR9, via NOIRLab’s Astro Data Lab; DESI is supported by the US DOE Office of Science and the participating institutions"
     }
