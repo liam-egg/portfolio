@@ -35,7 +35,7 @@
       "kind": "survey",
       "description": "The first CfA redshift survey: the northern sky to m ≈ 14.5, 1977–82",
       "file": "datasets/cfa1.u16",
-      "count": 1832,
+      "count": 2306,
       "min": [
         -121,
         -4,
@@ -49,7 +49,9 @@
       "zMax": 0.061,
       "sky": "datasets/cfa1.sky.f32",
       "mirrorZ": false,
-      "credit": "CfA Redshift Survey (Davis, Huchra, Latham & Tonry 1982; Huchra et al. 1983), via the CfA Redshift Catalog (ZCAT)"
+      "credit": "CfA Redshift Survey (Davis, Huchra, Latham & Tonry 1982; Huchra et al. 1983), via the CfA Redshift Catalog (ZCAT)",
+      "labels": "datasets/cfa1.labels.json",
+      "labelCount": 57
     },
     {
       "id": "cfa2",
@@ -57,7 +59,7 @@
       "kind": "survey",
       "description": "The second CfA survey, which found the Great Wall: to m ≈ 15.5, 1985–95",
       "file": "datasets/cfa2.u16",
-      "count": 17315,
+      "count": 17962,
       "min": [
         -235,
         -10,
@@ -71,7 +73,9 @@
       "zMax": 0.129,
       "sky": "datasets/cfa2.sky.f32",
       "mirrorZ": false,
-      "credit": "CfA2 Redshift Survey (Geller & Huchra 1989; Huchra et al. 1990, 1995), via the CfA Redshift Catalog (ZCAT)"
+      "credit": "CfA2 Redshift Survey (Geller & Huchra 1989; Huchra et al. 1990, 1995), via the CfA Redshift Catalog (ZCAT)",
+      "labels": "datasets/cfa2.labels.json",
+      "labelCount": 165
     },
     {
       "id": "2dfgrs",
@@ -93,7 +97,9 @@
       "zMax": 0.485,
       "sky": "datasets/2dfgrs.sky.f32",
       "mirrorZ": false,
-      "credit": "2dF Galaxy Redshift Survey final data release (Colless et al. 2001, 2003), Anglo-Australian Observatory"
+      "credit": "2dF Galaxy Redshift Survey final data release (Colless et al. 2001, 2003), Anglo-Australian Observatory",
+      "labels": "datasets/2dfgrs.labels.json",
+      "labelCount": 0
     },
     {
       "id": "sdss",
@@ -115,7 +121,9 @@
       "zMax": 0.391,
       "sky": "datasets/sdss.sky.f32",
       "mirrorZ": false,
-      "credit": "Sloan Digital Sky Survey DR17 (Abdurro’uf et al. 2022), main galaxy sample (Strauss et al. 2002); SDSS is funded by the Alfred P. Sloan Foundation, the participating institutions and the US DOE Office of Science"
+      "credit": "Sloan Digital Sky Survey DR17 (Abdurro’uf et al. 2022), main galaxy sample (Strauss et al. 2002); SDSS is funded by the Alfred P. Sloan Foundation, the participating institutions and the US DOE Office of Science",
+      "labels": "datasets/sdss.labels.json",
+      "labelCount": 22
     },
     {
       "id": "boss",
@@ -137,7 +145,9 @@
       "zMax": 1.2,
       "sky": "datasets/boss.sky.f32",
       "mirrorZ": false,
-      "credit": "Sloan Digital Sky Survey DR17 (Abdurro’uf et al. 2022): BOSS (Dawson et al. 2013) and eBOSS (Dawson et al. 2016); SDSS is funded by the Alfred P. Sloan Foundation, the participating institutions and the US DOE Office of Science"
+      "credit": "Sloan Digital Sky Survey DR17 (Abdurro’uf et al. 2022): BOSS (Dawson et al. 2013) and eBOSS (Dawson et al. 2016); SDSS is funded by the Alfred P. Sloan Foundation, the participating institutions and the US DOE Office of Science",
+      "labels": "datasets/boss.labels.json",
+      "labelCount": 0
     },
     {
       "id": "desi",
@@ -159,7 +169,9 @@
       "zMax": 1.698,
       "sky": "datasets/desi.sky.f32",
       "mirrorZ": false,
-      "credit": "DESI Data Release 1 (DESI Collaboration 2025), photometry from the DESI Legacy Imaging Surveys DR9, via NOIRLab’s Astro Data Lab; DESI is supported by the US DOE Office of Science and the participating institutions"
+      "credit": "DESI Data Release 1 (DESI Collaboration 2025), photometry from the DESI Legacy Imaging Surveys DR9, via NOIRLab’s Astro Data Lab; DESI is supported by the US DOE Office of Science and the participating institutions",
+      "labels": "datasets/desi.labels.json",
+      "labelCount": 2
     }
   ]
 }

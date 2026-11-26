@@ -115,11 +115,11 @@
                         <dt><kbd>left-drag</kbd></dt>
                         <dd>scrub time</dd>
                         <dt><kbd>right-drag</kbd></dt>
-                        <dd>orbit the surface ahead (or Shift-drag)</dd>
+                        <dd>look (or Shift-drag)</dd>
                         <dt><kbd>scroll</kbd><kbd>+</kbd><kbd>−</kbd></dt>
                         <dd>grow / shrink · <kbd>0</kbd> resets size and zoom</dd>
                         <dt><kbd>Z</kbd><kbd>X</kbd></dt>
-                        <dd>zoom in / out on the surface straight ahead</dd>
+                        <dd>zoom in / out, as a telescope does</dd>
                         <dt><kbd>Space</kbd><kbd>R</kbd></dt>
                         <dd>pause · reset time</dd>
                         <dt><kbd>F</kbd><kbd>H</kbd></dt>
@@ -673,11 +673,28 @@
                 rig.scale.setScalar(z);
                 rig.updateMatrixWorld(true);
                 zoom = z;
-                uniforms.uZoom.value = z;
+                uniforms.uZoom.value = zoom / magnification;
                 // Near and far are in the viewer's scaled units, so the far plane must reach the same world
                 // distance: 200 m at any zoom
                 camera.far = FAR / z;
                 camera.updateProjectionMatrix();
+            }
+
+            // ─── Telescope (desktop) ───
+            // On a screen, zoom is a telescope's: the observer stays put and the field of view narrows, so the
+            // view magnifies by tan(fov₀/2) / tan(fov/2). (A headset's field of view is the hardware's, which is
+            // why it zooms by scaling the viewer instead, above.) The surface tolerance follows the pixel's
+            // shrinking angle (desktopPixel) and the march's fixed lengths shrink with it (uZoom), so the
+            // magnified surface keeps its detail.
+            const BASE_FOV = camera.fov,
+                MAG_MAX = 500;   // 0.14° across: past this, float32 ray directions start to step
+            let magnification = 1;
+            function setMagnification(m) {
+                magnification = THREE.MathUtils.clamp(m, 1, MAG_MAX);
+                camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2)) / magnification));
+                camera.updateProjectionMatrix();
+                uniforms.uPixel.value = desktopPixel();
+                uniforms.uZoom.value = zoom / magnification;
             }
 
             // The probe: the fractal's own shader (with PROBE defined) marches one pixel straight down the
@@ -791,7 +808,7 @@
                     e.preventDefault();
                 }
                 if (e.code === 'KeyR') resetTime();
-                if (e.code === 'Digit0' || e.code === 'Numpad0') { setSize(1); setZoom(1); }
+                if (e.code === 'Digit0' || e.code === 'Numpad0') { setSize(1); setZoom(1); setMagnification(1); }
                 if (e.code === 'KeyH')
                     document.getElementById('hud').classList.toggle('hidden');
                 if (e.code.startsWith('Arrow')) e.preventDefault();
@@ -802,30 +819,14 @@
             let drag = null;
             const el = renderer.domElement;
             el.addEventListener('contextmenu', (e) => e.preventDefault());
-            // Right-drag orbits: the eye swings round the point of the surface straight ahead (the zoom's
-            // probe finds it; looking past the fractal, its centre) and keeps facing it. Turning in place
-            // only slides the whole picture across; swinging round a point out in front gives parallax, the
-            // near parts of the fractal sweeping past faster than the far ones, which reads as depth and speed.
             el.addEventListener('pointerdown', (e) => {
-                const mode = e.button === 2 || e.shiftKey ? 'look' : 'scrub';
                 drag = {
-                    mode,
+                    mode: e.button === 2 || e.shiftKey ? 'look' : 'scrub',
                     x: e.clientX,
                     y: e.clientY,
-                    pivot: mode === 'look' ? (zoomPivot()?.clone() ?? fractal.position.clone()) : null,
                 };
                 el.setPointerCapture(e.pointerId);
             });
-            const _orbitEye = new THREE.Vector3(), _orbitOffset = new THREE.Vector3(), _orbitRight = new THREE.Vector3();
-            const ORBIT_UP = new THREE.Vector3(0, 1, 0);
-            function orbit(pivot, dYaw, dPitch) {
-                // The view turns by Ry(dYaw) · R(right, dPitch) (yaw/pitch are applied 'YXZ'); turn the eye's
-                // offset from the pivot by the same rotation, so the pivot stays where it was on screen
-                camera.getWorldPosition(_orbitEye);
-                _orbitRight.set(Math.cos(yaw), 0, -Math.sin(yaw));
-                _orbitOffset.copy(_orbitEye).sub(pivot).applyAxisAngle(_orbitRight, dPitch).applyAxisAngle(ORBIT_UP, dYaw);
-                rig.position.add(_orbitOffset.add(pivot).sub(_orbitEye));
-            }
             el.addEventListener('pointermove', (e) => {
                 if (!drag) return;
                 const dx = e.clientX - drag.x,
@@ -833,11 +834,10 @@
                 drag.x = e.clientX;
                 drag.y = e.clientY;
                 if (drag.mode === 'look') {
-                    const dYaw = -dx * 0.004;
-                    const newPitch = THREE.MathUtils.clamp(pitch - dy * 0.004, -1.5, 1.5);
-                    orbit(drag.pivot, dYaw, newPitch - pitch);
-                    yaw += dYaw;
-                    pitch = newPitch;
+                    // The view turns about the observer. A pixel of drag is the same angle at any magnification,
+                    // as turning a telescope is: zoomed in, the field sweeps past that many times faster.
+                    yaw -= dx * 0.004;
+                    pitch = THREE.MathUtils.clamp(pitch - dy * 0.004, -1.5, 1.5);
                 } else {
                     input.scrub += dx * 0.03;
                 }
@@ -894,7 +894,10 @@
                 input.scrub = 0;
 
                 if (input.resize) setSize(size * Math.exp(input.resize * SIZE_RATE * dt));
-                if (input.zoom) setZoom(zoom * Math.exp(-input.zoom * ZOOM_RATE * dt), zoomPivot());
+                if (input.zoom) {
+                    if (renderer.xr.isPresenting) setZoom(zoom * Math.exp(-input.zoom * ZOOM_RATE * dt), zoomPivot());
+                    else setMagnification(magnification * Math.exp(input.zoom * ZOOM_RATE * dt));
+                }
 
                 uniforms.uTime.value = fractalTime;
                 uniforms.uPhase.value = fractalTime * 0.1;
@@ -1027,6 +1030,7 @@
                 quality.max = 4;
                 setLevel(3);
                 uniforms.uPixel.value = 0.0008;
+                uniforms.uZoom.value = zoom;           // the headset's projection ignores the telescope's fov
                 document.getElementById('hud').style.display = 'none';
                 document.getElementById('controls').style.display = 'none';
             });
@@ -1038,6 +1042,7 @@
                 quality.max = 6;
                 setLevel(5);
                 uniforms.uPixel.value = desktopPixel();
+                uniforms.uZoom.value = zoom / magnification;
                 gamepads.left = gamepads.right = null;
                 document.getElementById('hud').style.display = '';
                 document.getElementById('controls').style.display = '';
@@ -1119,7 +1124,7 @@
                     statsTimer = 0;
                     statsEl.textContent =
                         `${rateLabel()}   ${timeText}\n` +
-                        `⌀ ${(2 * BOUND_RADIUS * FRACTAL_SCALE * size).toFixed(1)} m   zoom ×${(1 / zoom).toFixed(1)}\n` +
+                        `⌀ ${(2 * BOUND_RADIUS * FRACTAL_SCALE * size).toFixed(1)} m   zoom ×${magnification.toFixed(1)}\n` +
                         `${(1 / quality.ema).toFixed(0)} fps   quality ${quality.level}/${quality.max}` +
                         `   steps ${uniforms.uSteps.value}   res ${Math.round((renderer.getPixelRatio() / BASE_PIXEL_RATIO) * 100)}%`;
                 }

@@ -129,7 +129,10 @@ function writeSurvey(id, galaxies) {
 }
 
 // ─── CfA (ZCAT fixed-width) ─────────────────────────────────────────────────
-//   cols 0–10 name, 11–18 RA hhmmss.s, 19 Dec sign, 20–25 Dec ddmmss, 26–29 magnitude, 30–35 velocity (km/s)
+//   cols 0–10 name, 11–18 RA hhmmss.s, 19 Dec sign, 20–25 Dec ddmmss, then the magnitude and the velocity
+//   (km/s, right-aligned to col 35). The magnitude is "15.2" for most, but "10.30" (two decimals) for the
+//   brightest galaxies, which runs into col 30: fixed columns read M87's "10.30 1292" as a velocity of 0 and
+//   dropped it with M49, NGC 4889 and the rest of the brightest. So cols 26–35 are split by pattern instead.
 function readCfA(file) {
     const galaxies = [];
     let skipped = 0, far = 0;
@@ -138,7 +141,8 @@ function readCfA(file) {
         const ra = line.slice(11, 19), dec = line.slice(20, 26);
         const raH = +ra.slice(0, 2) + +ra.slice(2, 4) / 60 + +ra.slice(4) / 3600;
         const decD = (line[19] === '-' ? -1 : 1) * (+dec.slice(0, 2) + +dec.slice(2, 4) / 60 + +dec.slice(4, 6) / 3600);
-        const m = parseFloat(line.slice(26, 30)), v = parseFloat(line.slice(30, 36));
+        const mv = line.slice(26, 36).match(/^\s*(\d{1,2}\.\d{1,2})?\s+(\d+)\s*$/) ?? line.slice(26, 36).match(/^\s*(\d{1,2}\.\d{1,2})?(\d+)?/);
+        const m = parseFloat(mv?.[1]), v = parseFloat(mv?.[2]);
         // Within a few Mpc peculiar motions swamp the expansion: a redshift there is no distance
         if (!(v > 500) || !Number.isFinite(m) || !Number.isFinite(raH) || !Number.isFinite(decD)) { skipped++; continue; }
         // The surveys reach ~15,000 km/s; the catalogue also lists a few quasars and background objects

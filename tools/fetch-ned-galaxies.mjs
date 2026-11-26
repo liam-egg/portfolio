@@ -10,6 +10,15 @@
  *       the whole directory, so it can wait in NED's queue for a long time: the job's URL is kept in
  *       raw/ned_job.txt, and running the step again picks the same job up instead of submitting another.
  *
+ *       NED's asynchronous jobs stop after 60 minutes, which this one needs longer than; NED has offered
+ *       a token for a longer run.
+ *
+ *   node tools/fetch-ned-galaxies.mjs region <ra0> <ra1> <dec0> <dec1> [raw-dir = vr/universe/raw]
+ *       The same query over one small patch of sky (J2000 degrees), for testing on real data meanwhile,
+ *       as NED suggested. The patch is covered by overlapping cones (see TILE, CONE), each a synchronous
+ *       query well inside NED's 60 s limit, one at a time. Rows are merged into raw/ned_galaxies.csv (a full
+ *       `galaxies` run replaces the file); cones done are kept in raw/ned_tiles.txt, so a rerun skips them.
+ *
  *   node tools/fetch-ned-galaxies.mjs aliases [raw-dir = vr/universe/raw]
  *       NED's preferred name is not always the familiar one (at NGC 4889's position it is
  *       "NGC 4886:[WLQ2016] X0001"). tools/pack-universe-datasets.mjs lists the matched galaxies whose
@@ -29,21 +38,64 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const [step, rawDir = 'vr/universe/raw'] = process.argv.slice(2);
+const [step] = process.argv.slice(2);
+let rawDir = (step === 'region' ? null : process.argv[3]) ?? 'vr/universe/raw';
 const TAP = 'https://ned.ipac.caltech.edu/tap/async';
 const LOOKUP = 'https://ned.ipac.caltech.edu/srs/ObjectLookup';
 const MIN_REFS = 10;                                    // "well studied": cited by at least this many papers
 const MAX_LOOKUPS = 6 * 3600 / 2;                       // six hours at about two seconds a lookup
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 
+const SYNC = 'https://ned.ipac.caltech.edu/tap/sync';
+// Cone queries (CONTAINS … CIRCLE) use NED's position index: 0.5° at the heart of the Coma cluster, NED's
+// densest kind of sky, took 18 s. Plain RA/Dec ranges do not, and time out even over 1.5° squares.
+const TILE = 0.8, CONE = 0.6;                           // degrees: grid spacing, cone radius (≥ TILE/√2)
+// Every galaxy with a redshift that is well studied or goes by a catalogue name (`where` narrows it)
+function galaxyQuery(where = '') {
+    const named = ['Messier', 'NGC', 'IC', 'Arp', 'UGC', 'MRK'].map(p => `prefname LIKE '${p} %'`).join(' OR ');
+    return 'SELECT prefname, ra, dec, z, n_crosref FROM NEDTAP.objdir ' +
+        `WHERE prefphytype = 'G' AND z BETWEEN 0.001 AND 1.7 AND (n_crosref >= ${MIN_REFS} OR ${named})${where}`;
+}
+
+async function region(ra0, ra1, dec0, dec1) {
+    if (![ra0, ra1, dec0, dec1].every(Number.isFinite) || ra1 <= ra0 || dec1 <= dec0)
+        throw new Error('usage: region <ra0> <ra1> <dec0> <dec1> (J2000 degrees, ra0 < ra1, dec0 < dec1)');
+    const out = path.join(rawDir, 'ned_galaxies.csv'), tilesFile = path.join(rawDir, 'ned_tiles.txt');
+    const done = new Set(fs.existsSync(tilesFile) ? fs.readFileSync(tilesFile, 'utf8').split(/\r?\n/).filter(Boolean) : []);
+    // Existing rows by name, so overlapping patches don't repeat a galaxy
+    const rows = new Map();
+    if (fs.existsSync(out)) for (const line of fs.readFileSync(out, 'utf8').split(/\r?\n/).slice(1)) if (line) rows.set(line.split('",')[0], line);
+    // Cones on a square grid TILE apart (in RA, widened by 1/cos dec), of radius CONE ≥ TILE/√2, so they
+    // overlap and leave no gaps
+    const cones = [];
+    for (let dec = dec0 + TILE / 2; dec - TILE / 2 < dec1; dec += TILE) {
+        const step = TILE / Math.cos(dec * Math.PI / 180);
+        for (let ra = ra0 + step / 2; ra - step / 2 < ra1; ra += step) cones.push([+ra.toFixed(4), +dec.toFixed(4)]);
+    }
+    for (const [ra, dec] of cones) {
+        const key = `${ra},${dec},${CONE}`;
+        if (done.has(key)) continue;
+        const t0 = Date.now();
+        const r = await fetch(SYNC, { method: 'POST', body: new URLSearchParams({ REQUEST: 'doQuery', LANG: 'ADQL', FORMAT: 'csv',
+            QUERY: galaxyQuery(` AND CONTAINS(POINT('ICRS', ra, dec), CIRCLE('ICRS', ${ra}, ${dec}, ${CONE})) = 1`) }) });
+        const text = await r.text();
+        if (!r.ok || !text.startsWith('prefname,')) throw new Error(`tile ${key}: HTTP ${r.status} ${text.slice(0, 500)}`);
+        const lines = text.split(/\r?\n/).slice(1).filter(Boolean);
+        for (const line of lines) rows.set(line.split('",')[0], line);
+        fs.writeFileSync(out, ['prefname,ra,dec,z,n_crosref', ...rows.values()].join('\n') + '\n');
+        fs.appendFileSync(tilesFile, key + '\n');
+        console.log(`  tile ${key}: ${lines.length} galaxies in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+        await sleep(1100);                              // at least a second after each reply
+    }
+    console.log(`wrote ${out}: ${rows.size.toLocaleString()} galaxies`);
+}
+
 async function galaxies() {
     const out = path.join(rawDir, 'ned_galaxies.csv'), jobFile = path.join(rawDir, 'ned_job.txt');
     let job = fs.existsSync(jobFile) ? fs.readFileSync(jobFile, 'utf8').trim() : '';
     if (job) console.log(`resuming ${job}`);
     else {
-        const named = ['Messier', 'NGC', 'IC', 'Arp', 'UGC', 'MRK'].map(p => `prefname LIKE '${p} %'`).join(' OR ');
-        const query = 'SELECT prefname, ra, dec, z, n_crosref FROM NEDTAP.objdir ' +
-            `WHERE prefphytype = 'G' AND z BETWEEN 0.001 AND 1.7 AND (n_crosref >= ${MIN_REFS} OR ${named})`;
+        const query = galaxyQuery();
         const r = await fetch(TAP, {
             method: 'POST', redirect: 'manual',
             body: new URLSearchParams({ REQUEST: 'doQuery', LANG: 'ADQL', FORMAT: 'csv', PHASE: 'RUN', QUERY: query }),
@@ -104,7 +156,11 @@ async function aliases() {
 
 if (step === 'galaxies') await galaxies();
 else if (step === 'aliases') await aliases();
-else {
-    console.error('usage: node tools/fetch-ned-galaxies.mjs galaxies|aliases [raw-dir]');
+else if (step === 'region') {
+    const [, ra0, ra1, dec0, dec1, dir] = process.argv.slice(2);
+    if (dir) rawDir = dir;
+    await region(+ra0, +ra1, +dec0, +dec1);
+} else {
+    console.error('usage: node tools/fetch-ned-galaxies.mjs galaxies|aliases [raw-dir]\n       node tools/fetch-ned-galaxies.mjs region <ra0> <ra1> <dec0> <dec1> [raw-dir]');
     process.exit(1);
 }
