@@ -115,7 +115,7 @@
                         <dt><kbd>left-drag</kbd></dt>
                         <dd>scrub time</dd>
                         <dt><kbd>right-drag</kbd></dt>
-                        <dd>look (or Shift-drag)</dd>
+                        <dd>orbit the surface ahead (or Shift-drag)</dd>
                         <dt><kbd>scroll</kbd><kbd>+</kbd><kbd>−</kbd></dt>
                         <dd>grow / shrink · <kbd>0</kbd> resets size and zoom</dd>
                         <dt><kbd>Z</kbd><kbd>X</kbd></dt>
@@ -802,14 +802,30 @@
             let drag = null;
             const el = renderer.domElement;
             el.addEventListener('contextmenu', (e) => e.preventDefault());
+            // Right-drag orbits: the eye swings round the point of the surface straight ahead (the zoom's
+            // probe finds it; looking past the fractal, its centre) and keeps facing it. Turning in place
+            // only slides the whole picture across; swinging round a point out in front gives parallax, the
+            // near parts of the fractal sweeping past faster than the far ones, which reads as depth and speed.
             el.addEventListener('pointerdown', (e) => {
+                const mode = e.button === 2 || e.shiftKey ? 'look' : 'scrub';
                 drag = {
-                    mode: e.button === 2 || e.shiftKey ? 'look' : 'scrub',
+                    mode,
                     x: e.clientX,
                     y: e.clientY,
+                    pivot: mode === 'look' ? (zoomPivot()?.clone() ?? fractal.position.clone()) : null,
                 };
                 el.setPointerCapture(e.pointerId);
             });
+            const _orbitEye = new THREE.Vector3(), _orbitOffset = new THREE.Vector3(), _orbitRight = new THREE.Vector3();
+            const ORBIT_UP = new THREE.Vector3(0, 1, 0);
+            function orbit(pivot, dYaw, dPitch) {
+                // The view turns by Ry(dYaw) · R(right, dPitch) (yaw/pitch are applied 'YXZ'); turn the eye's
+                // offset from the pivot by the same rotation, so the pivot stays where it was on screen
+                camera.getWorldPosition(_orbitEye);
+                _orbitRight.set(Math.cos(yaw), 0, -Math.sin(yaw));
+                _orbitOffset.copy(_orbitEye).sub(pivot).applyAxisAngle(_orbitRight, dPitch).applyAxisAngle(ORBIT_UP, dYaw);
+                rig.position.add(_orbitOffset.add(pivot).sub(_orbitEye));
+            }
             el.addEventListener('pointermove', (e) => {
                 if (!drag) return;
                 const dx = e.clientX - drag.x,
@@ -817,12 +833,11 @@
                 drag.x = e.clientX;
                 drag.y = e.clientY;
                 if (drag.mode === 'look') {
-                    yaw -= dx * 0.004;
-                    pitch = THREE.MathUtils.clamp(
-                        pitch - dy * 0.004,
-                        -1.5,
-                        1.5,
-                    );
+                    const dYaw = -dx * 0.004;
+                    const newPitch = THREE.MathUtils.clamp(pitch - dy * 0.004, -1.5, 1.5);
+                    orbit(drag.pivot, dYaw, newPitch - pitch);
+                    yaw += dYaw;
+                    pitch = newPitch;
                 } else {
                     input.scrub += dx * 0.03;
                 }
