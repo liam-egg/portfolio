@@ -10,9 +10,8 @@
  *                   [-0.5, 0.5]^3 and w (0.05–1) the brightness the sprites are tinted by.
  *                   Re-quantised to uint16 × 4 (8 bytes a galaxy, half the size; error ≈ 1.5e-5 box).
  *   - sprite.DDS    512² BGRA galaxy sprite (mip 0)      -> sprite.png
- *   - gradient.DDS  1024×128 BGRA colour ramp (one row)  -> gradient.png (1024×1)
- *   - music.mp3     copied as-is (Eric Matyas, soundimage.org)
- * keyboard.dds (the DK2 help card) is not needed: the page has its own HUD.
+ * Not packed: keyboard.dds (the DK2 help card; the page has its own HUD), gradient.dds (the page colours by
+ * redshift instead of UniverseVR's ramp) and music.mp3 (the page has no music).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -84,11 +83,3 @@ function png(width, height, rgba) {
 const sprite = readDDS(path.join(src, 'sprite.DDS'));
 fs.writeFileSync(path.join(out, 'sprite.png'), png(sprite.width, sprite.height, sprite.rgba));
 console.log(`sprite.png    ${sprite.width}×${sprite.height}`);
-
-const gradient = readDDS(path.join(src, 'gradient.dds'));
-const row = gradient.rgba.subarray(0, gradient.width * 4);   // the ramp is constant down its height
-fs.writeFileSync(path.join(out, 'gradient.png'), png(gradient.width, 1, Buffer.from(row)));
-console.log(`gradient.png  ${gradient.width}×1`);
-
-fs.copyFileSync(path.join(src, 'music.mp3'), path.join(out, 'music.mp3'));
-console.log('music.mp3     copied');

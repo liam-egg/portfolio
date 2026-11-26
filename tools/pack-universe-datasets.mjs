@@ -133,6 +133,28 @@ function writeSurvey(id, galaxies) {
 //   (km/s, right-aligned to col 35). The magnitude is "15.2" for most, but "10.30" (two decimals) for the
 //   brightest galaxies, which runs into col 30: fixed columns read M87's "10.30 1292" as a velocity of 0 and
 //   dropped it with M49, NGC 4889 and the rest of the brightest. So cols 26–35 are split by pattern instead.
+// The catalogue's own names, as NED would write them, for writeLabels: its name column codes NGC, IC and UGC
+// galaxies as N4486, I3446, U07663 (a suffix such as N4493NW marks a component, left out), and its comments
+// carry Messier and Arp numbers ("…*Liner,M87,Arp152,VIRGO A"; the reference code before them, e.g. M04039,
+// has too many digits to read as one).
+// The catalogue gives Messier numbers for only a few galaxies, so the Messier galaxies' NGC numbers are
+// listed here (M102 left out: which galaxy it is, is disputed).
+const MESSIER_NGC = {
+    224: 31, 221: 32, 598: 33, 628: 74, 1068: 77, 3031: 81, 3034: 82, 5236: 83, 4374: 84, 4382: 85, 4406: 86,
+    4486: 87, 4501: 88, 4552: 89, 4569: 90, 4548: 91, 3351: 95, 3368: 96, 4192: 98, 4254: 99, 4321: 100,
+    5457: 101, 4594: 104, 3379: 105, 4258: 106, 3556: 108, 3992: 109, 205: 110, 4472: 49, 5194: 51, 4579: 58,
+    4621: 59, 4649: 60, 4303: 61, 5055: 63, 4826: 64, 3623: 65, 3627: 66, 4736: 94,
+};
+function cfaNames(line) {
+    const names = [], code = line.slice(0, 11).trim();
+    const m = code.match(/^([NIU])0*(\d+)([A-Z]?)$/);
+    if (m) names.push(`${{ N: 'NGC', I: 'IC', U: 'UGC' }[m[1]]} ${m[2]}${m[3]}`);
+    if (m?.[1] === 'N' && !m[3] && MESSIER_NGC[m[2]]) names.push(`Messier ${MESSIER_NGC[m[2]]}`);
+    for (const [, n] of line.slice(36).matchAll(/\bM(\d{1,3})\b/g)) names.push(`Messier ${n}`);
+    for (const [, n] of line.slice(36).matchAll(/\bArp ?(\d{1,3})\b/gi)) names.push(`Arp ${n}`);
+    return names;
+}
+
 function readCfA(file) {
     const galaxies = [];
     let skipped = 0, far = 0;
@@ -149,7 +171,7 @@ function readCfA(file) {
         // far beyond them, which would stretch the survey's box to no purpose
         if (v > 45000) { far++; continue; }
         const z = v / C_KMS, [raJ, decJ] = precessB1950(raH * 15, decD);   // to J2000, as the other surveys
-        galaxies.push({ p: place(raJ / 15, decJ, comoving(z)), z, m, ra: raJ, dec: decJ });
+        galaxies.push({ p: place(raJ / 15, decJ, comoving(z)), z, m, ra: raJ, dec: decJ, names: cfaNames(line) });
     }
     console.log(`  ${path.basename(file)}: ${skipped} rows without a usable velocity (≤ 500 km/s) or magnitude, ${far} beyond 45,000 km/s, skipped`);
     return galaxies;
@@ -297,10 +319,38 @@ const ned = (() => {
 })();
 const unnamed = new Map();                              // well-cited matches without a familiar name: NED name → refs
 
+// Galaxies the survey's own catalogue names (g.names, CfA) but NED gave no familiar name for, until NED's full
+// list is in. Without citation counts they are ranked by apparent brightness, scaled to read like citations:
+// CATALOGUE_REFS at magnitude 15, ×10 every 2.5 magnitudes brighter (M87, m = 10.3: ~2,300; NED gives 3,798).
+const CATALOGUE_REFS = 30;
+const catalogueRefs = m => Math.round(CATALOGUE_REFS * 10 ** (0.4 * (15 - m)));
+
 // galaxies (with ra, dec in J2000 degrees) → datasets/<id>.labels.json:
-// [label, x, y, z (Mpc/h), refs, survey index, NED name], most cited first
+// [label, x, y, z (Mpc/h), refs, survey index, NED name], most cited first. Names from NED first; then, for
+// galaxies NED did not name, the survey catalogue's own (CfA's NGC/IC/UGC/Messier/Arp), each name used once.
 function writeLabels(id, galaxies) {
-    if (!ned) return null;
+    const best = ned ? nedLabels(id, galaxies) : new Map();
+    const labels = [...best].map(([r, { g, i }]) => [r.label[1], ...g.p.map(v => +v.toFixed(2)), r.refs, i, r.name]);
+    const used = new Set(labels.map(l => l[0])), labelled = new Set(labels.map(l => l[5]));
+    let fromCatalogue = 0;
+    // Brightest first, so where a name repeats (a pair listed twice) the brighter one keeps it
+    for (const i of [...galaxies.keys()].filter(i => galaxies[i].names?.length).sort((a, b) => galaxies[a].m - galaxies[b].m)) {
+        const g = galaxies[i], name = familiar(g.names)?.[1];
+        if (!name || used.has(name) || labelled.has(i)) continue;
+        used.add(name);
+        labels.push([name, ...g.p.map(v => +v.toFixed(2)), catalogueRefs(g.m), i, g.names[0]]);
+        fromCatalogue++;
+    }
+    if (!labels.length && !ned) return null;
+    labels.sort((a, b) => b[4] - a[4]);
+    const file = `datasets/${id}.labels.json`;
+    fs.writeFileSync(path.join(outDir, file), JSON.stringify({ format: 'universe-labels@1', labels }));
+    console.log(`  ${labels.length.toLocaleString()} named galaxies, ${fromCatalogue.toLocaleString()} by the catalogue's own names (${labels.slice(0, 5).map(l => l[0]).join(', ')}${labels.length > 5 ? ' …' : ''})`);
+    return { labels: file, labelCount: labels.length };
+}
+
+// NED's familiar names matched to survey galaxies: NED galaxy → { g, i, d }
+function nedLabels(id, galaxies) {
     const radius = (MATCH_ARCSEC[id] ?? 5) / 206265;
     const best = new Map();                             // NED galaxy → its nearest survey galaxy, so each label is used once
     for (const [i, g] of galaxies.entries()) {
@@ -315,13 +365,7 @@ function writeLabels(id, galaxies) {
         if (!r.label) { if (r.refs >= ALIAS_REFS) unnamed.set(r.name, r.refs); continue; }
         if (!best.has(r) || d < best.get(r).d) best.set(r, { g, i, d });
     }
-    // The survey index lets the page's pointer name a galaxy it picks; NED's own name opens its NED page
-    const labels = [...best].sort(([a], [b]) => b.refs - a.refs)
-        .map(([r, { g, i }]) => [r.label[1], ...g.p.map(v => +v.toFixed(2)), r.refs, i, r.name]);
-    const file = `datasets/${id}.labels.json`;
-    fs.writeFileSync(path.join(outDir, file), JSON.stringify({ format: 'universe-labels@1', labels }));
-    console.log(`  ${labels.length.toLocaleString()} named galaxies (${labels.slice(0, 5).map(l => l[0]).join(', ')}${labels.length > 5 ? ' …' : ''})`);
-    return { labels: file, labelCount: labels.length };
+    return best;
 }
 
 // ─── Manifest ───────────────────────────────────────────────────────────────

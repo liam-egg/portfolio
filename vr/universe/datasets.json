@@ -51,7 +51,7 @@
       "mirrorZ": false,
       "credit": "CfA Redshift Survey (Davis, Huchra, Latham & Tonry 1982; Huchra et al. 1983), via the CfA Redshift Catalog (ZCAT)",
       "labels": "datasets/cfa1.labels.json",
-      "labelCount": 57
+      "labelCount": 1577
     },
     {
       "id": "cfa2",
@@ -75,7 +75,7 @@
       "mirrorZ": false,
       "credit": "CfA2 Redshift Survey (Geller & Huchra 1989; Huchra et al. 1990, 1995), via the CfA Redshift Catalog (ZCAT)",
       "labels": "datasets/cfa2.labels.json",
-      "labelCount": 165
+      "labelCount": 4274
     },
     {
       "id": "2dfgrs",

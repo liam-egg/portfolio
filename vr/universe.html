@@ -22,6 +22,7 @@
         #hud { top: 16px; left: 16px; width: 400px; max-height: calc(100vh - 32px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--lightBorder) transparent; user-select: none; }
         #controls { top: 16px; right: 16px; width: 340px; max-height: calc(100vh - 32px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--lightBorder) transparent; }
         #controls .row { display: flex; gap: 8px; align-items: center; }
+        #controls .toggles { display: flex; gap: 20px; }
         #controls input[type=range] { flex: 1; }
         #controls select { width: 100%; }
         #controls label { color: var(--secondary); font-family: 'Fira Code', monospace; font-size: 13px; min-width: 8ch; }
@@ -78,11 +79,9 @@
                 <dt><kbd>Q</kbd><kbd>E</kbd><kbd>Shift</kbd></dt><dd>down / up · faster</dd>
                 <dt><kbd>drag</kbd></dt><dd>look around</dd>
                 <dt><kbd>click</kbd><kbd>Esc</kbd></dt><dd>about a galaxy · put it away</dd>
-                <dt><kbd>Enter</kbd><kbd>R</kbd></dt><dd>back to the start (a survey's overview)</dd>
                 <dt><kbd>G</kbd><kbd>[</kbd><kbd>]</kbd></dt><dd>glow · exposure</dd>
                 <dt><kbd>N</kbd><kbd>L</kbd></dt><dd>next dataset · galaxy names</dd>
-                <dt><kbd>C</kbd></dt><dd>colour by redshift / UniverseVR's ramp</dd>
-                <dt><kbd>M</kbd><kbd>H</kbd></dt><dd>music · hide help</dd>
+                <dt><kbd>H</kbd></dt><dd>hide help</dd>
             </dl>
             <span class="command">controls <span>--vr</span></span>
             <dl>
@@ -90,15 +89,13 @@
                 <dt><kbd>R stick</kbd></dt><dd>↕ height · ↔ turn</dd>
                 <dt><kbd>R trigger</kbd></dt><dd>faster</dd>
                 <dt><kbd>R grip</kbd></dt><dd>about the galaxy the laser is on (on nothing: put it away)</dd>
-                <dt><kbd>L grip</kbd></dt><dd>colour by redshift / UniverseVR's ramp</dd>
-                <dt><kbd>A</kbd><kbd>B</kbd></dt><dd>glow · back to the start (a survey's overview)</dd>
+                <dt><kbd>A</kbd></dt><dd>glow</dd>
                 <dt><kbd>X</kbd><kbd>Y</kbd></dt><dd>exposure · next dataset</dd>
-                <dt><kbd>L stick</kbd><kbd>R stick</kbd></dt><dd>press: music · galaxy names</dd>
+                <dt><kbd>R stick</kbd></dt><dd>press: galaxy names</dd>
             </dl>
             <div class="rule"></div>
             <span class="note">Galaxies: <span id="data-credit">loading…</span>.<br>
                 <span id="label-credit" style="display: block"></span>
-                Music: "Blazing Stars", "Cosmic Switchboard", "Lightyears" by Eric Matyas, soundimage.org<br>
                 Glow rendering after Markus Lipp's UniverseVR.</span>
         </div>
     </section>
@@ -114,18 +111,13 @@
             <input id="exposure" type="range" min="-2" max="2" step="0.05" value="0">
             <output id="exposure-out">×1.00</output>
         </div>
-        <div class="row">
-            <button id="glow" aria-pressed="true">Glow on</button>
-            <button id="labels" aria-pressed="true">Names on</button>
-            <button id="colour" aria-label="Colour scheme">Redshift</button>
-        </div>
         <div id="legend">
             <div class="ramp"></div>
             <div class="ends"><span id="legend-near"></span><span id="legend-far"></span></div>
         </div>
-        <div class="row">
-            <button id="music" aria-pressed="false">Music off</button>
-            <button id="center">Centre</button>
+        <div class="toggles">
+            <button class="switch" role="switch" id="glow" aria-checked="true"><span class="track"></span>Glow</button>
+            <button class="switch" role="switch" id="labels" aria-checked="true"><span class="track"></span>Names</button>
         </div>
         <div id="error"></div>
         <div id="galaxy" hidden>
@@ -196,13 +188,12 @@ const fail = msg => { errorEl.textContent = msg; document.getElementById('stats'
 // ─── Galaxies ───────────────────────────────────────────────────────────────
 const loadTex = url => new Promise((res, rej) => new THREE.TextureLoader().load(url, res, undefined, () => rej(new Error(`${url}: failed to load`))));
 // datasets.json (tools/pack-universe-datasets.mjs) lists every dataset, its range, scale and credit.
-const [manifest, sprite, gradient] = await Promise.all([
+const [manifest, sprite] = await Promise.all([
     fetch('universe/datasets.json').then(r => {
         if (!r.ok) throw new Error(`universe/datasets.json: HTTP ${r.status}`);
         return r.json();
     }),
     loadTex('universe/sprite.png'),
-    loadTex('universe/gradient.png'),
 ]).catch(e => { fail(e.message); throw e; });
 const SCALE = manifest.scale;                           // metres per Mpc/h
 
@@ -234,13 +225,10 @@ const glow = (() => {
     return new THREE.CanvasTexture(out);
 })();
 
-// Both textures hold display values: the DK2 build sampled them as plain UNORM, so no colour conversion.
-for (const t of [glow, gradient]) t.colorSpace = THREE.NoColorSpace;
+// The glow holds plain values (the DK2 build sampled it as UNORM), so no colour conversion
+glow.colorSpace = THREE.NoColorSpace;
 glow.generateMipmaps = true;
 glow.minFilter = THREE.LinearMipmapLinearFilter;
-gradient.wrapS = gradient.wrapT = THREE.ClampToEdgeWrapping;
-gradient.generateMipmaps = false;
-gradient.minFilter = THREE.LinearFilter;
 
 // The billboard pass: each galaxy a camera-facing sprite 2 × halfWidth across, tinted by its weight
 // and summed additively into a single intensity channel. Far galaxies are point sprites; the few
@@ -736,17 +724,18 @@ async function setDataset(id) {
         galaxyUniforms.uTintFromEye.value = meta.kind === 'survey' ? 0 : 1;
         galaxyUniforms.uTintRange.value = d.tintRange;
         autoTimer = AUTO_EVERY;                         // measure the new view on the next frame
-        setColour(settings.colour);                     // its button and legend name this dataset's key
+        showLegend();                                   // this dataset's colour key
         labelGroup.quaternion.copy(d.view.rotation);
         shownLabels.clear();
         labelTimer = Infinity;                          // pick this dataset's names on the next frame
         home = d.view.distance;
         center();                                       // every dataset opens on its own home view
         errorEl.textContent = '';
-        const named = d.labels ? ` ${d.labels.names.length.toLocaleString()} named in NED.` : '';
+        const hasNames = d.labels?.names.length > 0;    // a survey can have a names file with none in it yet
+        const named = hasNames ? ` ${d.labels.names.length.toLocaleString()} named.` : '';
         document.getElementById('dataset-note').textContent = `${meta.description}. ${d.count.toLocaleString()} galaxies.${named}`;
         document.getElementById('data-credit').textContent = meta.credit;
-        document.getElementById('label-credit').textContent = d.labels ? `Names: ${manifest.labelCredit}.` : '';
+        document.getElementById('label-credit').textContent = hasNames ? `Names: ${manifest.labelCredit}.` : '';
     } catch (e) {
         if (loading === meta) loading = null;
         errorEl.textContent = e.message;
@@ -759,8 +748,8 @@ const nextDataset = () => {
 datasetSelect.addEventListener('change', () => setDataset(datasetSelect.value));
 
 // ─── Offscreen passes ───────────────────────────────────────────────────────
-// UniverseVR renders the sprites into an offscreen intensity buffer, blurs it with a 15-tap
-// Gaussian (horizontal, then vertical), and maps the result through gradient.dds. The passes run
+// As in UniverseVR, the sprites go into an offscreen intensity buffer, blurred with a 15-tap Gaussian
+// (horizontal, then vertical), then shaded into colour (by redshift here, not UniverseVR's gradient). The passes run
 // on full-screen quads that read by gl_FragCoord, so in a headset both eyes' viewports are handled
 // in one go — the XR camera renders the quad once into each eye's half of the buffer.
 const half = renderer.capabilities.isWebGL2 && renderer.extensions.has('EXT_color_buffer_float')
@@ -789,20 +778,17 @@ const blurBody = /* glsl */`
         return sum;
     }`;
 // Intensity → colour. uAutoGain (see Auto exposure) scales it first, so every dataset and view lands on the
-// bright part of the ramp. Mode 0 is UniverseVR's gradient; mode 1 colours by the key: blue near, through
-// white and gold, to red far (for a survey, low to high redshift), its brightness saturating smoothly so
-// dense knots run to white instead of clipping. palette() matches the legend's CSS gradient.
+// bright part of the ramp; then colour by the key: blue near, through white and gold, to red far (for a
+// survey, low to high redshift), its brightness saturating smoothly so dense knots run to white instead of
+// clipping. palette() matches the legend's CSS gradient. (×2 is UniverseVR's scale for its glow.)
 const shadeBody = /* glsl */`
-    uniform sampler2D uGradient;
-    uniform float uAutoGain, uColourMode;
+    uniform float uAutoGain;
     vec3 palette(float t) {
         const vec3 A = vec3(0.30, 0.78, 1.00), B = vec3(0.80, 0.78, 1.00), C = vec3(1.00, 0.72, 0.30), D = vec3(1.00, 0.32, 0.26);
         return t < 0.35 ? mix(A, B, t / 0.35) : t < 0.7 ? mix(B, C, (t - 0.35) / 0.35) : mix(C, D, (t - 0.7) / 0.3);
     }
-    vec3 shade(vec2 b, float scale) {   // scale: UniverseVR's gradient factor (2 glowing, 1.5 sharp)
-        float intensity = b.r * uAutoGain * scale;
-        if (uColourMode < 0.5) return texture(uGradient, vec2(clamp(intensity, 0.0, 1.0), 0.5)).rgb;
-        float bright = 1.0 - exp(-2.2 * intensity);
+    vec3 shade(vec2 b) {
+        float bright = 1.0 - exp(-2.2 * 2.0 * b.r * uAutoGain);
         vec3 c = palette(clamp(b.g / max(b.r, 1e-6), 0.0, 1.0)) * bright;
         return mix(c, vec3(1.0), smoothstep(0.7, 1.0, bright) * 0.45);
     }`;
@@ -817,29 +803,29 @@ function quadPass(fragmentShader, uniforms) {
     scene.add(mesh);
     return { scene, uniforms: material.uniforms };
 }
-const shadeUniforms = { uGradient: { value: gradient }, uAutoGain: { value: 1 }, uColourMode: { value: 1 } };
+const shadeUniforms = { uAutoGain: { value: 1 } };
 const blurH = quadPass(/* glsl */`
     ${blurBody}
     out vec4 fragColor;
     void main() { fragColor = vec4(blurred(), 0.0, 1.0); }`, {
     uSource: { value: intensityTarget.texture }, uSize: { value: new THREE.Vector2(1, 1) }, uDirection: { value: new THREE.Vector2() },
 });
-// Vertical blur + shading (UniverseVR: Gradient.Sample(Linear2, float2(color.x * 2.0f, 0.5f)))
-const blurVGradient = quadPass(/* glsl */`
+// Vertical blur + shading
+const blurVShade = quadPass(/* glsl */`
     ${blurBody}
     ${shadeBody}
     out vec4 fragColor;
-    void main() { fragColor = vec4(shade(blurred(), 2.0), 1.0); }`, {
+    void main() { fragColor = vec4(shade(blurred()), 1.0); }`, {
     uSource: { value: blurTarget.texture }, uSize: { value: new THREE.Vector2(1, 1) }, uDirection: { value: new THREE.Vector2() },
     ...shadeUniforms,
 });
-// Without the blur (UniverseVR: Gradient.Sample(Linear2, float2(intensity * 1.5f, 0.5f)))
-const sharpGradient = quadPass(/* glsl */`
+// Glow off: the same shading straight from the intensity buffer, each galaxy a sharp dot
+const sharpShade = quadPass(/* glsl */`
     uniform sampler2D uSource;
     uniform vec2 uSize;
     ${shadeBody}
     out vec4 fragColor;
-    void main() { fragColor = vec4(shade(texture(uSource, gl_FragCoord.xy / uSize).rg, 1.5), 1.0); }`, {
+    void main() { fragColor = vec4(shade(texture(uSource, gl_FragCoord.xy / uSize).rg), 1.0); }`, {
     uSource: { value: intensityTarget.texture }, uSize: { value: new THREE.Vector2(1, 1) }, ...shadeUniforms,
 });
 
@@ -905,13 +891,13 @@ function renderFrame() {
     }
     galaxyUniforms.uViewHeight.value = _size.y;
     const tap = 0.004 * BLUR_SCALE * _size.y;           // taps every 0.004 × blurScale
-    for (const p of [blurH, blurVGradient, sharpGradient]) p.uniforms.uSize.value.copy(_size);
+    for (const p of [blurH, blurVShade, sharpShade]) p.uniforms.uSize.value.copy(_size);
     blurH.uniforms.uDirection.value.set(tap, 0);
-    blurVGradient.uniforms.uDirection.value.set(0, tap);
+    blurVShade.uniforms.uDirection.value.set(0, tap);
 
     renderer.setRenderTarget(intensityTarget);
     renderer.render(galaxyScene, camera);
-    // Exposure is measured on what will be shaded: after the horizontal blur when glowing, which dims a lone
+    // Exposure is measured on what will be shaded: when glowing, after the horizontal blur, which dims a lone
     // dot far more than a dense knot, so a sparse survey gets the extra gain it needs
     const measure = autoTimer >= AUTO_EVERY;
     if (measure) autoTimer = 0;
@@ -920,11 +906,11 @@ function renderFrame() {
         renderer.render(blurH.scene, camera);
         if (measure) measureExposure(blurTarget);
         renderer.setRenderTarget(output);
-        renderer.render(blurVGradient.scene, camera);
+        renderer.render(blurVShade.scene, camera);
     } else {
         if (measure) measureExposure(intensityTarget);
         renderer.setRenderTarget(output);
-        renderer.render(sharpGradient.scene, camera);
+        renderer.render(sharpShade.scene, camera);
     }
     renderer.autoClear = false;
     renderer.render(overlayScene, camera);
@@ -932,58 +918,39 @@ function renderFrame() {
 }
 
 // ─── Settings ───────────────────────────────────────────────────────────────
-const settings = { glow: true, exposure: 0, labels: true, colour: 'key' };
-// Colour: 'key' (by redshift, or distance for the simulation) or 'ramp' (UniverseVR's gradient)
-const colourButton = document.getElementById('colour');
-function setColour(mode) {
-    settings.colour = mode;
-    shadeUniforms.uColourMode.value = mode === 'key' ? 1 : 0;
-    const survey = (loading ?? data?.meta)?.kind === 'survey';
-    colourButton.textContent = mode === 'ramp' ? 'UniverseVR' : survey ? 'Redshift' : 'Distance';
-    colourButton.title = 'Colour scheme (C)';
-    document.getElementById('legend').hidden = mode !== 'key' || !data;
+const settings = { exposure: 0, labels: true, glow: true };
+// Switches (vr.css .switch): a fixed label, the state in aria-checked, so it always reads as "Glow: on/off"
+const glowSwitch = document.getElementById('glow');
+function setGlow(on) {
+    settings.glow = on;
+    glowSwitch.setAttribute('aria-checked', on);
+    autoTimer = AUTO_EVERY;                             // glow changes what is measured: measure again now
+}
+glowSwitch.addEventListener('click', () => setGlow(!settings.glow));
+// The colour key's legend: redshift for a survey, distance from you for the simulation
+function showLegend() {
+    document.getElementById('legend').hidden = !data;
     if (!data) return;
     const far = data.tintRange / SCALE;
     document.getElementById('legend-near').textContent = data.meta.kind === 'survey' ? 'z 0' : 'near you';
     document.getElementById('legend-far').textContent = data.meta.kind === 'survey'
         ? `z ${redshiftAt(far).toFixed(far < 600 ? 2 : 1)}` : `${thousands(far)} Mpc/h away`;
 }
-colourButton.addEventListener('click', () => setColour(settings.colour === 'key' ? 'ramp' : 'key'));
-const glowButton = document.getElementById('glow'), musicButton = document.getElementById('music');
 const labelsButton = document.getElementById('labels');
 function setLabels(on) {
     settings.labels = on;
-    labelsButton.textContent = on ? 'Names on' : 'Names off';
-    labelsButton.setAttribute('aria-pressed', on);
+    labelsButton.setAttribute('aria-checked', on);
     labelTimer = Infinity;                              // show or hide them on the next frame
 }
 labelsButton.addEventListener('click', () => setLabels(!settings.labels));
 const exposureInput = document.getElementById('exposure'), exposureOut = document.getElementById('exposure-out');
-function setGlow(on) {
-    settings.glow = on;
-    glowButton.textContent = on ? 'Glow on' : 'Glow off';
-    glowButton.setAttribute('aria-pressed', on);
-}
 function setExposure(stops) {
     settings.exposure = THREE.MathUtils.clamp(stops, -2, 2);
     galaxyUniforms.uGain.value = 2 ** settings.exposure;
     exposureInput.value = settings.exposure;
     exposureOut.textContent = `×${(2 ** settings.exposure).toFixed(2)}`;
 }
-glowButton.addEventListener('click', () => setGlow(!settings.glow));
 exposureInput.addEventListener('input', () => setExposure(+exposureInput.value));
-document.getElementById('center').addEventListener('click', center);
-
-const music = new Audio('universe/music.mp3');
-music.loop = true;
-music.volume = 0.6;
-function toggleMusic() {
-    if (music.paused) music.play().catch(e => { errorEl.textContent = `music: ${e.message}`; });
-    else music.pause();
-}
-music.addEventListener('play', () => { musicButton.textContent = 'Music on'; musicButton.setAttribute('aria-pressed', 'true'); });
-music.addEventListener('pause', () => { musicButton.textContent = 'Music off'; musicButton.setAttribute('aria-pressed', 'false'); });
-musicButton.addEventListener('click', toggleMusic);
 
 // ─── Input ──────────────────────────────────────────────────────────────────
 const DEADZONE = 0.15;
@@ -1029,13 +996,10 @@ function pollXRInput(dt) {
 
     const r = gamepads.right?.buttons || [], l = gamepads.left?.buttons || [];
     if (pressed('a', !!r[4]?.pressed)) setGlow(!settings.glow);
-    if (pressed('b', !!r[5]?.pressed)) center();
     if (pressed('x', !!l[4]?.pressed)) setExposure(settings.exposure >= 2 ? -1 : settings.exposure + 0.5);
     if (pressed('y', !!l[5]?.pressed)) nextDataset();
-    if (pressed('lstick', !!l[3]?.pressed)) toggleMusic();
     if (pressed('rstick', !!r[3]?.pressed)) setLabels(!settings.labels);
     if (pressed('rgrip', !!r[1]?.pressed)) selectGalaxy(hovered);     // on nothing: puts the card away
-    if (pressed('lgrip', !!l[1]?.pressed)) setColour(settings.colour === 'key' ? 'ramp' : 'key');
 }
 
 // Turn the rig about the head, so the view pivots in place.
@@ -1052,12 +1016,9 @@ window.addEventListener('keydown', e => {
     if (e.repeat) return;
     keys.add(e.code);
     if (e.code === 'Space' || e.code === 'KeyH') { document.getElementById('hud').classList.toggle('hidden'); e.preventDefault(); }
-    if (e.code === 'Enter' || e.code === 'KeyR') center();
     if (e.code === 'KeyG') setGlow(!settings.glow);
-    if (e.code === 'KeyM') toggleMusic();
     if (e.code === 'KeyN') nextDataset();
     if (e.code === 'KeyL') setLabels(!settings.labels);
-    if (e.code === 'KeyC') setColour(settings.colour === 'key' ? 'ramp' : 'key');
     if (e.code === 'Escape') selectGalaxy(-1);
     if (e.code === 'BracketLeft') setExposure(settings.exposure - 0.25);
     if (e.code === 'BracketRight') setExposure(settings.exposure + 0.25);
@@ -1219,7 +1180,8 @@ function galaxyInfo(d, g, eye) {
     const label = d.labels?.byGalaxy?.get(g);
     const t = lookbackGyr(z);
     return {
-        title: label?.name ?? 'An unnamed galaxy',
+        // Most galaxies have a catalogue name; only the familiar ones fetched from NED are loaded so far
+        title: label?.name ?? 'A galaxy',
         subtitle: d.meta.title,
         ra, dec, z, r, label,
         facts: [
@@ -1367,7 +1329,7 @@ let selectTime = 0;
 function setTag(info) {
     if (info.z === undefined) { leaderTag.set(info.title, info.facts[0].replace(/^at /, '')); return; }   // the simulation
     const t = lookbackGyr(info.z);
-    leaderTag.set(info.label?.name ?? 'unnamed galaxy',
+    leaderTag.set(info.label?.name ?? 'galaxy',
         `z ${info.z.toFixed(info.z < 0.1 ? 4 : 3)} · ${thousands(info.r)} Mpc/h · ${t < 1 ? `${thousands(t * 1000)} Myr` : `${t.toFixed(1)} Gyr`}`);
     leaderTag.draw(Math.min(selectTime / TAG_DRAW_TIME, 1));
 }
@@ -1659,8 +1621,8 @@ renderer.setAnimationLoop(now => {
     } else if ((statsTimer += dt) > 0.25) {
         statsTimer = 0;
         statsEl.textContent = (data ? `${title}   ${data.count.toLocaleString()} galaxies\n${where.long}\n` : `${title}\n`) +
-            `${settings.glow ? 'glow' : 'sharp'}   exposure ×${(2 ** settings.exposure).toFixed(2)}\n${fps.toFixed(0)} fps` +
-            (data ? `   drawing ${Math.round(100 * culled / data.count)}% of the galaxies` : '');
+            `exposure ×${(2 ** settings.exposure).toFixed(2)}   ${fps.toFixed(0)} fps` +
+            (data ? `   ${Math.round(100 * culled / data.count)}% drawn` : '');
     }
     renderFrame();
 });
